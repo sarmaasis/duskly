@@ -18,6 +18,7 @@
     "better-auth-cloudflare": "^0.3.1",
     "better-auth-cloudflare-email": "^0.1.0",
     "drizzle-orm": "^0.45.0",
+    "dodopayments": "^2.4.1",
     "hono": "^4.7.0",
     "zod": "^4.3.0"
   },

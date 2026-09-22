@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createAuth } from "./auth";
 import { postRoutes } from "./routes/posts";
+import { billingRoutes, handleDodoWebhook } from "./routes/billing";
 import { SchedulerLock } from "./do/scheduler-lock";
 import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
@@ -21,21 +22,31 @@ app.use("*", async (c, next) => {
   })(c, next);
 });
 
-app.on(["POST", "GET"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
+app.on(["POST", "GET"], "/api/auth/*", (c) => {
+  const auth = createAuth(c.env);
+  return auth.handler(c.req.raw);
+});
+
+app.post("/webhooks/dodo", (c) => handleDodoWebhook(c.req.raw, c.env));
 
 app.use("/v1/*", async (c, next) => {
-  const session = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+  const auth = createAuth(c.env);
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session?.user) return c.json({ error: "unauthorized" }, 401);
   c.set("userId", session.user.id);
   await next();
 });
 
 app.route("/v1/posts", postRoutes);
-app.get("/healthz", (c) => c.json({ ok: true, service: "sundraft-api" }));
+app.route("/v1/billing", billingRoutes);
+app.get("/healthz", (c) => c.json({ ok: true, service: "cueora-api" }));
 
 async function claimDue(env: Env) {
   const db = drizzle(env.DB);
-  const due = await db.select().from(posts).where(and(eq(posts.status, "scheduled"), lte(posts.scheduledAt, new Date())));
+  const due = await db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.status, "scheduled"), lte(posts.scheduledAt, new Date())));
   for (const post of due) {
     await db.update(posts).set({ status: "queued", updatedAt: new Date() }).where(eq(posts.id, post.id));
     await env.PUBLISH.send({ postId: post.id });
@@ -55,7 +66,10 @@ export default {
         headers: { "x-job-id": msg.id, "content-type": "application/json" },
         body: JSON.stringify({ action: "acquire" }),
       });
-      if (!lock.ok) { msg.retry(); continue; }
+      if (!lock.ok) {
+        msg.retry();
+        continue;
+      }
       env.METRICS.writeDataPoint({ blobs: ["publish"], doubles: [1], indexes: [msg.body.postId] });
       msg.ack();
     }
