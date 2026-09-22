@@ -1,0 +1,13 @@
+{
+  "name": "sundraft-web",
+  "main": "dist/sundraft-web/server/server.mjs",
+  "compatibility_date": "2026-09-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist/sundraft-web/browser",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "observability": { "enabled": true },
+  "vars": { "API_ORIGIN": "https://api.sundraft.xyz" }
+}
