@@ -5,19 +5,23 @@ import { RouterLink } from "@angular/router";
   imports: [RouterLink],
   template: `
     <header class="shell topbar">
-      <div class="brand">Sun<span>draft</span></div>
+      <div class="brand">Cue<span>ora</span></div>
       <nav>
+        <a routerLink="/pricing" class="btn btn-ghost">Pricing</a>
         <a routerLink="/signin" class="btn btn-ghost">Sign in</a>
         <a routerLink="/signin" class="btn btn-primary">Start scheduling</a>
       </nav>
     </header>
     <main class="shell hero">
       <div>
-        <h1>Queue the post. Hit publish at dusk.</h1>
-        <p>Open-source scheduler on two Cloudflare Workers. Email OTP. No password store.</p>
+        <h1>Cue the post. Publish on time.</h1>
+        <p>Open-source scheduler. Self-host it, or use Cueora Cloud and pay via Dodo.</p>
         <a routerLink="/signin" class="btn btn-primary">Start scheduling</a>
       </div>
-      <div class="card"><strong>Today</strong><p style="color:var(--sl-muted)">3 scheduled · next at 18:05</p></div>
+      <div class="card">
+        <strong>Today</strong>
+        <p style="color:var(--sl-muted);margin:8px 0 0">3 scheduled · 1 draft · next at 18:05</p>
+      </div>
     </main>
   `,
 })

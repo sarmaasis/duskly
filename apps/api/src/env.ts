@@ -29,4 +29,10 @@ export type Env = {
   EMAIL_FROM: string;
   TOKEN_ENCRYPTION_KEY: string;
   APP_NAME: string;
+  CUEORA_MODE: "selfhost" | "cloud";
+  DODO_PAYMENTS_API_KEY: string;
+  DODO_PAYMENTS_WEBHOOK_KEY: string;
+  DODO_PAYMENTS_ENVIRONMENT: "test_mode" | "live_mode";
+  DODO_PRO_MONTHLY_PRODUCT_ID: string;
+  DODO_PRO_YEARLY_PRODUCT_ID: string;
 };

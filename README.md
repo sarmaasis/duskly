@@ -1,8 +1,10 @@
-# Sundraft
+# Cueora
 
-Open-source social media scheduler. Two Cloudflare Workers: Angular SSR frontend + Hono API. Auth is email OTP via Better Auth and Cloudflare Email Service.
+Open-source social media scheduler. Self-host for free, or use **Cueora Cloud** and pay via [Dodo Payments](https://dodopayments.com).
 
-**Domain:** register `sundraft.xyz` (~$0.95–$1.04 first year at Spaceship/Porkbun) or `sundraft.website` (~$0.92 at Loopia/Namecheap). Confirm availability at purchase time.
+**Name:** Cue + ora (now). Buy `cueora.xyz` or `cueora.website` (~$1 first year). Confirm at checkout. See [docs/BILLING.md](docs/BILLING.md).
+
+Two Cloudflare Workers: Angular SSR + Hono API. Auth is email OTP via Better Auth and Cloudflare Email Service.
 
 ## Stack
 
@@ -11,26 +13,14 @@ Open-source social media scheduler. Two Cloudflare Workers: Angular SSR frontend
 | Frontend Worker | Angular SSR (`platform: neutral`) + Workers Assets |
 | Backend Worker | Hono on Workers |
 | Auth | Better Auth `emailOTP` + `better-auth-cloudflare` |
-| Mail | Cloudflare Email Service (`send_email` binding) |
+| Mail | Cloudflare Email Service |
+| Billing (cloud only) | Dodo Payments checkout + webhooks |
 | Data | D1 + Drizzle |
 | Sessions / rate limit | KV |
 | Media | R2 + Cloudflare Images |
-| Publish pipeline | Queues + Workflows + Cron Triggers |
-| Per-account lock | Durable Objects |
-| Search | Vectorize (captions / post text) |
-| Observability | Workers Analytics Engine + Workers Logs |
-| AI assist | Workers AI (optional captions) |
+| Publish pipeline | Queues + Cron + Durable Objects |
 
-UI language follows [SL Design System](https://github.com/sl-design-system/components) (clean surfaces, 8px grid, restrained chrome). Primary CTA is **sunset orange** `#FF5C33`.
-
-## Repo
-
-```
-apps/api   backend Worker
-apps/web   Angular SSR Worker
-packages/shared
-docs/
-```
+Primary CTA: sunset orange `#FF5C33`.
 
 ## Quick start
 
@@ -38,12 +28,10 @@ docs/
 pnpm install
 cp apps/api/.dev.vars.example apps/api/.dev.vars
 pnpm --filter @sundraft/api db:migrate:local
-pnpm dev:api    # :8787
-pnpm dev:web    # :4200
+pnpm dev:api
+pnpm dev:web
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License
+`CUEORA_MODE=selfhost` disables Dodo. Set `cloud` on the hosted workers.
 
 Apache-2.0
