@@ -1,0 +1,5 @@
+BETTER_AUTH_SECRET=replace-with-32-plus-bytes
+BETTER_AUTH_URL=http://localhost:8787
+WEB_ORIGIN=http://localhost:4200
+EMAIL_FROM=Sundraft <noreply@sundraft.xyz>
+TOKEN_ENCRYPTION_KEY=replace-with-32-byte-hex
