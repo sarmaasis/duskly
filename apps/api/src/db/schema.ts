@@ -201,6 +201,7 @@ export const rssFeed = sqliteTable(
     workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
     url: text("url").notNull(),
     channelIds: text("channel_ids").notNull(),
+    groupId: text("group_id"),
     lastGuid: text("last_guid"),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

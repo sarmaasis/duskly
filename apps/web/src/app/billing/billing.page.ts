@@ -2,10 +2,11 @@ import { Component, OnInit, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { RouterLink } from "@angular/router";
 import { api } from "../lib/api";
+import { DkSeg } from "../ui/forms";
 
 @Component({
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, DkSeg],
   template: `
     <div class="mx-auto max-w-5xl">
       <div class="mb-6">
@@ -19,9 +20,8 @@ import { api } from "../lib/api";
       }
 
       <section class="mb-4 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-        <div class="mb-4 inline-flex rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-          <button type="button" (click)="interval = 'month'" class="rounded-md px-3 py-1.5 text-xs font-semibold" [class.bg-[#121417]]="interval==='month'" [class.text-white]="interval==='month'" [class.text-[#52525b]]="interval!=='month'" [class.dark:bg-zinc-100]="interval==='month'" [class.dark:text-zinc-900]="interval==='month'">Monthly</button>
-          <button type="button" (click)="interval = 'year'" class="rounded-md px-3 py-1.5 text-xs font-semibold" [class.bg-[#121417]]="interval==='year'" [class.text-white]="interval==='year'" [class.text-[#52525b]]="interval!=='year'" [class.dark:bg-zinc-100]="interval==='year'" [class.dark:text-zinc-900]="interval==='year'">Yearly</button>
+        <div class="mb-4">
+          <dk-seg [options]="intervalOpts" [value]="interval" (pick)="interval=$any($event)" />
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
           @for (p of plans; track p.id) {
@@ -45,6 +45,10 @@ import { api } from "../lib/api";
 export class BillingPage implements OnInit {
   workspaceId = "";
   interval: "month" | "year" = "month";
+  intervalOpts = [
+    { value: "month", label: "Monthly" },
+    { value: "year", label: "Yearly" },
+  ];
   msg = signal("");
   err = signal(false);
   plans = [

@@ -3,12 +3,13 @@ import { FormsModule } from "@angular/forms";
 import { RouterLink } from "@angular/router";
 import { api } from "../lib/api";
 import { lsGet, lsSet } from "../lib/browser";
+import { DkSeg } from "../ui/forms";
 
 type Post = { id: string; body: string; status: string; scheduledAt: string | Date | null };
 
 @Component({
   standalone: true,
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, DkSeg],
   template: `
     <div class="mx-auto max-w-5xl">
       <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -18,10 +19,7 @@ type Post = { id: string; body: string; status: string; scheduledAt: string | Da
           <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">Month and agenda views of your scheduled posts.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <div class="inline-flex rounded-lg border border-[#e8e8e3] bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-            <button type="button" (click)="view.set('month')" class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors" [class.bg-[#09090b]]="view()==='month'" [class.text-white]="view()==='month'" [class.text-[#52525b]]="view()!=='month'" [class.dark:bg-zinc-100]="view()==='month'" [class.dark:text-zinc-900]="view()==='month'">Month</button>
-            <button type="button" (click)="view.set('agenda')" class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors" [class.bg-[#09090b]]="view()==='agenda'" [class.text-white]="view()==='agenda'" [class.text-[#52525b]]="view()!=='agenda'" [class.dark:bg-zinc-100]="view()==='agenda'" [class.dark:text-zinc-900]="view()==='agenda'">Agenda</button>
-          </div>
+          <dk-seg [options]="viewOpts" [value]="view()" (pick)="view.set($any($event))" />
           <a routerLink="/app/compose" class="inline-flex h-9 items-center rounded-full bg-cta px-4 font-mono text-xs font-semibold text-white hover:bg-cta-hover">New post</a>
         </div>
       </div>
@@ -75,6 +73,10 @@ type Post = { id: string; body: string; status: string; scheduledAt: string | Da
 })
 export class CalendarPage implements OnInit {
   view = signal<"month" | "agenda">("month");
+  viewOpts = [
+    { value: "month", label: "Month" },
+    { value: "agenda", label: "Agenda" },
+  ];
   posts = signal<Post[]>([]);
   error = signal("");
   dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, or, isNull } from "drizzle-orm";
 import {
   socialAccount,
   customerGroup,
@@ -27,7 +27,7 @@ import {
   planErrorResponse,
   usageSnapshot,
 } from "../lib/entitlements";
-import { NETWORKS } from "../lib/networks";
+import { NETWORKS, NETWORK_META } from "../lib/networks";
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 
@@ -78,7 +78,33 @@ accountRoutes.get("/", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
   const rows = await db.select().from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId));
-  return c.json({ accounts: rows, networks: NETWORKS });
+  const accounts = rows.map((r) => {
+    let channelId: string | null = null;
+    let channelName: string | null = null;
+    if (r.credentialsJson) {
+      try {
+        const creds = JSON.parse(r.credentialsJson) as Record<string, string>;
+        channelId = creds.channelId || null;
+        channelName = creds.channelName || null;
+      } catch {
+        /* ignore */
+      }
+    }
+    return {
+      id: r.id,
+      workspaceId: r.workspaceId,
+      network: r.network,
+      handle: r.handle,
+      externalId: r.externalId,
+      groupId: r.groupId,
+      status: r.status,
+      createdAt: r.createdAt,
+      slackChannelId: r.network === "slack" ? channelId : undefined,
+      slackChannelName: r.network === "slack" ? channelName : undefined,
+      needsSlackChannel: r.network === "slack" && !channelId,
+    };
+  });
+  return c.json({ accounts, networks: NETWORKS, meta: NETWORK_META });
 });
 
 accountRoutes.post("/", async (c) => {
@@ -86,9 +112,33 @@ accountRoutes.post("/", async (c) => {
     const body = z
       .object({
         workspaceId: z.string(),
-        network: z.enum(["x", "bluesky", "linkedin", "mastodon"]),
+        network: z.enum([
+          "linkedin",
+          "x",
+          "instagram",
+          "threads",
+          "facebook",
+          "youtube",
+          "reddit",
+          "bluesky",
+          "mastodon",
+          "hashnode",
+          "medium",
+          "devto",
+          "telegram",
+          "discord",
+          "slack",
+        ]),
         handle: z.string().min(1),
         appPassword: z.string().optional(),
+        apiKey: z.string().optional(),
+        integrationToken: z.string().optional(),
+        botToken: z.string().optional(),
+        chatId: z.string().optional(),
+        webhookUrl: z.string().optional(),
+        publicationId: z.string().optional(),
+        authorId: z.string().optional(),
+        subreddit: z.string().optional(),
         groupId: z.string().nullable().optional(),
       })
       .parse(await c.req.json());
@@ -97,19 +147,40 @@ accountRoutes.post("/", async (c) => {
     await assertChannelLimit(c.env, body.workspaceId, 1);
     const id = crypto.randomUUID();
     const db = drizzle(c.env.DB);
-    const creds = body.appPassword
-      ? JSON.stringify({ identifier: body.handle, appPassword: body.appPassword })
-      : null;
+
+    const creds: Record<string, string> = {};
+    if (body.appPassword) {
+      creds.identifier = body.handle;
+      creds.appPassword = body.appPassword;
+    }
+    if (body.apiKey) creds.apiKey = body.apiKey;
+    if (body.integrationToken) creds.integrationToken = body.integrationToken;
+    if (body.botToken) creds.botToken = body.botToken;
+    if (body.chatId) creds.chatId = body.chatId;
+    if (body.webhookUrl) creds.webhookUrl = body.webhookUrl;
+    if (body.publicationId) creds.publicationId = body.publicationId;
+    if (body.authorId) creds.authorId = body.authorId;
+    if (body.subreddit) creds.subreddit = body.subreddit;
+
+    const secret =
+      body.appPassword ||
+      body.apiKey ||
+      body.integrationToken ||
+      body.botToken ||
+      body.webhookUrl ||
+      "pending";
+    const active = secret !== "pending";
+
     await db.insert(socialAccount).values({
       id,
       workspaceId: body.workspaceId,
       network: body.network,
       handle: body.handle,
       externalId: body.handle,
-      tokenCipher: body.appPassword || "pending",
-      credentialsJson: creds,
+      tokenCipher: secret,
+      credentialsJson: Object.keys(creds).length ? JSON.stringify(creds) : null,
       groupId: body.groupId ?? null,
-      status: body.appPassword ? "active" : "needs_credentials",
+      status: active ? "active" : "needs_credentials",
       createdAt: new Date(),
     });
     return c.json({ id }, 201);
@@ -131,6 +202,125 @@ accountRoutes.delete("/:id", async (c) => {
     .delete(socialAccount)
     .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, workspaceId)));
   return c.json({ ok: true });
+});
+
+accountRoutes.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = z
+    .object({
+      workspaceId: z.string(),
+      groupId: z.string().nullable().optional(),
+      slackChannelId: z.string().optional(),
+      slackChannelName: z.string().optional(),
+    })
+    .parse(await c.req.json());
+  const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const db = drizzle(c.env.DB);
+  const [row] = await db
+    .select()
+    .from(socialAccount)
+    .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, body.workspaceId)))
+    .limit(1);
+  if (!row) return c.json({ error: "not_found" }, 404);
+
+  if (body.groupId) {
+    const [g] = await db
+      .select()
+      .from(customerGroup)
+      .where(and(eq(customerGroup.id, body.groupId), eq(customerGroup.workspaceId, body.workspaceId)))
+      .limit(1);
+    if (!g) return c.json({ error: "company_not_found" }, 404);
+  }
+
+  const patch: { groupId?: string | null; credentialsJson?: string; status?: string } = {};
+  if (body.groupId !== undefined) patch.groupId = body.groupId;
+
+  if (body.slackChannelId) {
+    if (row.network !== "slack") return c.json({ error: "not_slack" }, 400);
+    let creds: Record<string, string> = {};
+    if (row.credentialsJson) {
+      try {
+        creds = JSON.parse(row.credentialsJson) as Record<string, string>;
+      } catch {
+        creds = {};
+      }
+    }
+    if (!creds.botToken && row.tokenCipher && row.tokenCipher !== "pending") {
+      creds.botToken = row.tokenCipher;
+    }
+    creds.channelId = body.slackChannelId;
+    if (body.slackChannelName) creds.channelName = body.slackChannelName;
+    patch.credentialsJson = JSON.stringify(creds);
+    patch.status = "active";
+  }
+
+  if (!Object.keys(patch).length) return c.json({ error: "nothing_to_update" }, 400);
+
+  await db
+    .update(socialAccount)
+    .set(patch)
+    .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, body.workspaceId)));
+  return c.json({ ok: true, groupId: body.groupId ?? row.groupId, slackChannelId: body.slackChannelId });
+});
+
+accountRoutes.get("/:id/slack/channels", async (c) => {
+  const id = c.req.param("id");
+  const workspaceId = c.req.query("workspaceId");
+  if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
+  const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const db = drizzle(c.env.DB);
+  const [row] = await db
+    .select()
+    .from(socialAccount)
+    .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, workspaceId)))
+    .limit(1);
+  if (!row || row.network !== "slack") return c.json({ error: "not_found" }, 404);
+
+  let botToken = row.tokenCipher;
+  if (row.credentialsJson) {
+    try {
+      const creds = JSON.parse(row.credentialsJson) as Record<string, string>;
+      if (creds.botToken) botToken = creds.botToken;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!botToken || botToken === "pending" || botToken.startsWith("http")) {
+    return c.json({ error: "no_bot_token", message: "Slack bot token missing — reconnect with Add to Slack" }, 400);
+  }
+
+  const channels: { id: string; name: string; isPrivate: boolean }[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const params = new URLSearchParams({
+      types: "public_channel,private_channel",
+      exclude_archived: "true",
+      limit: "200",
+    });
+    if (cursor) params.set("cursor", cursor);
+    const res = await fetch(`https://slack.com/api/conversations.list?${params}`, {
+      headers: { authorization: `Bearer ${botToken}` },
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      channels?: { id: string; name: string; is_private?: boolean }[];
+      response_metadata?: { next_cursor?: string };
+    };
+    if (!data.ok) {
+      return c.json({ error: "slack_api", message: data.error || "conversations.list failed" }, 502);
+    }
+    for (const ch of data.channels || []) {
+      channels.push({ id: ch.id, name: ch.name, isPrivate: !!ch.is_private });
+    }
+    cursor = data.response_metadata?.next_cursor || undefined;
+    if (!cursor) break;
+  }
+
+  channels.sort((a, b) => a.name.localeCompare(b.name));
+  return c.json({ channels });
 });
 
 export const teamRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
@@ -253,7 +443,18 @@ orgRoutes.get("/groups", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
-  return c.json({ groups: await db.select().from(customerGroup).where(eq(customerGroup.workspaceId, workspaceId)) });
+  const groups = await db.select().from(customerGroup).where(eq(customerGroup.workspaceId, workspaceId));
+  const accounts = await db
+    .select({ id: socialAccount.id, handle: socialAccount.handle, network: socialAccount.network, groupId: socialAccount.groupId })
+    .from(socialAccount)
+    .where(eq(socialAccount.workspaceId, workspaceId));
+  return c.json({
+    groups: groups.map((g) => ({
+      ...g,
+      accountIds: accounts.filter((a) => a.groupId === g.id).map((a) => a.id),
+      accounts: accounts.filter((a) => a.groupId === g.id),
+    })),
+  });
 });
 
 orgRoutes.post("/groups", async (c) => {
@@ -264,6 +465,52 @@ orgRoutes.post("/groups", async (c) => {
   const db = drizzle(c.env.DB);
   await db.insert(customerGroup).values({ id, workspaceId: body.workspaceId, name: body.name, createdAt: new Date() });
   return c.json({ id }, 201);
+});
+
+orgRoutes.put("/groups/:id/accounts", async (c) => {
+  const body = z
+    .object({ workspaceId: z.string(), accountIds: z.array(z.string()) })
+    .parse(await c.req.json());
+  const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const groupId = c.req.param("id");
+  const db = drizzle(c.env.DB);
+  const [g] = await db
+    .select()
+    .from(customerGroup)
+    .where(and(eq(customerGroup.id, groupId), eq(customerGroup.workspaceId, body.workspaceId)))
+    .limit(1);
+  if (!g) return c.json({ error: "not_found" }, 404);
+  // Clear membership for this group, then assign selected accounts (workspace-scoped).
+  await db
+    .update(socialAccount)
+    .set({ groupId: null })
+    .where(and(eq(socialAccount.workspaceId, body.workspaceId), eq(socialAccount.groupId, groupId)));
+  if (body.accountIds.length) {
+    await db
+      .update(socialAccount)
+      .set({ groupId })
+      .where(and(eq(socialAccount.workspaceId, body.workspaceId), inArray(socialAccount.id, body.accountIds)));
+  }
+  return c.json({ ok: true, accountIds: body.accountIds });
+});
+
+orgRoutes.delete("/groups/:id/accounts/:accountId", async (c) => {
+  const workspaceId = z.string().parse(c.req.query("workspaceId"));
+  const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const db = drizzle(c.env.DB);
+  await db
+    .update(socialAccount)
+    .set({ groupId: null })
+    .where(
+      and(
+        eq(socialAccount.id, c.req.param("accountId")),
+        eq(socialAccount.workspaceId, workspaceId),
+        eq(socialAccount.groupId, c.req.param("id")),
+      ),
+    );
+  return c.json({ ok: true });
 });
 
 orgRoutes.get("/signatures", async (c) => {
@@ -356,10 +603,16 @@ orgRoutes.get("/plugs", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
-  const rows = await db.select().from(plug);
-  return c.json({
-    plugs: rows.filter((p) => p.scope === "global" || p.workspaceId === workspaceId),
-  });
+  const rows = await db
+    .select()
+    .from(plug)
+    .where(
+      or(
+        and(eq(plug.scope, "internal"), eq(plug.workspaceId, workspaceId)),
+        and(eq(plug.scope, "global"), or(isNull(plug.workspaceId), eq(plug.workspaceId, workspaceId))),
+      ),
+    );
+  return c.json({ plugs: rows });
 });
 
 orgRoutes.post("/plugs", async (c) => {
@@ -444,10 +697,18 @@ orgRoutes.get("/rss", async (c) => {
 
 orgRoutes.post("/rss", async (c) => {
   const body = z
-    .object({ workspaceId: z.string(), url: z.string().url(), channelIds: z.array(z.string()).min(1) })
+    .object({
+      workspaceId: z.string(),
+      url: z.string().url(),
+      channelIds: z.array(z.string()).default([]),
+      groupId: z.string().nullable().optional(),
+    })
     .parse(await c.req.json());
   const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
+  if (!body.channelIds.length && !body.groupId) {
+    return c.json({ error: "target_required", message: "Pick at least one channel or a customer group" }, 400);
+  }
   const id = crypto.randomUUID();
   const db = drizzle(c.env.DB);
   await db.insert(rssFeed).values({
@@ -455,6 +716,7 @@ orgRoutes.post("/rss", async (c) => {
     workspaceId: body.workspaceId,
     url: body.url,
     channelIds: JSON.stringify(body.channelIds),
+    groupId: body.groupId ?? null,
     active: true,
     createdAt: new Date(),
   });
@@ -466,14 +728,85 @@ orgRoutes.get("/analytics", async (c) => {
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
+
+  const breakdown = await c.env.DB.prepare(
+    `SELECT sa.network AS network,
+            pd.status AS status,
+            date(COALESCE(p.published_at, p.scheduled_at, p.created_at) / 1000, 'unixepoch') AS day,
+            COUNT(*) AS c
+     FROM post_destination pd
+     INNER JOIN posts p ON p.id = pd.post_id
+     INNER JOIN social_account sa ON sa.id = pd.social_account_id
+     WHERE p.workspace_id = ?
+     GROUP BY sa.network, pd.status, day
+     ORDER BY day DESC`,
+  )
+    .bind(workspaceId)
+    .all<{ network: string; status: string; day: string; c: number }>();
+
+  const totalsRow = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS posts,
+            SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
+            SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+     FROM posts WHERE workspace_id = ?`,
+  )
+    .bind(workspaceId)
+    .first<{ posts: number; published: number; queued: number; failed: number }>();
+
+  const recent = await c.env.DB.prepare(
+    `SELECT id, status, scheduled_at AS scheduledAt, published_at AS publishedAt
+     FROM posts WHERE workspace_id = ?
+     ORDER BY COALESCE(published_at, scheduled_at, created_at) DESC
+     LIMIT 20`,
+  )
+    .bind(workspaceId)
+    .all<{ id: string; status: string; scheduledAt: number | null; publishedAt: number | null }>();
+
+  const byStatus: Record<string, number> = {
+    published: totalsRow?.published ?? 0,
+    queued: totalsRow?.queued ?? 0,
+    failed: totalsRow?.failed ?? 0,
+  };
+  const byChannel: Record<string, Record<string, number>> = {};
+  const byDay: Record<string, number> = {};
+  for (const row of breakdown.results || []) {
+    byChannel[row.network] ||= {};
+    byChannel[row.network][row.status] = (byChannel[row.network][row.status] || 0) + row.c;
+    byDay[row.day] = (byDay[row.day] || 0) + row.c;
+  }
+
+  // Network insights only when credentials exist; never invent numbers.
+  const networkInsights: { network: string; note: string }[] = [];
   const db = drizzle(c.env.DB);
-  const all = await db.select().from(posts).where(eq(posts.workspaceId, workspaceId));
-  const byStatus: Record<string, number> = {};
-  for (const p of all) byStatus[p.status] = (byStatus[p.status] || 0) + 1;
-  const published = all.filter((p) => p.status === "published");
+  const connected = await db
+    .select({ network: socialAccount.network, credentialsJson: socialAccount.credentialsJson, tokenCipher: socialAccount.tokenCipher })
+    .from(socialAccount)
+    .where(eq(socialAccount.workspaceId, workspaceId));
+  for (const a of connected) {
+    const hasCreds = !!(a.credentialsJson || (a.tokenCipher && a.tokenCipher !== "pending"));
+    if (!hasCreds) {
+      networkInsights.push({ network: a.network, note: "credentials missing — local breakdown only" });
+      continue;
+    }
+    // X/LinkedIn analytics APIs need elevated products; Bluesky has no aggregate insights endpoint here.
+    networkInsights.push({
+      network: a.network,
+      note: "connected — using local publish outcomes (provider insights not enabled for this app)",
+    });
+  }
+
   return c.json({
-    totals: { posts: all.length, published: published.length, byStatus },
-    recent: all.slice(0, 20).map((p) => ({ id: p.id, status: p.status, scheduledAt: p.scheduledAt, publishedAt: p.publishedAt })),
+    totals: {
+      posts: totalsRow?.posts ?? 0,
+      published: totalsRow?.published ?? 0,
+      byStatus,
+    },
+    byChannel,
+    byDay,
+    breakdown: breakdown.results || [],
+    networkInsights,
+    recent: recent.results || [],
   });
 });
 

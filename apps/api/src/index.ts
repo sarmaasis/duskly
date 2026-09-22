@@ -105,7 +105,15 @@ async function pollRss(env: Env) {
       if (!res.ok) continue;
       const xml = await res.text();
       const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].slice(0, 5);
-      const channelIds = JSON.parse(feed.channelIds) as string[];
+      let channelIds = JSON.parse(feed.channelIds || "[]") as string[];
+      if (feed.groupId) {
+        const members = await db
+          .select({ id: socialAccount.id })
+          .from(socialAccount)
+          .where(and(eq(socialAccount.workspaceId, feed.workspaceId), eq(socialAccount.groupId, feed.groupId)));
+        channelIds = [...new Set([...channelIds, ...members.map((m) => m.id)])];
+      }
+      if (!channelIds.length) continue;
       let newestGuid = feed.lastGuid;
       for (const m of items.reverse()) {
         const block = m[1];
@@ -155,35 +163,51 @@ async function publishPost(env: Env, postId: string) {
   const [post] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
   if (!post) return;
   await db.update(posts).set({ status: "publishing", updatedAt: new Date() }).where(eq(posts.id, postId));
-  const dests = await db.select().from(postDestination).where(eq(postDestination.postId, postId));
+
+  const rows = await db
+    .select({
+      id: postDestination.id,
+      socialAccountId: postDestination.socialAccountId,
+      status: postDestination.status,
+      remoteId: postDestination.remoteId,
+      network: socialAccount.network,
+      handle: socialAccount.handle,
+      tokenCipher: socialAccount.tokenCipher,
+      credentialsJson: socialAccount.credentialsJson,
+    })
+    .from(postDestination)
+    .innerJoin(socialAccount, eq(postDestination.socialAccountId, socialAccount.id))
+    .where(eq(postDestination.postId, postId));
+
+  const delay = post.commentDelaySeconds ?? 0;
+  const deferComment = delay > 0 && !!post.commentBody?.trim();
   let anyPublished = false;
   let anyQueued = false;
   const commentNotes: string[] = [];
-  for (const d of dests) {
-    const [acct] = await db.select().from(socialAccount).where(eq(socialAccount.id, d.socialAccountId)).limit(1);
-    if (!acct) {
-      await db
-        .update(postDestination)
-        .set({ status: "failed", error: "account missing" })
-        .where(eq(postDestination.id, d.id));
+
+  for (const d of rows) {
+    const adapter = adapters[d.network as Network];
+    if (!adapter) {
+      await db.update(postDestination).set({ status: "failed", error: "unknown network" }).where(eq(postDestination.id, d.id));
       continue;
     }
-    const adapter = adapters[acct.network as Network];
-    const creds = acct.credentialsJson ? (JSON.parse(acct.credentialsJson) as Record<string, string>) : undefined;
+    const creds = d.credentialsJson ? (JSON.parse(d.credentialsJson) as Record<string, string>) : undefined;
     const result = await adapter.publish({
       body: post.body,
-      handle: acct.handle,
-      token: acct.tokenCipher,
+      handle: d.handle,
+      token: d.tokenCipher,
       credentials: creds,
       commentBody: post.commentBody,
+      skipComment: deferComment,
     });
     if ("remoteId" in result) {
       anyPublished = true;
       const noteParts = [
         result.commentRemoteId ? `comment:${result.commentRemoteId}` : null,
         result.commentSkipped ? `comment_skip:${result.commentSkipped}` : null,
+        deferComment ? "comment:deferred" : null,
       ].filter(Boolean);
-      if (result.commentSkipped) commentNotes.push(`${acct.network}: ${result.commentSkipped}`);
+      if (result.commentSkipped) commentNotes.push(`${d.network}: ${result.commentSkipped}`);
       await db
         .update(postDestination)
         .set({
@@ -200,6 +224,7 @@ async function publishPost(env: Env, postId: string) {
         .where(eq(postDestination.id, d.id));
     }
   }
+
   const status = anyPublished && !anyQueued ? "published" : anyQueued ? "queued" : "failed";
   await db
     .update(posts)
@@ -209,6 +234,14 @@ async function publishPost(env: Env, postId: string) {
       updatedAt: new Date(),
     })
     .where(eq(posts.id, postId));
+
+  if (anyPublished && deferComment) {
+    await env.PUBLISH.send(
+      { postId, action: "comment" },
+      { delaySeconds: Math.min(Math.max(1, delay), 43200) },
+    );
+  }
+
   if (anyPublished) {
     await dispatchWebhooks(env, post.workspaceId, "post.published", {
       postId,
@@ -219,6 +252,53 @@ async function publishPost(env: Env, postId: string) {
   }
 }
 
+async function publishComments(env: Env, postId: string) {
+  const db = drizzle(env.DB);
+  const [post] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
+  if (!post?.commentBody?.trim()) return;
+
+  const rows = await db
+    .select({
+      id: postDestination.id,
+      remoteId: postDestination.remoteId,
+      error: postDestination.error,
+      network: socialAccount.network,
+      handle: socialAccount.handle,
+      tokenCipher: socialAccount.tokenCipher,
+      credentialsJson: socialAccount.credentialsJson,
+    })
+    .from(postDestination)
+    .innerJoin(socialAccount, eq(postDestination.socialAccountId, socialAccount.id))
+    .where(eq(postDestination.postId, postId));
+
+  for (const d of rows) {
+    if (!d.remoteId) continue;
+    if (d.error?.includes("comment:") && !d.error.includes("comment:deferred") && !d.error.includes("comment_skip:")) {
+      continue;
+    }
+    const adapter = adapters[d.network as Network];
+    if (!adapter?.comment) continue;
+    const creds = d.credentialsJson ? (JSON.parse(d.credentialsJson) as Record<string, string>) : undefined;
+    const result = await adapter.comment({
+      remoteId: d.remoteId,
+      commentBody: post.commentBody,
+      handle: d.handle,
+      token: d.tokenCipher,
+      credentials: creds,
+    });
+    const prev = (d.error || "").replace(/comment:deferred;?\s*/g, "").trim();
+    const noteParts = [
+      prev || null,
+      result.commentRemoteId ? `comment:${result.commentRemoteId}` : null,
+      result.commentSkipped ? `comment_skip:${result.commentSkipped}` : null,
+    ].filter(Boolean);
+    await db
+      .update(postDestination)
+      .set({ error: noteParts.length ? noteParts.join("; ") : null })
+      .where(eq(postDestination.id, d.id));
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -226,9 +306,10 @@ export default {
     ctx.waitUntil(pollRss(env));
     ctx.waitUntil(runSchedulePlugs(env));
   },
-  async queue(batch: MessageBatch<{ postId: string }>, env: Env) {
+  async queue(batch: MessageBatch<{ postId: string; action?: string }>, env: Env) {
     for (const msg of batch.messages) {
-      const stub = env.SCHEDULER_LOCK.get(env.SCHEDULER_LOCK.idFromName(msg.body.postId));
+      const lockName = msg.body.action === "comment" ? `${msg.body.postId}:comment` : msg.body.postId;
+      const stub = env.SCHEDULER_LOCK.get(env.SCHEDULER_LOCK.idFromName(lockName));
       const lock = await stub.fetch("https://lock", {
         method: "POST",
         headers: { "x-job-id": msg.id, "content-type": "application/json" },
@@ -239,8 +320,9 @@ export default {
         continue;
       }
       try {
-        await publishPost(env, msg.body.postId);
-        env.METRICS.writeDataPoint({ blobs: ["publish"], doubles: [1], indexes: [msg.body.postId] });
+        if (msg.body.action === "comment") await publishComments(env, msg.body.postId);
+        else await publishPost(env, msg.body.postId);
+        env.METRICS.writeDataPoint({ blobs: [msg.body.action || "publish"], doubles: [1], indexes: [msg.body.postId] });
         msg.ack();
       } catch {
         msg.retry();

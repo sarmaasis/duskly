@@ -18,4 +18,14 @@
   --color-line: #e4e4e7;
   --color-line-strong: #e8e8e3;
   --color-chip: #f7f7f4;
+
+  --animate-marquee: marquee 40s linear infinite;
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }

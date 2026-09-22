@@ -21,7 +21,7 @@ const NAV = [
   standalone: true,
   imports: [RouterOutlet],
   template: `
-    <div class="h-dvh bg-[#fcfcf9] font-sans text-[#121417] dark:bg-zinc-950 dark:text-zinc-100">
+    <div class="h-dvh overflow-hidden bg-[#fcfcf9] font-sans text-[#121417] dark:bg-zinc-950 dark:text-zinc-100">
       <aside class="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-[#e8e8e3] bg-white dark:border-zinc-800 dark:bg-zinc-900 md:flex" aria-label="Sidebar">
         <div class="flex min-h-0 flex-1 flex-col">
           <div class="flex h-14 shrink-0 items-center justify-between border-b border-[#e8e8e3] px-4 dark:border-zinc-800">
@@ -88,7 +88,7 @@ const NAV = [
                             <path d="M12 20V10M18 20V4M6 20v-4" />
                           }
                           @case ('/app/settings') {
-                            <circle cx="12" cy="12" r="3" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+                            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" />
                           }
                           @case ('/app/billing') {
                             <rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" />
@@ -118,7 +118,7 @@ const NAV = [
         </div>
       </aside>
 
-      <div class="flex h-dvh min-w-0 flex-col md:ml-64">
+      <div class="flex h-dvh min-h-0 min-w-0 flex-col md:ml-64">
         <header class="sticky top-0 z-20 hidden h-14 shrink-0 items-center justify-between gap-4 border-b border-[#e8e8e3] bg-white/95 px-5 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-900/95 md:flex">
           <div class="min-w-0">
             <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a1a1aa] dark:text-zinc-500">{{ sectionLabel() }}</p>
@@ -177,7 +177,7 @@ const NAV = [
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
                   }
                   @case ('/app/settings') {
-                    <circle cx="12" cy="12" r="3" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2" />
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" /><circle cx="12" cy="12" r="3" />
                   }
                 }
               </svg>

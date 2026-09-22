@@ -18,7 +18,7 @@ import { api, type PlanSnapshot } from "../lib/api";
       }
 
       <form class="mb-6 flex flex-wrap gap-2 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900" (ngSubmit)="invite()">
-        <input [(ngModel)]="email" name="email" type="email" required placeholder="teammate@studio.com" class="h-10 min-w-[14rem] flex-1 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm outline-none focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+        <input [(ngModel)]="email" name="email" type="email" required placeholder="teammate@studio.com" class="h-10 min-w-[14rem] flex-1 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm outline-none transition-colors focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
         <button type="submit" class="h-10 rounded-full bg-cta px-5 text-xs font-semibold text-white hover:bg-cta-hover">Invite</button>
       </form>
 

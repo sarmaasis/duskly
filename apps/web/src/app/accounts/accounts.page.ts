@@ -1,99 +1,429 @@
-import { Component, signal, OnInit } from "@angular/core";
+import { Component, computed, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute } from "@angular/router";
-import { api, apiBase } from "../lib/api";
+import { api, apiBase, type PlanSnapshot } from "../lib/api";
+import { DkChoice, DkSelect, FIELD } from "../ui/forms";
+
+type NetMeta = { label: string; group: "social" | "blogs" | "chat"; connect: "oauth" | "token" };
+type AccountRow = {
+  id: string;
+  network: string;
+  handle: string;
+  status: string;
+  groupId: string | null;
+  slackChannelId?: string | null;
+  slackChannelName?: string | null;
+  needsSlackChannel?: boolean;
+};
+type Company = { id: string; name: string; accountIds: string[] };
+type SlackChannel = { id: string; name: string; isPrivate: boolean };
+
+const FALLBACK_META: Record<string, NetMeta> = {
+  linkedin: { label: "LinkedIn", group: "social", connect: "oauth" },
+  x: { label: "X", group: "social", connect: "oauth" },
+  instagram: { label: "Instagram", group: "social", connect: "oauth" },
+  threads: { label: "Threads", group: "social", connect: "oauth" },
+  facebook: { label: "Facebook", group: "social", connect: "oauth" },
+  youtube: { label: "YouTube", group: "social", connect: "oauth" },
+  reddit: { label: "Reddit", group: "social", connect: "oauth" },
+  bluesky: { label: "Bluesky", group: "social", connect: "token" },
+  mastodon: { label: "Mastodon", group: "social", connect: "oauth" },
+  hashnode: { label: "Hashnode", group: "blogs", connect: "token" },
+  medium: { label: "Medium", group: "blogs", connect: "token" },
+  devto: { label: "dev.to", group: "blogs", connect: "token" },
+  telegram: { label: "Telegram", group: "chat", connect: "token" },
+  discord: { label: "Discord", group: "chat", connect: "token" },
+  slack: { label: "Slack", group: "chat", connect: "oauth" },
+};
 
 @Component({
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, DkChoice, DkSelect],
   template: `
-    <div class="mx-auto max-w-5xl">
-      <div class="mb-6">
-        <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Workspace</p>
-        <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Accounts</h1>
-        <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">Connect channels. Bluesky uses an app password; X, LinkedIn, and Mastodon use OAuth when client credentials are configured on the API.</p>
+    <div class="mx-auto max-w-6xl">
+      <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Workspace</p>
+          <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Accounts</h1>
+          <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">
+            Connect channels, split them by company for agency clients, and stay under your plan cap. Missing credentials keep posts queued.
+          </p>
+        </div>
+        <div class="rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
+          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Channels</p>
+          <p class="mt-0.5 font-mono text-lg font-bold tabular-nums dark:text-zinc-50">
+            {{ usage()?.used?.['channels'] ?? accounts().length }}/{{ usage()?.limits?.channels ?? "—" }}
+          </p>
+          <p class="font-mono text-[10px] text-[#a1a1aa]">{{ usage()?.plan || "plan" }} cap</p>
+        </div>
       </div>
 
       @if (msg()) {
         <p class="mb-4 rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ msg() }}</p>
       }
 
-      <form class="mb-6 grid gap-3 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] sm:grid-cols-2 dark:border-zinc-700 dark:bg-zinc-900" (ngSubmit)="connect()">
-        <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Network
-          <select [(ngModel)]="network" name="network" class="mt-1 h-10 w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm font-normal outline-none focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
-            @for (n of networks(); track n) { <option [value]="n">{{ n }}</option> }
-          </select>
-        </label>
-        @if (network === 'bluesky') {
-          <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Handle
-            <input [(ngModel)]="handle" name="handle" required class="mt-1 h-10 w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm font-normal outline-none focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+      <section class="mb-6 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
+        <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Companies</p>
+            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">
+              Agency clients live here — each company owns its channels. Same model on every plan; Ultimate is sized for many clients.
+            </p>
+          </div>
+        </div>
+        <form class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end" (ngSubmit)="createCompany()">
+          <label class="min-w-0 flex-1 text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">New company
+            <input [(ngModel)]="companyName" name="companyName" placeholder="Acme Co" [class]="'mt-1 ' + field" />
           </label>
-          <label class="text-[11px] font-semibold text-[#71717a] sm:col-span-2 dark:text-zinc-400">App password
-            <input [(ngModel)]="appPassword" name="pass" type="password" class="mt-1 h-10 w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm font-normal outline-none focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+          <button type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-4 text-sm font-semibold text-[#121417] hover:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+            Add company
+          </button>
+        </form>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+            [class.border-[#121417]]="filterCompany()===''"
+            [class.bg-[#121417]]="filterCompany()===''"
+            [class.text-white]="filterCompany()===''"
+            [class.border-[#e8e8e3]]="filterCompany()!==''"
+            [class.bg-white]="filterCompany()!==''"
+            [class.text-[#52525b]]="filterCompany()!==''"
+            (click)="filterCompany.set('')"
+          >All companies</button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+            [class.border-[#121417]]="filterCompany()==='__none__'"
+            [class.bg-[#121417]]="filterCompany()==='__none__'"
+            [class.text-white]="filterCompany()==='__none__'"
+            [class.border-[#e8e8e3]]="filterCompany()!=='__none__'"
+            [class.bg-white]="filterCompany()!=='__none__'"
+            [class.text-[#52525b]]="filterCompany()!=='__none__'"
+            (click)="filterCompany.set('__none__')"
+          >Unassigned</button>
+          @for (c of companies(); track c.id) {
+            <button
+              type="button"
+              class="inline-flex items-center rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              [class.border-[#121417]]="filterCompany()===c.id"
+              [class.bg-[#121417]]="filterCompany()===c.id"
+              [class.text-white]="filterCompany()===c.id"
+              [class.border-[#e8e8e3]]="filterCompany()!==c.id"
+              [class.bg-white]="filterCompany()!==c.id"
+              [class.text-[#52525b]]="filterCompany()!==c.id"
+              (click)="filterCompany.set(c.id)"
+            >{{ c.name }} · {{ c.accountIds.length }}</button>
+          }
+        </div>
+      </section>
+
+      <form class="mb-6 space-y-5 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900" (ngSubmit)="connect()">
+        @for (g of netGroups; track g.id) {
+          <div>
+            <p class="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">{{ g.label }}</p>
+            <div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-4" role="radiogroup" [attr.aria-label]="g.label">
+              @for (n of networksIn(g.id); track n) {
+                <dk-choice [value]="n" [selected]="network===n" (pick)="pickNetwork($event)">
+                  <span class="flex items-center gap-2">
+                    <img [src]="logoSrc(n)" [alt]="labelOf(n)" width="16" height="16" class="size-4 shrink-0 object-contain" />
+                    <span>{{ labelOf(n) }}</span>
+                  </span>
+                </dk-choice>
+              }
+            </div>
+          </div>
+        }
+
+        @if (companies().length) {
+          <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Assign to company
+            <dk-select [(ngModel)]="connectCompanyId" name="connectCompany" class="mt-1 block">
+              <option value="">Unassigned</option>
+              @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+              }
+            </dk-select>
           </label>
-          <button type="submit" class="inline-flex h-10 items-center justify-center rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover sm:col-span-2">Connect Bluesky</button>
+        }
+
+        @if (isToken()) {
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">
+              {{ handleLabel() }}
+              <input [(ngModel)]="handle" name="handle" required [class]="'mt-1 ' + field" />
+            </label>
+
+            @if (network === 'bluesky') {
+              <label class="text-[11px] font-semibold text-[#71717a] sm:col-span-2 dark:text-zinc-400">App password
+                <input [(ngModel)]="appPassword" name="pass" type="password" [class]="'mt-1 ' + field" />
+              </label>
+            }
+            @if (network === 'devto' || network === 'hashnode') {
+              <label class="text-[11px] font-semibold text-[#71717a] sm:col-span-2 dark:text-zinc-400">API key
+                <input [(ngModel)]="apiKey" name="apiKey" type="password" [class]="'mt-1 ' + field" />
+              </label>
+            }
+            @if (network === 'hashnode') {
+              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Publication ID
+                <input [(ngModel)]="publicationId" name="pub" [class]="'mt-1 ' + field" />
+              </label>
+            }
+            @if (network === 'medium') {
+              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Integration token
+                <input [(ngModel)]="integrationToken" name="med" type="password" [class]="'mt-1 ' + field" />
+              </label>
+              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Author ID
+                <input [(ngModel)]="authorId" name="author" [class]="'mt-1 ' + field" />
+              </label>
+            }
+            @if (network === 'telegram') {
+              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Bot token
+                <input [(ngModel)]="botToken" name="bot" type="password" [class]="'mt-1 ' + field" />
+              </label>
+              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Chat ID
+                <input [(ngModel)]="chatId" name="chat" [class]="'mt-1 ' + field" />
+              </label>
+            }
+            @if (network === 'discord') {
+              <label class="text-[11px] font-semibold text-[#71717a] sm:col-span-2 dark:text-zinc-400">Webhook URL
+                <input [(ngModel)]="webhookUrl" name="hook" type="url" [class]="'mt-1 ' + field" />
+              </label>
+            }
+          </div>
+          <button type="submit" class="inline-flex h-10 items-center justify-center rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover">
+            Connect {{ labelOf(network) }}
+          </button>
         } @else {
           @if (network === 'mastodon') {
-            <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Instance URL
-              <input [(ngModel)]="mastodonInstance" name="instance" class="mt-1 h-10 w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm font-normal outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+            <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Instance URL
+              <input [(ngModel)]="mastodonInstance" name="instance" [class]="'mt-1 ' + field" />
             </label>
           }
-          <button type="button" (click)="oauthConnect()" class="inline-flex h-10 items-center justify-center rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover sm:col-span-2">
-            Connect with {{ network }} OAuth
+          @if (network === 'reddit') {
+            <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Default subreddit (optional)
+              <input [(ngModel)]="subreddit" name="sub" placeholder="r/something" [class]="'mt-1 ' + field" />
+            </label>
+          }
+          <button type="button" (click)="oauthConnect()" class="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover">
+            @if (network === 'slack') {
+              <img src="/assets/logos/slack.svg" alt="" width="16" height="16" class="size-4 object-contain brightness-0 invert" aria-hidden="true" />
+              Add to Slack
+            } @else {
+              Connect with {{ labelOf(network) }} OAuth
+            }
           </button>
           @if (!oauthReady()[network]) {
-            <p class="text-[12px] text-amber-700 sm:col-span-2 dark:text-amber-400">API OAuth credentials for {{ network }} are not configured — the start endpoint will return a clear config error (no fake success).</p>
+            <p class="text-[12px] text-amber-700 dark:text-amber-400">
+              @if (network === 'slack') {
+                SLACK_CLIENT_ID / SLACK_CLIENT_SECRET are not set on the API — Add to Slack will return a clear config error. Posts stay queued until env is configured.
+              } @else {
+                API OAuth credentials for {{ labelOf(network) }} are not configured — the start endpoint returns a clear config error (no fake success). Posts stay queued until env is set.
+              }
+            </p>
           }
         }
       </form>
 
-      <div class="space-y-2">
-        @for (a of accounts(); track a.id) {
-          <div class="flex items-center justify-between rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <div>
-              <p class="text-[13px] font-semibold dark:text-zinc-100">{{ a.handle }}</p>
-              <p class="font-mono text-[11px] text-[#a1a1aa] dark:text-zinc-500">{{ a.network }} · {{ a.status }}</p>
-            </div>
-            <button type="button" (click)="remove(a.id)" class="text-xs font-semibold text-red-600">Remove</button>
+      <section class="rounded-xl border border-[#e8e8e3] bg-white shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
+        <div class="flex flex-col gap-3 border-b border-[#e8e8e3] p-4 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-700">
+          <div>
+            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Channel board</p>
+            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">Dense list for Pro/Ultimate scale — search and filter, no fake publish.</p>
           </div>
-        } @empty {
-          <div class="rounded-xl border border-[#e8e8e3] bg-white p-6 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">No channels</p>
-            <h2 class="mt-2 font-display text-lg font-semibold dark:text-zinc-100">Connect your first account</h2>
-            <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">Bluesky, X, LinkedIn, or Mastodon — then compose can cross-post.</p>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              [ngModel]="boardQuery()"
+              (ngModelChange)="boardQuery.set($event)"
+              name="boardQuery"
+              placeholder="Search handle…"
+              [class]="'sm:w-44 ' + field"
+            />
+            <dk-select [ngModel]="filterNetwork()" (ngModelChange)="filterNetwork.set($event)" name="filterNetwork" class="sm:w-40">
+              <option value="">All networks</option>
+              @for (n of networks(); track n) {
+                <option [value]="n">{{ labelOf(n) }}</option>
+              }
+            </dk-select>
           </div>
-        }
-      </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[36rem] text-left text-[13px]">
+            <thead>
+              <tr class="border-b border-[#e8e8e3] bg-[#f7f7f4] font-mono text-[10px] uppercase tracking-wider text-[#92969b] dark:border-zinc-700 dark:bg-zinc-800/80">
+                <th class="px-3 py-2 font-semibold">Channel</th>
+                <th class="px-3 py-2 font-semibold">Network</th>
+                <th class="px-3 py-2 font-semibold">Company</th>
+                <th class="px-3 py-2 font-semibold">Slack destination</th>
+                <th class="px-3 py-2 font-semibold">Status</th>
+                <th class="px-3 py-2 font-semibold"></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (a of filteredAccounts(); track a.id) {
+                <tr class="border-b border-[#e8e8e3] last:border-0 dark:border-zinc-800">
+                  <td class="px-3 py-2">
+                    <div class="flex items-center gap-2.5">
+                      <img [src]="logoSrc(a.network)" [alt]="labelOf(a.network)" width="18" height="18" class="size-[18px] shrink-0 object-contain" />
+                      <span class="font-semibold dark:text-zinc-100">{{ a.handle }}</span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-2 text-[#63676c] dark:text-zinc-400">{{ labelOf(a.network) }}</td>
+                  <td class="px-3 py-2">
+                    <select
+                      class="h-8 max-w-[10rem] appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-[12px] outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      [ngModel]="a.groupId || ''"
+                      (ngModelChange)="assignCompany(a.id, $event)"
+                      [name]="'co-' + a.id"
+                    >
+                      <option value="">Unassigned</option>
+                      @for (c of companies(); track c.id) {
+                        <option [value]="c.id">{{ c.name }}</option>
+                      }
+                    </select>
+                  </td>
+                  <td class="px-3 py-2">
+                    @if (a.network === 'slack') {
+                      <select
+                        class="h-8 max-w-[12rem] appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-[12px] outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                        [ngModel]="a.slackChannelId || ''"
+                        (focus)="loadSlackChannels(a.id)"
+                        (ngModelChange)="pickSlackChannel(a.id, $event)"
+                        [name]="'slack-' + a.id"
+                      >
+                        <option value="">{{ a.needsSlackChannel ? 'Pick a channel…' : (a.slackChannelName ? '#' + a.slackChannelName : 'Change channel…') }}</option>
+                        @for (ch of slackChannels()[a.id] || []; track ch.id) {
+                          <option [value]="ch.id">#{{ ch.name }}</option>
+                        }
+                      </select>
+                    } @else {
+                      <span class="font-mono text-[11px] text-[#a1a1aa]">—</span>
+                    }
+                  </td>
+                  <td class="px-3 py-2 font-mono text-[11px] text-[#a1a1aa]">{{ a.status }}</td>
+                  <td class="px-3 py-2 text-right">
+                    <button type="button" (click)="remove(a.id)" class="text-xs font-semibold text-red-600">Remove</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="6" class="px-4 py-8 text-center">
+                    <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">No channels</p>
+                    <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">Connect a network above, or clear filters.</p>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="border-t border-[#e8e8e3] px-4 py-2 font-mono text-[10px] text-[#a1a1aa] dark:border-zinc-700">
+          Showing {{ filteredAccounts().length }} of {{ accounts().length }}
+        </p>
+      </section>
     </div>
   `,
 })
 export class AccountsPage implements OnInit {
-  accounts = signal<{ id: string; network: string; handle: string; status: string }[]>([]);
-  networks = signal<string[]>(["bluesky", "x", "linkedin", "mastodon"]);
-  oauthReady = signal<Record<string, boolean>>({ x: false, linkedin: false, mastodon: false, bluesky: true });
-  network = "bluesky";
+  readonly field = FIELD;
+  readonly netGroups = [
+    { id: "social" as const, label: "Social" },
+    { id: "blogs" as const, label: "Blogs" },
+    { id: "chat" as const, label: "Chat" },
+  ];
+  accounts = signal<AccountRow[]>([]);
+  companies = signal<Company[]>([]);
+  slackChannels = signal<Record<string, SlackChannel[]>>({});
+  networks = signal<string[]>(Object.keys(FALLBACK_META));
+  meta = signal<Record<string, NetMeta>>(FALLBACK_META);
+  oauthReady = signal<Record<string, boolean>>({});
+  usage = signal<PlanSnapshot | null>(null);
+  network = "linkedin";
   handle = "";
   appPassword = "";
+  apiKey = "";
+  integrationToken = "";
+  botToken = "";
+  chatId = "";
+  webhookUrl = "";
+  publicationId = "";
+  authorId = "";
+  subreddit = "";
   mastodonInstance = "https://mastodon.social";
+  connectCompanyId = "";
+  companyName = "";
+  boardQuery = signal("");
+  filterNetwork = signal("");
+  filterCompany = signal("");
   workspaceId = "";
   msg = signal("");
 
+  filteredAccounts = computed(() => {
+    const q = this.boardQuery().trim().toLowerCase();
+    const net = this.filterNetwork();
+    const co = this.filterCompany();
+    return this.accounts().filter((a) => {
+      if (net && a.network !== net) return false;
+      if (co === "__none__" && a.groupId) return false;
+      if (co && co !== "__none__" && a.groupId !== co) return false;
+      if (q && !a.handle.toLowerCase().includes(q) && !this.labelOf(a.network).toLowerCase().includes(q)) return false;
+      return true;
+    });
+  });
+
   constructor(private route: ActivatedRoute) {}
+
+  logoSrc(n: string) {
+    return `/assets/logos/${n}.svg`;
+  }
+
+  networksIn(group: "social" | "blogs" | "chat") {
+    return this.networks().filter((n) => (this.meta()[n] || FALLBACK_META[n])?.group === group);
+  }
+
+  labelOf(n: string) {
+    return this.meta()[n]?.label || FALLBACK_META[n]?.label || n;
+  }
+
+  isToken() {
+    return (this.meta()[this.network] || FALLBACK_META[this.network])?.connect === "token";
+  }
+
+  handleLabel() {
+    if (this.network === "discord") return "Label";
+    if (this.network === "telegram") return "Bot / channel label";
+    if (this.network === "reddit") return "Handle";
+    return "Handle / display name";
+  }
+
+  pickNetwork(n: string) {
+    this.network = n;
+  }
 
   async ngOnInit() {
     try {
-      const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
+      const me = await api<{ workspace: { id: string }; usage: PlanSnapshot }>("/v1/workspaces/me");
       this.workspaceId = me.workspace.id;
+      this.usage.set(me.usage);
       const oauth = this.route.snapshot.queryParamMap.get("oauth");
-      if (oauth === "ok") this.msg.set("OAuth connected");
-      else if (oauth === "error" || oauth === "token_failed") this.msg.set("OAuth failed — credentials or consent rejected");
+      const oauthNetwork = this.route.snapshot.queryParamMap.get("network");
+      if (oauth === "ok") {
+        this.msg.set(
+          oauthNetwork === "slack"
+            ? "Slack workspace connected — pick a channel on the board to finish."
+            : "OAuth connected",
+        );
+      } else if (oauth === "error" || oauth === "token_failed") this.msg.set("OAuth failed — credentials or consent rejected");
       else if (oauth === "expired") this.msg.set("OAuth state expired — try again");
       await this.reload();
       try {
         const st = await api<Record<string, boolean>>(`/v1/accounts/oauth/status?workspaceId=${this.workspaceId}`);
-        this.oauthReady.set({ ...this.oauthReady(), ...st });
+        this.oauthReady.set(st);
       } catch {
         /* ignore */
+      }
+      const accountId = this.route.snapshot.queryParamMap.get("accountId");
+      if (oauth === "ok" && oauthNetwork === "slack" && accountId) {
+        await this.loadSlackChannels(accountId);
       }
     } catch {
       this.msg.set("Sign in to connect accounts.");
@@ -101,17 +431,112 @@ export class AccountsPage implements OnInit {
   }
 
   async reload() {
-    const data = await api<{ accounts: { id: string; network: string; handle: string; status: string }[]; networks: string[] }>(
-      `/v1/accounts?workspaceId=${this.workspaceId}`,
+    const [data, groups, me] = await Promise.all([
+      api<{
+        accounts: AccountRow[];
+        networks: string[];
+        meta?: Record<string, NetMeta>;
+      }>(`/v1/accounts?workspaceId=${this.workspaceId}`),
+      api<{ groups: Company[] }>(`/v1/org/groups?workspaceId=${this.workspaceId}`),
+      api<{ usage: PlanSnapshot }>("/v1/workspaces/me").catch(() => null),
+    ]);
+    this.accounts.set(
+      (data.accounts || []).map((a) => ({
+        id: a.id,
+        network: a.network,
+        handle: a.handle,
+        status: a.status,
+        groupId: a.groupId ?? null,
+        slackChannelId: a.slackChannelId ?? null,
+        slackChannelName: a.slackChannelName ?? null,
+        needsSlackChannel: !!a.needsSlackChannel,
+      })),
     );
-    this.accounts.set(data.accounts);
-    this.networks.set(data.networks);
+    this.networks.set(data.networks?.length ? data.networks : Object.keys(FALLBACK_META));
+    if (data.meta) this.meta.set(data.meta);
+    this.companies.set(
+      (groups.groups || []).map((g) => ({
+        id: g.id,
+        name: g.name,
+        accountIds: g.accountIds || [],
+      })),
+    );
+    if (me?.usage) this.usage.set(me.usage);
   }
 
   oauthConnect() {
+    if (!this.oauthReady()[this.network]) {
+      this.msg.set(
+        this.network === "slack"
+          ? "SLACK_CLIENT_ID / SLACK_CLIENT_SECRET are not configured on the API."
+          : `OAuth for ${this.labelOf(this.network)} is not configured on the API.`,
+      );
+      return;
+    }
     const q = new URLSearchParams({ workspaceId: this.workspaceId });
     if (this.network === "mastodon") q.set("instance", this.mastodonInstance);
+    if (this.connectCompanyId) q.set("groupId", this.connectCompanyId);
     window.location.href = `${apiBase()}/v1/accounts/oauth/${this.network}/start?${q}`;
+  }
+
+  async loadSlackChannels(accountId: string) {
+    if (this.slackChannels()[accountId]?.length) return;
+    try {
+      const data = await api<{ channels: SlackChannel[] }>(
+        `/v1/accounts/${accountId}/slack/channels?workspaceId=${this.workspaceId}`,
+      );
+      this.slackChannels.update((m) => ({ ...m, [accountId]: data.channels || [] }));
+    } catch (e: unknown) {
+      const err = e as { body?: { message?: string }; message?: string };
+      this.msg.set(err.body?.message || err.message || "Could not load Slack channels");
+    }
+  }
+
+  async pickSlackChannel(accountId: string, channelId: string) {
+    if (!channelId) return;
+    const ch = (this.slackChannels()[accountId] || []).find((c) => c.id === channelId);
+    try {
+      await api(`/v1/accounts/${accountId}`, {
+        method: "PATCH",
+        json: {
+          workspaceId: this.workspaceId,
+          slackChannelId: channelId,
+          slackChannelName: ch?.name,
+        },
+      });
+      this.msg.set(ch ? `Slack posts will go to #${ch.name}` : "Slack channel saved");
+      await this.reload();
+    } catch (e: unknown) {
+      const err = e as { body?: { message?: string }; message?: string };
+      this.msg.set(err.body?.message || err.message || "Could not save Slack channel");
+    }
+  }
+
+  async createCompany() {
+    const name = this.companyName.trim();
+    if (!name) return;
+    try {
+      await api("/v1/org/groups", { method: "POST", json: { workspaceId: this.workspaceId, name } });
+      this.companyName = "";
+      this.msg.set(`Company “${name}” created`);
+      await this.reload();
+    } catch (e: unknown) {
+      const err = e as { body?: { message?: string }; message?: string };
+      this.msg.set(err.body?.message || err.message || "Failed to create company");
+    }
+  }
+
+  async assignCompany(accountId: string, groupId: string) {
+    try {
+      await api(`/v1/accounts/${accountId}`, {
+        method: "PATCH",
+        json: { workspaceId: this.workspaceId, groupId: groupId || null },
+      });
+      await this.reload();
+    } catch (e: unknown) {
+      const err = e as { body?: { message?: string }; message?: string };
+      this.msg.set(err.body?.message || err.message || "Assign failed");
+    }
   }
 
   async connect() {
@@ -123,10 +548,26 @@ export class AccountsPage implements OnInit {
           network: this.network,
           handle: this.handle,
           appPassword: this.appPassword || undefined,
+          apiKey: this.apiKey || undefined,
+          integrationToken: this.integrationToken || undefined,
+          botToken: this.botToken || undefined,
+          chatId: this.chatId || undefined,
+          webhookUrl: this.webhookUrl || undefined,
+          publicationId: this.publicationId || undefined,
+          authorId: this.authorId || undefined,
+          subreddit: this.subreddit || undefined,
+          groupId: this.connectCompanyId || null,
         },
       });
       this.handle = "";
       this.appPassword = "";
+      this.apiKey = "";
+      this.integrationToken = "";
+      this.botToken = "";
+      this.chatId = "";
+      this.webhookUrl = "";
+      this.publicationId = "";
+      this.authorId = "";
       this.msg.set("Channel connected");
       await this.reload();
     } catch (e: unknown) {

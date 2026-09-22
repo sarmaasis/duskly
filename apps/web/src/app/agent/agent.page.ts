@@ -15,7 +15,7 @@ import { api } from "../lib/api";
 
       <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
         <p class="mb-3 font-mono text-[10px] uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Prompt</p>
-        <textarea [(ngModel)]="prompt" rows="4" class="w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 py-2 text-sm outline-none focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" placeholder="Announce our Friday drop…"></textarea>
+        <textarea [(ngModel)]="prompt" rows="4" class="w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 py-2 text-sm outline-none transition-colors focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" placeholder="Announce our Friday drop…"></textarea>
         <button type="button" (click)="run()" class="mt-3 inline-flex h-10 items-center rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover">Run agent</button>
       </section>
 

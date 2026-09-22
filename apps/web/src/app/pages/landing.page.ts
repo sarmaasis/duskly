@@ -163,19 +163,26 @@ const FAQS = [
               </a>
               <a href="#pipeline" class="inline-flex w-full items-center justify-center rounded-full border border-[#e4e4e7] bg-white px-5 py-3 text-sm font-medium text-[#09090b] hover:bg-[#f4f4f1] sm:w-auto">See how it works</a>
             </div>
-            <div class="mb-8 inline-flex flex-wrap items-center justify-center gap-2.5">
-              @for (pill of pills; track pill.label) {
-                <div class="inline-flex items-center gap-2 rounded-full border border-[#e4e4e7] bg-white px-3 py-1.5">
-                  <span class="font-mono text-xs font-bold">{{ pill.value }}</span>
-                  <span class="font-mono text-[10px] uppercase tracking-wider text-[#71717a]">{{ pill.label }}</span>
+            <div class="mx-auto max-w-4xl pb-4">
+              <p class="mb-4 font-mono text-[10px] font-semibold uppercase tracking-widest text-[#92969b]">Works with</p>
+              <div class="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+                <div class="flex w-max animate-marquee items-center">
+                  @for (pass of [0, 1]; track pass) {
+                    <div class="flex items-center gap-10 px-5" [attr.aria-hidden]="pass === 1 ? true : null">
+                      @for (logo of logos; track logo.slug) {
+                        <img
+                          [src]="'/assets/logos/' + logo.slug + '.svg'"
+                          [alt]="logo.name"
+                          [attr.aria-label]="logo.name"
+                          width="28"
+                          height="28"
+                          class="size-7 shrink-0 object-contain opacity-90"
+                        />
+                      }
+                    </div>
+                  }
                 </div>
-              }
-            </div>
-            <div class="inline-flex flex-wrap items-center justify-center gap-2.5 pb-4 font-mono text-xs text-[#52525b]">
-              <span>Built for:</span>
-              @for (t of triggers; track t) {
-                <span class="rounded border border-[#e4e4e7] bg-white px-2 py-0.5 font-semibold text-[#09090b]">{{ t }}</span>
-              }
+              </div>
             </div>
           </div>
 
@@ -556,14 +563,23 @@ export class LandingPage {
     { label: "GitHub", href: "https://github.com/sarmaasis/duskly" },
   ];
 
-  readonly pills = [
-    { value: "Self-host", label: "free forever" },
-    { value: "$29+", label: "Cloud plans" },
-    { value: "Calendar", label: "month · agenda" },
-    { value: "Workers", label: "Cloudflare native" },
+  readonly logos = [
+    { slug: "linkedin", name: "LinkedIn" },
+    { slug: "x", name: "X" },
+    { slug: "instagram", name: "Instagram" },
+    { slug: "threads", name: "Threads" },
+    { slug: "facebook", name: "Facebook" },
+    { slug: "youtube", name: "YouTube" },
+    { slug: "reddit", name: "Reddit" },
+    { slug: "bluesky", name: "Bluesky" },
+    { slug: "mastodon", name: "Mastodon" },
+    { slug: "hashnode", name: "Hashnode" },
+    { slug: "medium", name: "Medium" },
+    { slug: "devto", name: "dev.to" },
+    { slug: "telegram", name: "Telegram" },
+    { slug: "discord", name: "Discord" },
+    { slug: "slack", name: "Slack" },
   ];
-
-  readonly triggers = ["Compose", "Calendar", "Cross-post"];
 
   readonly tiles = [
     { title: "Smart agent", body: "Draft and schedule from a brief. Agent runs under your plan quotas." },

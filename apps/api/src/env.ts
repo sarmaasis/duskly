@@ -48,4 +48,12 @@ export type Env = {
   MASTODON_CLIENT_ID?: string;
   MASTODON_CLIENT_SECRET?: string;
   MASTODON_INSTANCE?: string;
+  META_APP_ID?: string;
+  META_APP_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  REDDIT_CLIENT_ID?: string;
+  REDDIT_CLIENT_SECRET?: string;
+  SLACK_CLIENT_ID?: string;
+  SLACK_CLIENT_SECRET?: string;
 };

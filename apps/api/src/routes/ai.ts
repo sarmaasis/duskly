@@ -108,7 +108,7 @@ aiRoutes.post("/video", async (c) => {
     await consumeQuota(c.env, body.workspaceId, "aiVideos", 1);
     await consumeQuota(c.env, body.workspaceId, "aiClipMinutes", body.minutes);
 
-    const bytes = makePromptWebm(body.prompt, body.minutes * 60);
+    const bytes = await makePromptWebm(c.env, body.prompt, body.minutes * 60);
     const id = crypto.randomUUID();
     const key = `${body.workspaceId}/${id}-clip.webm`;
     await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "video/webm" } });
@@ -124,6 +124,7 @@ aiRoutes.post("/video", async (c) => {
         ai: true,
         minutes: body.minutes,
         prompt: body.prompt,
+        durationSec: body.minutes * 60,
         playable: "video/webm",
       }),
     });
