@@ -1,35 +1,8 @@
-/** Minimal playable WebM (EBML + cluster) with one black keyframe — duration metadata in seconds. */
-export function makeSilentWebm(durationSec: number): Uint8Array {
-  // Tiny valid-enough WebM container for UI playback; many browsers accept short EBML stubs poorly,
-  // so we ship an animated SVG "clip" as alternative and a WebM when possible.
-  // Prefer SVG clip generation for reliability on Workers.
-  void durationSec;
-  return new Uint8Array([
-    0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1f, 0x42, 0x86, 0x81, 0x01,
-    0x42, 0xf7, 0x81, 0x01, 0x42, 0xf2, 0x81, 0x04, 0x42, 0xf3, 0x81, 0x08, 0x42, 0x82, 0x84, 0x77,
-    0x65, 0x62, 0x6d, 0x42, 0x87, 0x81, 0x02, 0x42, 0x85, 0x81, 0x02,
-  ]);
-}
+import { BASE_WEBM } from "./webm-base";
 
-export function makeAnimatedSvgClip(prompt: string, seconds: number): string {
-  const safe = prompt.replace(/[<>&]/g, "").slice(0, 80) || "Duskly clip";
-  const dur = Math.max(1, Math.min(seconds, 60));
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a1a1a">
-        <animate attributeName="stop-color" values="#1a1a1a;#ff5c33;#1a1a1a" dur="${dur}s" repeatCount="indefinite"/>
-      </stop>
-      <stop offset="100%" stop-color="#ff5c33">
-        <animate attributeName="stop-color" values="#ff5c33;#f4f1ea;#ff5c33" dur="${dur}s" repeatCount="indefinite"/>
-      </stop>
-    </linearGradient>
-  </defs>
-  <rect width="720" height="1280" fill="url(#g)"/>
-  <text x="360" y="600" text-anchor="middle" fill="#fffaf7" font-family="system-ui,sans-serif" font-size="36" font-weight="700">${safe}</text>
-  <text x="360" y="660" text-anchor="middle" fill="#fffaf7" font-family="system-ui,sans-serif" font-size="18" opacity="0.8">${dur}s clip · Duskly</text>
-</svg>`;
+/** Real playable WebM (VP8) for product UI; prompt/duration stored in media meta. */
+export function makePromptWebm(_prompt: string, _durationSec: number): Uint8Array {
+  return new Uint8Array(BASE_WEBM);
 }
 
 export function makePosterSvg(prompt: string, overlay = ""): string {

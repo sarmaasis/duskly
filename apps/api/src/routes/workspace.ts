@@ -133,7 +133,7 @@ accountRoutes.delete("/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-export const teamRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
+export const teamRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
 
 teamRoutes.get("/", async (c) => {
   const workspaceId = c.req.query("workspaceId");
@@ -169,12 +169,53 @@ teamRoutes.post("/invite", async (c) => {
       status: "pending",
       createdAt: new Date(),
     });
-    return c.json({ id }, 201);
+    const acceptUrl = `${c.env.WEB_ORIGIN}/invite/${id}`;
+    await c.env.EMAIL.send({
+      to: body.email.toLowerCase(),
+      from: c.env.EMAIL_FROM,
+      subject: `Join ${ws.name} on Duskly`,
+      text: `You've been invited to ${ws.name}. Open ${acceptUrl} while signed in as ${body.email.toLowerCase()} to join.`,
+      html: `<p>You've been invited to <strong>${ws.name}</strong> on Duskly.</p><p><a href="${acceptUrl}" style="color:#ff5c33">Accept invite</a></p><p>Sign in with <strong>${body.email.toLowerCase()}</strong> (same email OTP path as usual), then open the link.</p>`,
+    });
+    return c.json({ id, acceptUrl }, 201);
   } catch (e) {
     const pe = planErrorResponse(e);
     if (pe) return pe;
     throw e;
   }
+});
+
+teamRoutes.get("/invite/:id", async (c) => {
+  const db = drizzle(c.env.DB);
+  const [inv] = await db.select().from(workspaceInvite).where(eq(workspaceInvite.id, c.req.param("id"))).limit(1);
+  if (!inv || inv.status !== "pending") return c.json({ error: "not_found" }, 404);
+  const [ws] = await db.select().from(workspace).where(eq(workspace.id, inv.workspaceId)).limit(1);
+  return c.json({ id: inv.id, email: inv.email, workspaceName: ws?.name ?? "Workspace", status: inv.status });
+});
+
+teamRoutes.post("/invite/:id/accept", async (c) => {
+  const db = drizzle(c.env.DB);
+  const [inv] = await db.select().from(workspaceInvite).where(eq(workspaceInvite.id, c.req.param("id"))).limit(1);
+  if (!inv || inv.status !== "pending") return c.json({ error: "not_found" }, 404);
+  const email = (c.get("email") || "").toLowerCase();
+  if (!email || email !== inv.email.toLowerCase()) {
+    return c.json({ error: "email_mismatch", message: `Sign in as ${inv.email} to accept this invite` }, 403);
+  }
+  const userId = c.get("userId");
+  const existing = await db
+    .select()
+    .from(workspaceMember)
+    .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)))
+    .limit(1);
+  if (!existing.length) {
+    await db.insert(workspaceMember).values({
+      workspaceId: inv.workspaceId,
+      userId,
+      role: inv.role,
+    });
+  }
+  await db.update(workspaceInvite).set({ status: "accepted" }).where(eq(workspaceInvite.id, inv.id));
+  return c.json({ ok: true, workspaceId: inv.workspaceId });
 });
 
 teamRoutes.delete("/invite/:id", async (c) => {
@@ -242,6 +283,12 @@ orgRoutes.post("/signatures", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const id = crypto.randomUUID();
   const db = drizzle(c.env.DB);
+  if (body.isDefault) {
+    await db
+      .update(signature)
+      .set({ isDefault: false })
+      .where(eq(signature.workspaceId, body.workspaceId));
+  }
   await db.insert(signature).values({
     id,
     workspaceId: body.workspaceId,
@@ -251,6 +298,23 @@ orgRoutes.post("/signatures", async (c) => {
     createdAt: new Date(),
   });
   return c.json({ id }, 201);
+});
+
+orgRoutes.post("/signatures/:id/default", async (c) => {
+  const workspaceId = z.string().parse(c.req.query("workspaceId"));
+  const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  const [sig] = await db
+    .select()
+    .from(signature)
+    .where(and(eq(signature.id, id), eq(signature.workspaceId, workspaceId)))
+    .limit(1);
+  if (!sig) return c.json({ error: "not_found" }, 404);
+  await db.update(signature).set({ isDefault: false }).where(eq(signature.workspaceId, workspaceId));
+  await db.update(signature).set({ isDefault: true }).where(eq(signature.id, id));
+  return c.json({ ok: true });
 });
 
 orgRoutes.get("/sets", async (c) => {
@@ -305,7 +369,12 @@ orgRoutes.post("/plugs", async (c) => {
       scope: z.enum(["internal", "global"]),
       name: z.string(),
       triggerType: z.enum(["manual", "on_publish", "schedule"]),
-      action: z.object({ type: z.enum(["create_post"]), body: z.string(), channelId: z.string().optional() }),
+      action: z.object({
+        type: z.enum(["create_post"]),
+        body: z.string(),
+        channelId: z.string().optional(),
+        everyMinutes: z.number().int().min(15).max(10080).optional(),
+      }),
     })
     .parse(await c.req.json());
   if (body.scope === "internal") {
@@ -317,7 +386,7 @@ orgRoutes.post("/plugs", async (c) => {
   const db = drizzle(c.env.DB);
   await db.insert(plug).values({
     id,
-    workspaceId: body.scope === "internal" ? body.workspaceId! : null,
+    workspaceId: body.scope === "internal" ? body.workspaceId! : body.workspaceId ?? null,
     scope: body.scope,
     name: body.name,
     triggerType: body.triggerType,

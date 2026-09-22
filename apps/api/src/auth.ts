@@ -6,11 +6,18 @@ import { drizzle } from "drizzle-orm/d1";
 import { schema } from "./db/schema";
 import type { Env } from "./env";
 
-export function createAuth(env: Env) {
+export function createAuth(env: Env, cf?: IncomingRequestCfProperties | null) {
   const db = drizzle(env.DB, { schema });
+  const cfCtx = (cf ?? { colo: "LOCAL" }) as IncomingRequestCfProperties;
   return betterAuth(
     withCloudflare(
-      { d1: env.DB, kv: env.KV, cf: undefined },
+      {
+        d1: env.DB,
+        kv: env.KV,
+        cf: cfCtx,
+        autoDetectIpAddress: false,
+        geolocationTracking: false,
+      },
       {
         baseURL: env.BETTER_AUTH_URL,
         secret: env.BETTER_AUTH_SECRET,

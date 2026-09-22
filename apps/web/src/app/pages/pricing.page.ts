@@ -74,7 +74,7 @@ const CF_DEPLOY =
                 }
               </ul>
               <a
-                routerLink="/signin"
+                [routerLink]="plan.id ? '/app/billing' : '/signin'"
                 class="mt-6 inline-flex h-10 items-center justify-center rounded-full text-xs font-bold transition-colors"
                 [class.bg-cta]="plan.popular"
                 [class.text-white]="plan.popular"
@@ -82,7 +82,7 @@ const CF_DEPLOY =
                 [class.border]="!plan.popular"
                 [class.border-[#e4e4e7]]="!plan.popular"
                 [class.hover:bg-[#f4f4f1]]="!plan.popular"
-              >Sign in to Cloud</a>
+              >{{ plan.id ? 'Checkout on Cloud' : 'Sign in to Cloud' }}</a>
             </article>
           }
         </div>
@@ -130,6 +130,7 @@ export class PricingPage {
 
   plans = [
     {
+      id: "standard",
       name: "Standard",
       who: "Content creators",
       monthly: 29,
@@ -139,6 +140,7 @@ export class PricingPage {
       features: ["5 channels", "Unlimited posts / month", "AI copilot & picture editor", "3 AI videos · 60 clip minutes / mo", "No team seats"],
     },
     {
+      id: "team",
       name: "Team",
       who: "Small brands",
       monthly: 39,
@@ -148,6 +150,7 @@ export class PricingPage {
       features: ["10 channels", "Unlimited team members", "Unlimited posts / month", "100 AI images / mo", "10 AI videos · 120 clip minutes / mo"],
     },
     {
+      id: "pro",
       name: "Pro",
       who: "Large businesses",
       monthly: 49,
@@ -157,6 +160,7 @@ export class PricingPage {
       features: ["30 channels", "Unlimited team members", "Unlimited posts / month", "300 AI images / mo", "30 AI videos · 300 clip minutes / mo"],
     },
     {
+      id: "ultimate",
       name: "Ultimate",
       who: "Agencies",
       monthly: 99,

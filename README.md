@@ -34,6 +34,6 @@ pnpm dev:web
 
 `DUSKLY_MODE=selfhost` keeps billing off (free self-host). Set `cloud` on the hosted workers for Duskly Cloud at duskly.site.
 
-See [docs/BILLING.md](docs/BILLING.md) and [docs/DEPLOY.md](docs/DEPLOY.md).
+See [docs/DEPLOY.md](docs/DEPLOY.md). Cloud billing setup is kept in untracked internal docs for operators.
 
 Apache-2.0

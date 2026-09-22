@@ -11,6 +11,7 @@ import {
   teamRoutes,
   orgRoutes,
 } from "./routes/workspace";
+import { oauthRoutes } from "./routes/oauth";
 import { SchedulerLock } from "./do/scheduler-lock";
 import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
@@ -20,6 +21,7 @@ import { adapters, type Network } from "./lib/networks";
 import { dispatchWebhooks } from "./lib/webhooks-out";
 import { sha256Hex } from "./lib/workspace";
 import { apiToken } from "./db/schema";
+import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
 
 export { SchedulerLock };
 
@@ -35,13 +37,18 @@ app.use("*", async (c, next) => {
 });
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => {
-  const auth = createAuth(c.env);
+  const auth = createAuth(c.env, c.req.raw.cf);
   return auth.handler(c.req.raw);
 });
 
 app.post("/webhooks/dodo", (c) => handleDodoWebhook(c.req.raw, c.env));
 
 app.use("/v1/*", async (c, next) => {
+  // OAuth provider callback must not require session cookies (browser returns from X/LI/Mastodon).
+  if (c.req.path.match(/^\/v1\/accounts\/oauth\/[^/]+\/callback$/)) {
+    await next();
+    return;
+  }
   const token = c.req.header("x-api-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (token?.startsWith("dk_")) {
     const hash = await sha256Hex(token);
@@ -53,8 +60,13 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
-  const auth = createAuth(c.env);
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  const auth = createAuth(c.env, c.req.raw.cf);
+  let session: { user: { id: string; email: string } } | null = null;
+  try {
+    session = (await auth.api.getSession({ headers: c.req.raw.headers })) as typeof session;
+  } catch {
+    return c.json({ error: "unauthorized" }, 401);
+  }
   if (!session?.user) return c.json({ error: "unauthorized" }, 401);
   c.set("userId", session.user.id);
   c.set("email", session.user.email);
@@ -66,6 +78,7 @@ app.route("/v1/billing", billingRoutes);
 app.route("/v1/media", mediaRoutes);
 app.route("/v1/ai", aiRoutes);
 app.route("/v1/workspaces", workspaceRoutes);
+app.route("/v1/accounts/oauth", oauthRoutes);
 app.route("/v1/accounts", accountRoutes);
 app.route("/v1/team", teamRoutes);
 app.route("/v1/org", orgRoutes);
@@ -145,6 +158,7 @@ async function publishPost(env: Env, postId: string) {
   const dests = await db.select().from(postDestination).where(eq(postDestination.postId, postId));
   let anyPublished = false;
   let anyQueued = false;
+  const commentNotes: string[] = [];
   for (const d of dests) {
     const [acct] = await db.select().from(socialAccount).where(eq(socialAccount.id, d.socialAccountId)).limit(1);
     if (!acct) {
@@ -161,12 +175,22 @@ async function publishPost(env: Env, postId: string) {
       handle: acct.handle,
       token: acct.tokenCipher,
       credentials: creds,
+      commentBody: post.commentBody,
     });
     if ("remoteId" in result) {
       anyPublished = true;
+      const noteParts = [
+        result.commentRemoteId ? `comment:${result.commentRemoteId}` : null,
+        result.commentSkipped ? `comment_skip:${result.commentSkipped}` : null,
+      ].filter(Boolean);
+      if (result.commentSkipped) commentNotes.push(`${acct.network}: ${result.commentSkipped}`);
       await db
         .update(postDestination)
-        .set({ status: "published", remoteId: result.remoteId, error: null })
+        .set({
+          status: "published",
+          remoteId: result.remoteId,
+          error: noteParts.length ? noteParts.join("; ") : null,
+        })
         .where(eq(postDestination.id, d.id));
     } else {
       anyQueued = true;
@@ -186,7 +210,12 @@ async function publishPost(env: Env, postId: string) {
     })
     .where(eq(posts.id, postId));
   if (anyPublished) {
-    await dispatchWebhooks(env, post.workspaceId, "post.published", { postId, body: post.body });
+    await dispatchWebhooks(env, post.workspaceId, "post.published", {
+      postId,
+      body: post.body,
+      commentNotes,
+    });
+    await runOnPublishPlugs(env, post.workspaceId, post.authorId);
   }
 }
 
@@ -195,6 +224,7 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(claimDue(env));
     ctx.waitUntil(pollRss(env));
+    ctx.waitUntil(runSchedulePlugs(env));
   },
   async queue(batch: MessageBatch<{ postId: string }>, env: Env) {
     for (const msg of batch.messages) {

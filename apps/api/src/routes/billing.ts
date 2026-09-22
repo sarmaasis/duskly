@@ -8,25 +8,38 @@ import { isPlanId, type PlanId } from "../lib/plans";
 
 export const billingRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
 
-function productId(env: Env, plan: PlanId, interval: "month" | "year") {
+function productId(env: Env, plan: PlanId, interval: "month" | "year"): string | null {
   const key = `DODO_${plan.toUpperCase()}_${interval === "year" ? "YEARLY" : "MONTHLY"}_PRODUCT_ID` as keyof Env;
   const fromEnv = env[key];
-  if (typeof fromEnv === "string" && fromEnv) return fromEnv;
-  // Fallback to Pro IDs so checkout still works while other product IDs are wired
-  return interval === "year" ? env.DODO_PRO_YEARLY_PRODUCT_ID : env.DODO_PRO_MONTHLY_PRODUCT_ID;
+  if (typeof fromEnv === "string" && fromEnv.trim()) return fromEnv.trim();
+  return null;
 }
 
 billingRoutes.post("/checkout", async (c) => {
-  if (!isCloud(c.env)) return c.json({ error: "selfhost" }, 404);
+  if (!isCloud(c.env)) return c.json({ error: "selfhost", message: "Checkout is only available on Duskly Cloud" }, 404);
   const body = (await c.req.json()) as {
     interval?: "month" | "year";
     plan?: string;
     workspaceId?: string;
   };
-  const plan = (body.plan && isPlanId(body.plan) ? body.plan : "pro") as PlanId;
+  if (!body.plan || !isPlanId(body.plan)) {
+    return c.json({ error: "invalid_plan", message: "plan must be standard, team, pro, or ultimate" }, 400);
+  }
+  const plan = body.plan as PlanId;
   const interval = body.interval === "year" ? "year" : "month";
   const product_id = productId(c.env, plan, interval);
-  if (!product_id) return c.json({ error: "product_missing" }, 500);
+  if (!product_id) {
+    return c.json(
+      {
+        error: "product_missing",
+        message: `No Dodo product ID configured for ${plan}/${interval}. Set DODO_${plan.toUpperCase()}_${interval === "year" ? "YEARLY" : "MONTHLY"}_PRODUCT_ID.`,
+      },
+      503,
+    );
+  }
+  if (!c.env.DODO_PAYMENTS_API_KEY) {
+    return c.json({ error: "billing_unconfigured", message: "DODO_PAYMENTS_API_KEY is not set" }, 503);
+  }
   const session = await dodo(c.env).checkoutSessions.create({
     product_cart: [{ product_id, quantity: 1 }],
     ...(c.get("email") ? { customer: { email: c.get("email")! } } : {}),

@@ -17,4 +17,4 @@ Repo: https://github.com/sarmaasis/duskly
    Workers: `duskly-api`, `duskly-web`.
 5. Custom domains: duskly.site (web), api.duskly.site (api)
 
-Self-host stays free (`DUSKLY_MODE=selfhost`). Paid managed SaaS is Duskly Cloud on duskly.site (`DUSKLY_MODE=cloud`). See [BILLING.md](BILLING.md).
+Self-host stays free (`DUSKLY_MODE=selfhost`). Paid managed SaaS is Duskly Cloud on duskly.site (`DUSKLY_MODE=cloud`). Operator billing notes live in untracked `internal-docs/` (not in git).

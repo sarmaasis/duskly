@@ -16,7 +16,7 @@ const createPost = z.object({
   workspaceId: z.string(),
   body: z.string().min(1).max(5000),
   scheduledAt: z.number().optional(),
-  destinations: z.array(z.string()).min(1),
+  destinations: z.array(z.string()).default([]),
   status: z.enum(["draft", "scheduled"]).default("draft"),
   mediaIds: z.array(z.string()).optional(),
   signatureId: z.string().optional().nullable(),
@@ -64,7 +64,9 @@ postRoutes.post("/", async (c) => {
         if (set.templateBody && !body.body.trim()) postBody = set.templateBody;
       }
     }
+    if (!destinations.length) return c.json({ error: "destinations_required" }, 400);
 
+    let appliedSignatureId = body.signatureId ?? null;
     if (body.signatureId) {
       const [sig] = await db
         .select()
@@ -72,8 +74,18 @@ postRoutes.post("/", async (c) => {
         .where(and(eq(signatureTable.id, body.signatureId), eq(signatureTable.workspaceId, body.workspaceId)))
         .limit(1);
       if (sig) postBody = `${postBody.trim()}\n\n${sig.body}`;
-    } else if (ws.signature) {
-      postBody = `${postBody.trim()}\n\n${ws.signature}`;
+    } else {
+      const [def] = await db
+        .select()
+        .from(signatureTable)
+        .where(and(eq(signatureTable.workspaceId, body.workspaceId), eq(signatureTable.isDefault, true)))
+        .limit(1);
+      if (def) {
+        postBody = `${postBody.trim()}\n\n${def.body}`;
+        appliedSignatureId = def.id;
+      } else if (ws.signature) {
+        postBody = `${postBody.trim()}\n\n${ws.signature}`;
+      }
     }
 
     const id = crypto.randomUUID();
@@ -93,7 +105,7 @@ postRoutes.post("/", async (c) => {
       status: body.status,
       scheduledAt,
       mediaIds: body.mediaIds?.length ? JSON.stringify(body.mediaIds) : null,
-      signatureId: body.signatureId ?? null,
+      signatureId: appliedSignatureId,
       delaySeconds: delay,
       repeatRule: body.repeatRule && body.repeatRule !== "none" ? body.repeatRule : null,
       repeatUntil: body.repeatUntil ? new Date(body.repeatUntil) : null,
@@ -128,7 +140,7 @@ postRoutes.post("/", async (c) => {
           status: "scheduled",
           scheduledAt: new Date(next),
           mediaIds: body.mediaIds?.length ? JSON.stringify(body.mediaIds) : null,
-          signatureId: body.signatureId ?? null,
+          signatureId: appliedSignatureId,
           delaySeconds: 0,
           repeatRule: null,
           parentPostId: id,

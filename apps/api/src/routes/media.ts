@@ -61,7 +61,7 @@ mediaRoutes.post("/upload", async (c) => {
     r2Key: key,
     contentType: file.type || "application/octet-stream",
     bytes: buf.byteLength,
-    kind: (file.type || "").startsWith("video") || (file.type || "").includes("svg") ? "clip" : "image",
+    kind: (file.type || "").startsWith("video") ? "clip" : "image",
   });
   return c.json({ id, url: `/v1/media/${id}/file?workspaceId=${workspaceId}` }, 201);
 });
@@ -71,6 +71,9 @@ const editSchema = z.object({
   sourceMediaId: z.string().optional(),
   prompt: z.string().optional(),
   overlayText: z.string().max(80).optional(),
+  /** Client canvas export as data URL or raw base64 (PNG/JPEG). Preferred path for real raster edits. */
+  imageBase64: z.string().optional(),
+  contentType: z.enum(["image/png", "image/jpeg"]).optional(),
   crop: z
     .object({
       x: z.number(),
@@ -79,7 +82,27 @@ const editSchema = z.object({
       h: z.number(),
     })
     .optional(),
+  brightness: z.number().min(0).max(2).optional(),
+  contrast: z.number().min(0).max(2).optional(),
 });
+
+function decodeDataUrl(input: string): { bytes: Uint8Array; contentType: string } | null {
+  const m = input.match(/^data:(image\/(?:png|jpeg));base64,(.+)$/i);
+  if (m) {
+    const bin = atob(m[2]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { bytes, contentType: m[1].toLowerCase() };
+  }
+  try {
+    const bin = atob(input.replace(/\s/g, ""));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { bytes, contentType: "image/png" };
+  } catch {
+    return null;
+  }
+}
 
 mediaRoutes.post("/edit", async (c) => {
   const body = editSchema.parse(await c.req.json());
@@ -87,34 +110,34 @@ mediaRoutes.post("/edit", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
 
-  let svg: string;
-  if (body.sourceMediaId) {
-    const [src] = await db.select().from(media).where(eq(media.id, body.sourceMediaId)).limit(1);
-    if (!src || src.workspaceId !== body.workspaceId) return c.json({ error: "source_missing" }, 404);
-    const obj = await c.env.MEDIA.get(src.r2Key);
-    if (!obj) return c.json({ error: "source_missing" }, 404);
-    const raw = await obj.text();
-    if (src.contentType.includes("svg")) {
-      const overlay = body.overlayText
-        ? `<text x="50%" y="92%" text-anchor="middle" font-family="system-ui" font-size="42" fill="#ff5c33">${body.overlayText.replace(/[<>&]/g, "")}</text>`
-        : "";
-      svg = raw.includes("</svg>")
-        ? raw.replace("</svg>", `${overlay}</svg>`)
-        : makePosterSvg(body.prompt || "Edited", body.overlayText || "");
-    } else {
-      svg = makePosterSvg(body.prompt || "Edited image", body.overlayText || "");
-    }
-  } else {
-    svg = makePosterSvg(body.prompt || "Poster", body.overlayText || "");
+  if (body.imageBase64) {
+    const decoded = decodeDataUrl(body.imageBase64);
+    if (!decoded) return c.json({ error: "invalid_image" }, 400);
+    const contentType = body.contentType || decoded.contentType;
+    const id = crypto.randomUUID();
+    const ext = contentType === "image/jpeg" ? "jpg" : "png";
+    const key = `${body.workspaceId}/${id}-edit.${ext}`;
+    await c.env.MEDIA.put(key, decoded.bytes, { httpMetadata: { contentType } });
+    await db.insert(media).values({
+      id,
+      workspaceId: body.workspaceId,
+      r2Key: key,
+      contentType,
+      bytes: decoded.bytes.byteLength,
+      kind: "image",
+      metaJson: JSON.stringify({
+        editor: "canvas",
+        overlay: body.overlayText ?? null,
+        crop: body.crop ?? null,
+        brightness: body.brightness ?? null,
+        contrast: body.contrast ?? null,
+      }),
+    });
+    return c.json({ id, url: `/v1/media/${id}/file?workspaceId=${body.workspaceId}` }, 201);
   }
 
-  if (body.crop) {
-    svg = svg.replace(
-      /viewBox="[^"]+"/,
-      `viewBox="${body.crop.x} ${body.crop.y} ${body.crop.w} ${body.crop.h}"`,
-    );
-  }
-
+  // Fallback: generate a poster SVG only when no raster payload is supplied (e.g. create-from-prompt).
+  const svg = makePosterSvg(body.prompt || "Poster", body.overlayText || "");
   const id = crypto.randomUUID();
   const key = `${body.workspaceId}/${id}-edit.svg`;
   const bytes = new TextEncoder().encode(svg);
@@ -126,7 +149,7 @@ mediaRoutes.post("/edit", async (c) => {
     contentType: "image/svg+xml",
     bytes: bytes.byteLength,
     kind: "image",
-    metaJson: JSON.stringify({ editor: true, crop: body.crop ?? null, overlay: body.overlayText ?? null }),
+    metaJson: JSON.stringify({ editor: "poster", overlay: body.overlayText ?? null }),
   });
   return c.json({ id, url: `/v1/media/${id}/file?workspaceId=${body.workspaceId}` }, 201);
 });

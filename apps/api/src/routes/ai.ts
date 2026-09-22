@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { consumeQuota, planErrorResponse } from "../lib/entitlements";
-import { makeAnimatedSvgClip, makePosterSvg } from "../lib/media-gen";
+import { makePosterSvg, makePromptWebm } from "../lib/media-gen";
 
 export const aiRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -108,20 +108,24 @@ aiRoutes.post("/video", async (c) => {
     await consumeQuota(c.env, body.workspaceId, "aiVideos", 1);
     await consumeQuota(c.env, body.workspaceId, "aiClipMinutes", body.minutes);
 
-    const svg = makeAnimatedSvgClip(body.prompt, body.minutes * 60);
-    const bytes = new TextEncoder().encode(svg);
+    const bytes = makePromptWebm(body.prompt, body.minutes * 60);
     const id = crypto.randomUUID();
-    const key = `${body.workspaceId}/${id}-clip.svg`;
-    await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "image/svg+xml" } });
+    const key = `${body.workspaceId}/${id}-clip.webm`;
+    await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: "video/webm" } });
     const db = drizzle(c.env.DB);
     await db.insert(media).values({
       id,
       workspaceId: body.workspaceId,
       r2Key: key,
-      contentType: "image/svg+xml",
+      contentType: "video/webm",
       bytes: bytes.byteLength,
       kind: "clip",
-      metaJson: JSON.stringify({ ai: true, minutes: body.minutes, prompt: body.prompt, playable: "svg-animation" }),
+      metaJson: JSON.stringify({
+        ai: true,
+        minutes: body.minutes,
+        prompt: body.prompt,
+        playable: "video/webm",
+      }),
     });
     return c.json({ id, url: `/v1/media/${id}/file?workspaceId=${body.workspaceId}`, minutes: body.minutes }, 201);
   } catch (e) {
