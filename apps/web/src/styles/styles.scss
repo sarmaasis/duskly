@@ -1,0 +1,38 @@
+:root {
+  --sl-space-4: 16px;
+  --sl-space-6: 24px;
+  --sl-radius: 10px;
+  --sl-border: #e6e2dc;
+  --sl-bg: #f7f4ef;
+  --sl-surface: #fffdf9;
+  --sl-ink: #1c1916;
+  --sl-muted: #6b645c;
+  --color-cta: #ff5c33;
+  --color-cta-hover: #e84a22;
+  --color-cta-ink: #fffaf7;
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  color: var(--sl-ink);
+  background: var(--sl-bg);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--sl-bg); }
+a { color: inherit; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid transparent; font-weight: 650; cursor: pointer; }
+.btn-primary { background: var(--color-cta); color: var(--color-cta-ink); }
+.btn-primary:hover { background: var(--color-cta-hover); }
+.btn-ghost { background: transparent; border-color: var(--sl-border); }
+.shell { max-width: 1120px; margin: 0 auto; padding: 0 var(--sl-space-6); }
+.card { background: var(--sl-surface); border: 1px solid var(--sl-border); border-radius: var(--sl-radius); padding: var(--sl-space-6); }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: var(--sl-space-4) 0; }
+.brand { font-weight: 750; letter-spacing: -0.03em; font-size: 20px; }
+.brand span { color: var(--color-cta); }
+.hero { padding: 72px 0 56px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; }
+.hero h1 { font-size: clamp(36px, 5vw, 56px); letter-spacing: -0.04em; margin: 0 0 16px; }
+.hero p { color: var(--sl-muted); }
+.field { display: grid; gap: 6px; margin-bottom: 14px; }
+.field input, .field textarea { border: 1px solid var(--sl-border); border-radius: 8px; min-height: 44px; padding: 10px 12px; font: inherit; }
+.app-grid { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.side { border-right: 1px solid var(--sl-border); padding: var(--sl-space-6); background: var(--sl-surface); }
+.side a { display: block; padding: 10px 12px; border-radius: 8px; text-decoration: none; color: var(--sl-muted); }
+.side a.active, .side a:hover { background: #fff3ee; color: var(--sl-ink); }
+@media (max-width: 840px) { .hero, .app-grid { grid-template-columns: 1fr; } }
