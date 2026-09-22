@@ -10,5 +10,5 @@ export function dodo(env: Env) {
 }
 
 export function isCloud(env: Env) {
-  return env.CUEORA_MODE === "cloud";
+  return env.DUSKLY_MODE === "cloud";
 }

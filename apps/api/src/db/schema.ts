@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
@@ -45,37 +45,70 @@ export const workspace = sqliteTable("workspace", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   ownerId: text("owner_id").notNull().references(() => user.id),
+  plan: text("plan").notNull().default("standard"),
+  signature: text("signature"),
+  theme: text("theme").notNull().default("light"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-export const workspaceMember = sqliteTable("workspace_member", {
+export const workspaceMember = sqliteTable(
+  "workspace_member",
+  {
+    workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.userId] })],
+);
+
+export const customerGroup = sqliteTable("customer_group", {
+  id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
+  name: text("name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-export const socialAccount = sqliteTable("social_account", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
-  network: text("network").notNull(),
-  handle: text("handle").notNull(),
-  externalId: text("external_id").notNull(),
-  tokenCipher: text("token_cipher").notNull(),
-  status: text("status").notNull().default("active"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-}, (t) => [index("social_account_ws").on(t.workspaceId)]);
+export const socialAccount = sqliteTable(
+  "social_account",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    network: text("network").notNull(),
+    handle: text("handle").notNull(),
+    externalId: text("external_id").notNull(),
+    tokenCipher: text("token_cipher").notNull(),
+    credentialsJson: text("credentials_json"),
+    groupId: text("group_id"),
+    status: text("status").notNull().default("active"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("social_account_ws").on(t.workspaceId)],
+);
 
-export const posts = sqliteTable("posts", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
-  authorId: text("author_id").notNull().references(() => user.id),
-  body: text("body").notNull(),
-  status: text("status").notNull(),
-  scheduledAt: integer("scheduled_at", { mode: "timestamp_ms" }),
-  publishedAt: integer("published_at", { mode: "timestamp_ms" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-}, (t) => [index("posts_due").on(t.status, t.scheduledAt), index("posts_ws").on(t.workspaceId)]);
+export const posts = sqliteTable(
+  "posts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    authorId: text("author_id").notNull().references(() => user.id),
+    body: text("body").notNull(),
+    status: text("status").notNull(),
+    scheduledAt: integer("scheduled_at", { mode: "timestamp_ms" }),
+    publishedAt: integer("published_at", { mode: "timestamp_ms" }),
+    mediaIds: text("media_ids"),
+    signatureId: text("signature_id"),
+    delaySeconds: integer("delay_seconds").notNull().default(0),
+    repeatRule: text("repeat_rule"),
+    repeatUntil: integer("repeat_until", { mode: "timestamp_ms" }),
+    parentPostId: text("parent_post_id"),
+    postingSetId: text("posting_set_id"),
+    commentBody: text("comment_body"),
+    commentDelaySeconds: integer("comment_delay_seconds").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("posts_due").on(t.status, t.scheduledAt), index("posts_ws").on(t.workspaceId)],
+);
 
 export const postDestination = sqliteTable("post_destination", {
   id: text("id").primaryKey(),
@@ -92,6 +125,127 @@ export const media = sqliteTable("media", {
   r2Key: text("r2_key").notNull(),
   contentType: text("content_type").notNull(),
   bytes: integer("bytes").notNull(),
+  kind: text("kind").notNull().default("image"),
+  metaJson: text("meta_json"),
 });
 
-export const schema = { user, session, account, verification, workspace, workspaceMember, socialAccount, posts, postDestination, media };
+export const postingSet = sqliteTable("posting_set", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  channelIds: text("channel_ids").notNull(),
+  templateBody: text("template_body"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const signature = sqliteTable("signature", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  body: text("body").notNull(),
+  isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const usageCounter = sqliteTable(
+  "usage_counter",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    period: text("period").notNull(),
+    kind: text("kind").notNull(),
+    used: integer("used").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.period, t.kind] })],
+);
+
+export const apiToken = sqliteTable("api_token", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  tokenPrefix: text("token_prefix").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+});
+
+export const outboundWebhook = sqliteTable("outbound_webhook", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  secret: text("secret").notNull(),
+  events: text("events").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const plug = sqliteTable(
+  "plug",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id"),
+    scope: text("scope").notNull(),
+    name: text("name").notNull(),
+    triggerType: text("trigger_type").notNull(),
+    actionJson: text("action_json").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("plug_ws").on(t.workspaceId)],
+);
+
+export const rssFeed = sqliteTable(
+  "rss_feed",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    channelIds: text("channel_ids").notNull(),
+    lastGuid: text("last_guid"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("rss_feed_ws").on(t.workspaceId)],
+);
+
+export const agentRun = sqliteTable("agent_run", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  prompt: text("prompt").notNull(),
+  resultJson: text("result_json").notNull(),
+  postId: text("post_id"),
+  status: text("status").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const workspaceInvite = sqliteTable("workspace_invite", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"),
+  status: text("status").notNull().default("pending"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const schema = {
+  user,
+  session,
+  account,
+  verification,
+  workspace,
+  workspaceMember,
+  customerGroup,
+  socialAccount,
+  posts,
+  postDestination,
+  media,
+  postingSet,
+  signature,
+  usageCounter,
+  apiToken,
+  outboundWebhook,
+  plug,
+  rssFeed,
+  agentRun,
+  workspaceInvite,
+};

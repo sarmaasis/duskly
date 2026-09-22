@@ -1,9 +1,9 @@
 BETTER_AUTH_SECRET=replace-with-32-plus-bytes
 BETTER_AUTH_URL=http://localhost:8787
 WEB_ORIGIN=http://localhost:4200
-EMAIL_FROM=Cueora <noreply@cueora.xyz>
+EMAIL_FROM=Duskly <noreply@duskly.site>
 TOKEN_ENCRYPTION_KEY=replace-with-32-byte-hex
-CUEORA_MODE=selfhost
+DUSKLY_MODE=selfhost
 DODO_PAYMENTS_API_KEY=
 DODO_PAYMENTS_WEBHOOK_KEY=
 DODO_PAYMENTS_ENVIRONMENT=test_mode

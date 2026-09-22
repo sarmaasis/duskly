@@ -32,7 +32,7 @@ export function createAuth(env: Env) {
               await env.EMAIL.send({
                 to: email,
                 from: env.EMAIL_FROM,
-                subject: `Your Sundraft code: ${otp}`,
+                subject: `Your Duskly code: ${otp}`,
                 text: `Your ${type} code is ${otp}. It expires in 10 minutes.`,
                 html: `<p>Your ${type} code is <strong style="color:#FF5C33">${otp}</strong>.</p>`,
               });

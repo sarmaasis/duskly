@@ -1,4 +1,10 @@
 import { Component } from "@angular/core";
 import { RouterOutlet } from "@angular/router";
-@Component({ selector: "sd-root", standalone: true, imports: [RouterOutlet], template: `<router-outlet />` })
+
+@Component({
+  selector: "dk-root",
+  standalone: true,
+  imports: [RouterOutlet],
+  template: `<router-outlet />`,
+})
 export class AppComponent {}

@@ -3,29 +3,29 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "sundraft-web": {
+    "duskly": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
-      "prefix": "sd",
+      "prefix": "dk",
       "architect": {
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/sundraft-web",
+            "outputPath": "dist/duskly",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
-            "inlineStyleLanguage": "scss",
+            "inlineStyleLanguage": "css",
             "assets": ["src/assets"],
-            "styles": ["src/styles/styles.scss"],
+            "styles": ["src/styles.css"],
             "server": "src/main.server.ts",
             "ssr": { "entry": "src/server.ts", "platform": "neutral" }
           }
         },
         "serve": {
           "builder": "@angular/build:dev-server",
-          "options": { "port": 4200 }
+          "options": { "buildTarget": "duskly:build", "port": 4200 }
         }
       }
     }

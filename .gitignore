@@ -2,6 +2,7 @@ node_modules
 dist
 .angular
 .wrangler
+.pnpm-store
 .dev.vars
 .env
 .env.*
@@ -16,3 +17,4 @@ coverage
 apps/web/.angular
 apps/api/.wrangler
 *.tsbuildinfo
+internal-docs

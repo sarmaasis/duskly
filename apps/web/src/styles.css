@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-cta: #ff5c33;
+  --color-cta-hover: #e64d28;
+  --color-ink: #121417;
+  --color-muted: #52525b;
+  --color-faint: #a1a1aa;
+  --color-paper: #fbfbfa;
+  --color-paper-app: #fcfcf9;
+  --color-elev: #ffffff;
+  --color-line: #e4e4e7;
+  --color-line-strong: #e8e8e3;
+  --color-chip: #f7f7f4;
+}
