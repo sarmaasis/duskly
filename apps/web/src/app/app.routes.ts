@@ -1,6 +1,8 @@
 import { Routes } from "@angular/router";
 import { LandingPage } from "./pages/landing.page";
 import { AuthPage } from "./auth/auth.page";
+import { SignupPage } from "./auth/signup.page";
+import { OnboardingPage } from "./auth/onboarding.page";
 import { CalendarPage } from "./calendar/calendar.page";
 import { ComposerPage } from "./composer/composer.page";
 import { AccountsPage } from "./accounts/accounts.page";
@@ -13,12 +15,29 @@ import { BillingPage } from "./billing/billing.page";
 import { BillingSuccessPage } from "./billing/billing-success.page";
 import { InvitePage } from "./team/invite.page";
 import { AppShell } from "./layout/app-shell";
+import { DocsShell } from "./docs/docs-shell";
+import { DocsOverviewPage } from "./docs/docs-overview.page";
+import { DocsApiPage } from "./docs/docs-api.page";
+import { DocsAgentsPage } from "./docs/docs-agents.page";
+import { DocsMcpPage } from "./docs/docs-mcp.page";
 
 export const routes: Routes = [
   { path: "", component: LandingPage },
   { path: "pricing", component: PricingPage },
   { path: "signin", component: AuthPage },
+  { path: "signup", component: SignupPage },
+  { path: "onboarding", component: OnboardingPage },
   { path: "invite/:id", component: InvitePage },
+  {
+    path: "docs",
+    component: DocsShell,
+    children: [
+      { path: "", component: DocsOverviewPage },
+      { path: "api", component: DocsApiPage },
+      { path: "agents", component: DocsAgentsPage },
+      { path: "mcp", component: DocsMcpPage },
+    ],
+  },
   {
     path: "app",
     component: AppShell,

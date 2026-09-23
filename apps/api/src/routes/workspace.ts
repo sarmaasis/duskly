@@ -49,6 +49,8 @@ workspaceRoutes.patch("/:id", async (c) => {
       theme: z.enum(["light", "dark"]).optional(),
       signature: z.string().max(500).nullable().optional(),
       plan: z.string().optional(),
+      accountKind: z.enum(["solo", "agency"]).nullable().optional(),
+      onboardingCompleted: z.boolean().optional(),
     })
     .parse(await c.req.json());
   const db = drizzle(c.env.DB);
@@ -57,6 +59,8 @@ workspaceRoutes.patch("/:id", async (c) => {
   if (body.theme) patch.theme = body.theme;
   if (body.signature !== undefined) patch.signature = body.signature;
   if (body.plan && isPlanId(body.plan) && !isCloud(c.env)) patch.plan = body.plan;
+  if (body.accountKind !== undefined) patch.accountKind = body.accountKind;
+  if (body.onboardingCompleted !== undefined) patch.onboardingCompleted = body.onboardingCompleted;
   if (Object.keys(patch).length) await db.update(workspace).set(patch).where(eq(workspace.id, id));
   const [next] = await db.select().from(workspace).where(eq(workspace.id, id)).limit(1);
   return c.json({ workspace: next });
@@ -380,7 +384,7 @@ teamRoutes.get("/invite/:id", async (c) => {
   const [inv] = await db.select().from(workspaceInvite).where(eq(workspaceInvite.id, c.req.param("id"))).limit(1);
   if (!inv || inv.status !== "pending") return c.json({ error: "not_found" }, 404);
   const [ws] = await db.select().from(workspace).where(eq(workspace.id, inv.workspaceId)).limit(1);
-  return c.json({ id: inv.id, email: inv.email, workspaceName: ws?.name ?? "Workspace", status: inv.status });
+  return c.json({ id: inv.id, email: inv.email, workspaceName: ws?.name ?? "Account", status: inv.status });
 });
 
 teamRoutes.post("/invite/:id/accept", async (c) => {

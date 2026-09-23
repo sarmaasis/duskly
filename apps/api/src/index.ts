@@ -12,6 +12,7 @@ import {
   orgRoutes,
 } from "./routes/workspace";
 import { oauthRoutes } from "./routes/oauth";
+import { mcpRoutes } from "./routes/mcp";
 import { SchedulerLock } from "./do/scheduler-lock";
 import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
@@ -42,6 +43,8 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => {
 });
 
 app.post("/webhooks/dodo", (c) => handleDodoWebhook(c.req.raw, c.env));
+
+app.route("/mcp", mcpRoutes);
 
 app.use("/v1/*", async (c, next) => {
   // OAuth provider callback must not require session cookies (browser returns from X/LI/Mastodon).

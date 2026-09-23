@@ -1,5 +1,6 @@
-import { Component, signal } from "@angular/core";
+import { Component, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
+import { SessionService } from "../lib/session";
 
 const CF_DEPLOY =
   "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
@@ -13,8 +14,12 @@ const CF_DEPLOY =
         <div class="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <a routerLink="/" class="font-display text-[17px] font-extrabold tracking-tight">Dus<span class="text-cta">kly</span></a>
           <div class="flex items-center gap-2">
-            <a routerLink="/signin" class="hidden px-2 text-[13px] font-medium text-[#52525b] hover:text-[#09090b] sm:inline">Sign in</a>
-            <a routerLink="/signin" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Start scheduling</a>
+            @if (session.loggedIn()) {
+              <a routerLink="/app" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Open dashboard</a>
+            } @else {
+              <a routerLink="/signin" class="hidden px-2 text-[13px] font-medium text-[#52525b] hover:text-[#09090b] sm:inline">Sign in</a>
+              <a routerLink="/signup" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Start scheduling</a>
+            }
           </div>
         </div>
       </header>
@@ -74,7 +79,7 @@ const CF_DEPLOY =
                 }
               </ul>
               <a
-                [routerLink]="plan.id ? '/app/billing' : '/signin'"
+                [routerLink]="plan.id ? '/app/billing' : '/signup'"
                 class="mt-6 inline-flex h-10 items-center justify-center rounded-full text-xs font-bold transition-colors"
                 [class.bg-cta]="plan.popular"
                 [class.text-white]="plan.popular"
@@ -82,7 +87,7 @@ const CF_DEPLOY =
                 [class.border]="!plan.popular"
                 [class.border-[#e4e4e7]]="!plan.popular"
                 [class.hover:bg-[#f4f4f1]]="!plan.popular"
-              >{{ plan.id ? 'Checkout on Cloud' : 'Sign in to Cloud' }}</a>
+              >{{ plan.id ? 'Checkout on Cloud' : 'Sign up for Cloud' }}</a>
             </article>
           }
         </div>
@@ -125,6 +130,7 @@ const CF_DEPLOY =
   `,
 })
 export class PricingPage {
+  readonly session = inject(SessionService);
   readonly cfDeploy = CF_DEPLOY;
   readonly annual = signal(false);
 

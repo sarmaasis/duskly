@@ -49,4 +49,30 @@ export type Workspace = {
   plan: string;
   theme: string;
   signature: string | null;
+  accountKind?: "solo" | "agency" | null;
+  onboardingCompleted?: boolean;
 };
+
+const PLACEHOLDER_NAME = "My workspace";
+
+export function spaceName(ws: { name?: string | null } | null | undefined, fallback = "Account") {
+  const n = (ws?.name || "").trim();
+  if (!n || n === PLACEHOLDER_NAME) return fallback;
+  return n;
+}
+
+export function isOnboarded(ws: Pick<Workspace, "name" | "onboardingCompleted">) {
+  if (ws.onboardingCompleted === true) return true;
+  if (ws.onboardingCompleted === false) return false;
+  const n = (ws.name || "").trim();
+  return !!n && n !== PLACEHOLDER_NAME;
+}
+
+export async function nextAfterAuth() {
+  try {
+    const me = await api<{ workspace: Workspace }>("/v1/workspaces/me");
+    return isOnboarded(me.workspace) ? "/app" : "/onboarding";
+  } catch {
+    return "/onboarding";
+  }
+}

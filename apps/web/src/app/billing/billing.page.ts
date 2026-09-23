@@ -10,7 +10,7 @@ import { DkSeg } from "../ui/forms";
   template: `
     <div class="mx-auto max-w-5xl">
       <div class="mb-6">
-        <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Workspace</p>
+        <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Account</p>
         <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Billing</h1>
         <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">Start a Dodo Payments checkout for your Cloud plan. Self-host skips billing.</p>
       </div>

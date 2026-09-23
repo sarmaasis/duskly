@@ -27,11 +27,20 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div class="space-y-5">
           <section class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e3] px-4 py-3 dark:border-zinc-700">
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e3] px-4 py-3 dark:border-zinc-700">
               <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Draft</p>
-              <div class="flex flex-wrap gap-1.5">
+              <div class="flex flex-wrap items-center gap-1.5">
                 <button type="button" (click)="copilot()" class="inline-flex h-8 items-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-[11px] font-semibold text-[#121417] hover:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">AI copilot</button>
                 <button type="button" (click)="aiImage()" [disabled]="(usage()?.limits.aiImages||0)===0" class="inline-flex h-8 items-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-[11px] font-semibold text-[#121417] hover:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">AI image</button>
+                <label class="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 text-[11px] font-semibold text-[#52525b] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                  <span class="sr-only">Clip seconds</span>
+                  <select [(ngModel)]="clipDurationSec" name="clipSec" class="appearance-none bg-transparent font-mono text-[11px] outline-none dark:text-zinc-100">
+                    <option [ngValue]="6">6s</option>
+                    <option [ngValue]="8">8s</option>
+                    <option [ngValue]="10">10s</option>
+                    <option [ngValue]="12">12s</option>
+                  </select>
+                </label>
                 <button type="button" (click)="aiVideo()" class="inline-flex h-8 items-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-[11px] font-semibold text-[#121417] hover:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">AI clip</button>
               </div>
             </div>
@@ -83,7 +92,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
               <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Signature
                 <div class="mt-1.5">
                   <dk-select [(ngModel)]="signatureId">
-                    <option value="">Workspace default</option>
+                    <option value="">Account default</option>
                     @for (s of signatures(); track s.id) {
                       <option [value]="s.id">{{ s.name }}{{ s.isDefault ? ' (default)' : '' }}</option>
                     }
@@ -200,7 +209,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
                 }
               }
               @if (!accounts().length) {
-                <p class="rounded-lg bg-[#f7f7f4] px-3 py-3 text-[12px] text-[#63676c] dark:bg-zinc-800 dark:text-zinc-400">Connect accounts in Workspace → Accounts.</p>
+                <p class="rounded-lg bg-[#f7f7f4] px-3 py-3 text-[12px] text-[#63676c] dark:bg-zinc-800 dark:text-zinc-400">Connect channels in Accounts.</p>
               }
             </div>
           </section>
@@ -250,6 +259,7 @@ export class ComposerPage implements OnInit {
   };
 
   body = "";
+  clipDurationSec = 8;
   when = "";
   delaySeconds = 0;
   repeatRule = "none";
@@ -380,15 +390,19 @@ export class ComposerPage implements OnInit {
 
   async aiVideo() {
     try {
-      const r = await api<{ id: string; url: string }>("/v1/ai/video", {
+      const r = await api<{ id: string; url: string; contentType?: string }>("/v1/ai/video", {
         method: "POST",
-        json: { workspaceId: this.workspaceId, prompt: this.body || "Sunset clip", minutes: 1 },
+        json: {
+          workspaceId: this.workspaceId,
+          prompt: this.body || "Sunset over a quiet Main Street",
+          durationSec: this.clipDurationSec,
+        },
       });
       this.sourceMediaId = r.id;
       const url = `${apiBase()}${r.url}`;
       this.videoPreview.set(url);
       this.mediaPreview.set(null);
-      this.flash("AI clip stored as WebM");
+      this.flash("AI video clip ready");
       await this.refreshUsage();
     } catch (e: unknown) {
       this.fail(e);

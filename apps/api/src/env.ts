@@ -56,4 +56,8 @@ export type Env = {
   REDDIT_CLIENT_SECRET?: string;
   SLACK_CLIENT_ID?: string;
   SLACK_CLIENT_SECRET?: string;
+  /** Workers AI model ids — empty/unset uses built-in defaults */
+  AI_COPILOT_MODEL?: string;
+  AI_IMAGE_MODEL?: string;
+  AI_VIDEO_MODEL?: string;
 };

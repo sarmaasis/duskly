@@ -43,7 +43,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
     <div class="mx-auto max-w-6xl">
       <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Workspace</p>
+          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Account</p>
           <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Accounts</h1>
           <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">
             Connect channels, split them by company for agency clients, and stay under your plan cap. Missing credentials keep posts queued.

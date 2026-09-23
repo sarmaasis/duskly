@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { workspace, workspaceMember } from "../db/schema";
 import type { Env } from "../env";
 
-export async function ensureDefaultWorkspace(env: Env, userId: string, name = "My workspace") {
+export async function ensureDefaultWorkspace(env: Env, userId: string, name = "") {
   const db = drizzle(env.DB);
   const owned = await db.select().from(workspace).where(eq(workspace.ownerId, userId)).limit(1);
   if (owned[0]) return owned[0];
@@ -20,10 +20,22 @@ export async function ensureDefaultWorkspace(env: Env, userId: string, name = "M
     ownerId: userId,
     plan: "standard",
     theme: "light",
+    accountKind: null,
+    onboardingCompleted: false,
     createdAt: now,
   });
   await db.insert(workspaceMember).values({ workspaceId: id, userId, role: "owner" });
-  return { id, name, ownerId: userId, plan: "standard", signature: null, theme: "light", createdAt: now };
+  return {
+    id,
+    name,
+    ownerId: userId,
+    plan: "standard",
+    signature: null,
+    theme: "light",
+    accountKind: null,
+    onboardingCompleted: false,
+    createdAt: now,
+  };
 }
 
 export async function assertWorkspaceAccess(env: Env, workspaceId: string, userId: string) {

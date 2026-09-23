@@ -1,6 +1,8 @@
-import { Component, signal } from "@angular/core";
+import { Component, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
+import { nextAfterAuth } from "../lib/api";
+import { SessionService } from "../lib/session";
 
 @Component({
   standalone: true,
@@ -27,7 +29,7 @@ import { Router, RouterLink } from "@angular/router";
                 <button type="button" (click)="verify()" class="inline-flex h-10 w-full items-center justify-center rounded-md bg-cta text-[14px] font-semibold text-white hover:bg-cta-hover">Verify and continue</button>
               }
             </div>
-            <p class="mt-8 text-[13px] text-[#52525b]">New here? <a routerLink="/pricing" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">See pricing</a></p>
+            <p class="mt-8 text-[13px] text-[#52525b]">New here? <a routerLink="/signup" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Create an account</a></p>
           </div>
         </div>
       </div>
@@ -59,7 +61,8 @@ export class AuthPage {
   email = "";
   otp = "";
   step = signal<"email" | "otp">("email");
-  constructor(private readonly router: Router) {}
+  private readonly router = inject(Router);
+  private readonly session = inject(SessionService);
   async send() {
     await fetch(`${api()}/api/auth/email-otp/send-verification-otp`, {
       method: "POST",
@@ -76,7 +79,8 @@ export class AuthPage {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email: this.email, otp: this.otp }),
     });
-    await this.router.navigateByUrl("/app");
+    await this.session.refresh();
+    await this.router.navigateByUrl(await nextAfterAuth());
   }
 }
 function api() {

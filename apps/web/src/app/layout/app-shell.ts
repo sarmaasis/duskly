@@ -2,18 +2,19 @@ import { Component, DestroyRef, OnInit, inject, signal } from "@angular/core";
 import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { NavigationEnd, Router, RouterOutlet } from "@angular/router";
 import { filter } from "rxjs/operators";
-import { api, type PlanSnapshot, type Workspace } from "../lib/api";
+import { api, isOnboarded, spaceName, type PlanSnapshot, type Workspace } from "../lib/api";
 import { lsSet, setDarkClass } from "../lib/browser";
+import { SessionService } from "../lib/session";
 
 const NAV = [
   { name: "Calendar", href: "/app", group: "Schedule", exact: true },
   { name: "Compose", href: "/app/compose", group: "Schedule", exact: false },
   { name: "Smart agent", href: "/app/agent", group: "Schedule", exact: false },
-  { name: "Accounts", href: "/app/accounts", group: "Workspace", exact: false },
-  { name: "Team", href: "/app/team", group: "Workspace", exact: false },
-  { name: "Analytics", href: "/app/analytics", group: "Workspace", exact: false },
-  { name: "Settings", href: "/app/settings", group: "Workspace", exact: false },
-  { name: "Billing", href: "/app/billing", group: "Workspace", exact: false },
+  { name: "Accounts", href: "/app/accounts", group: "Account", exact: false },
+  { name: "Team", href: "/app/team", group: "Account", exact: false },
+  { name: "Analytics", href: "/app/analytics", group: "Account", exact: false },
+  { name: "Settings", href: "/app/settings", group: "Account", exact: false },
+  { name: "Billing", href: "/app/billing", group: "Account", exact: false },
 ] as const;
 
 @Component({
@@ -35,7 +36,7 @@ const NAV = [
           </div>
 
           <div class="mx-3 mb-1 mt-3 rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-2 dark:border-zinc-700 dark:bg-zinc-800">
-            <p class="truncate text-[13px] font-semibold dark:text-zinc-100">{{ workspace()?.name || 'Workspace' }}</p>
+            <p class="truncate text-[13px] font-semibold dark:text-zinc-100">{{ label() }}</p>
             <p class="mt-0.5 flex items-center gap-1.5 truncate font-mono text-[11px] text-[#71717a] dark:text-zinc-400">
               <span class="size-1.5 rounded-full bg-cta"></span>
               {{ usage()?.plan || 'standard' }}
@@ -106,13 +107,16 @@ const NAV = [
 
         <div class="shrink-0 border-t border-[#e4e4e7] p-3 dark:border-zinc-800">
           <div class="rounded-xl border border-[#e4e4e7] bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="truncate px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a1a1aa] dark:text-zinc-500">{{ workspace()?.name || 'Workspace' }}</p>
+            <p class="truncate px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a1a1aa] dark:text-zinc-500">{{ label() }}</p>
             <button type="button" (click)="toggleTheme()" class="flex w-full items-center gap-2 rounded-lg p-2 text-left transition-colors duration-150 hover:bg-[#f7f7f4] dark:hover:bg-zinc-800">
               <span class="flex size-7 items-center justify-center rounded-full bg-[#121417] font-mono text-[10px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">{{ theme() === 'dark' ? 'D' : 'L' }}</span>
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[12px] font-semibold dark:text-zinc-100">Theme: {{ theme() }}</span>
                 <span class="block truncate text-[11px] text-[#63676c] dark:text-zinc-400">{{ cloud() ? 'Duskly Cloud' : 'Self-host' }}</span>
               </span>
+            </button>
+            <button type="button" (click)="signOut()" class="mt-1 flex w-full items-center rounded-lg px-2 py-2 text-left text-[12px] font-medium text-[#52525b] transition-colors duration-150 hover:bg-[#f7f7f4] hover:text-[#09090b] dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100">
+              Sign out
             </button>
           </div>
         </div>
@@ -128,6 +132,9 @@ const NAV = [
             <span class="hidden items-center gap-1.5 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 font-mono text-[11px] font-medium text-[#63676c] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 lg:inline-flex">
               {{ usage()?.plan || (cloud() ? 'cloud' : 'self-host') }}
             </span>
+            <button type="button" (click)="signOut()" class="text-[13px] font-medium text-[#52525b] hover:text-[#09090b] dark:text-zinc-400 dark:hover:text-zinc-100">
+              Sign out
+            </button>
             <a href="/app/compose" (click)="go($event, '/app/compose')" class="inline-flex h-9 items-center rounded-full bg-cta px-4 font-mono text-xs font-semibold text-white transition-colors duration-150 hover:bg-cta-hover">
               New post
             </a>
@@ -136,7 +143,12 @@ const NAV = [
 
         <header class="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-[#e8e8e3] bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
           <a href="/" (click)="go($event, '/')" class="font-display text-[15px] font-bold tracking-tight dark:text-zinc-100">Dus<span class="text-cta">kly</span></a>
-          <a href="/app/compose" (click)="go($event, '/app/compose')" class="inline-flex h-9 items-center rounded-full bg-cta px-3.5 text-xs font-semibold text-white hover:bg-cta-hover">New</a>
+          <div class="flex items-center gap-2">
+            <button type="button" (click)="signOut()" class="px-2 text-[13px] font-medium text-[#52525b] hover:text-[#09090b] dark:text-zinc-400 dark:hover:text-zinc-100">
+              Sign out
+            </button>
+            <a href="/app/compose" (click)="go($event, '/app/compose')" class="inline-flex h-9 items-center rounded-full bg-cta px-3.5 text-xs font-semibold text-white hover:bg-cta-hover">New</a>
+          </div>
         </header>
 
         <main class="min-h-0 flex-1 overflow-y-auto bg-[#fcfcf9] px-5 py-6 pb-24 dark:bg-zinc-950 md:pb-8">
@@ -191,7 +203,7 @@ const NAV = [
 })
 export class AppShell implements OnInit {
   readonly nav = NAV;
-  readonly groups = ["Schedule", "Workspace"] as const;
+  readonly groups = ["Schedule", "Account"] as const;
   readonly mobileNav = [
     { name: "Calendar", href: "/app", exact: true },
     { name: "Compose", href: "/app/compose", exact: false },
@@ -207,6 +219,7 @@ export class AppShell implements OnInit {
 
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly session = inject(SessionService);
 
   constructor() {
     const sync = () => this.path.set(this.router.url.split("?")[0] || "/app");
@@ -248,7 +261,7 @@ export class AppShell implements OnInit {
   sectionLabel() {
     const path = this.path();
     if (path.startsWith("/app/settings") || path.startsWith("/app/billing") || path.startsWith("/app/team") || path.startsWith("/app/accounts") || path.startsWith("/app/analytics")) {
-      return "Workspace";
+      return "Account";
     }
     return "Schedule";
   }
@@ -256,6 +269,10 @@ export class AppShell implements OnInit {
   async ngOnInit() {
     try {
       const data = await api<{ workspace: Workspace; usage: PlanSnapshot; cloud: boolean }>("/v1/workspaces/me");
+      if (!isOnboarded(data.workspace)) {
+        await this.router.navigateByUrl("/onboarding");
+        return;
+      }
       this.workspace.set(data.workspace);
       this.usage.set(data.usage);
       this.cloud.set(data.cloud);
@@ -266,6 +283,15 @@ export class AppShell implements OnInit {
     } catch {
       /* unauthenticated shell still renders */
     }
+  }
+
+  label() {
+    return spaceName(this.workspace());
+  }
+
+  async signOut() {
+    await this.session.signOut();
+    await this.router.navigateByUrl("/");
   }
 
   async toggleTheme() {

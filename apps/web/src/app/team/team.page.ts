@@ -8,7 +8,7 @@ import { api, type PlanSnapshot } from "../lib/api";
   template: `
     <div class="mx-auto max-w-5xl">
       <div class="mb-6">
-        <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Workspace</p>
+        <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Account</p>
         <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Team</h1>
         <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">Invite members on Team plan and above. Standard is solo.</p>
       </div>
