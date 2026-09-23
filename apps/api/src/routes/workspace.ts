@@ -30,8 +30,22 @@ import {
 import { NETWORKS, NETWORK_META } from "../lib/networks";
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
+import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
 
 export const workspaceRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
+
+async function allChannelsInWorkspace(env: Env, workspaceId: string, channelIds: string[]) {
+  const db = drizzle(env.DB);
+  for (const id of [...new Set(channelIds)]) {
+    const [row] = await db
+      .select({ id: socialAccount.id })
+      .from(socialAccount)
+      .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, workspaceId)))
+      .limit(1);
+    if (!row) return false;
+  }
+  return true;
+}
 
 workspaceRoutes.get("/me", async (c) => {
   const ws = await ensureDefaultWorkspace(c.env, c.get("userId"));
@@ -82,17 +96,27 @@ accountRoutes.get("/", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
   const rows = await db.select().from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId));
-  const accounts = rows.map((r) => {
+  const accounts = await Promise.all(rows.map(async (r) => {
+    const tokenCipher = await encryptSecret(c.env, await decryptSecret(c.env, r.tokenCipher));
+    let credentialsJson = r.credentialsJson;
     let channelId: string | null = null;
     let channelName: string | null = null;
     if (r.credentialsJson) {
       try {
-        const creds = JSON.parse(r.credentialsJson) as Record<string, string>;
+        const creds = await decryptCredentials(c.env, r.credentialsJson);
+        if (!creds) throw new Error("missing credentials");
         channelId = creds.channelId || null;
         channelName = creds.channelName || null;
+        credentialsJson = await encryptCredentials(c.env, creds);
       } catch {
         /* ignore */
       }
+    }
+    if (tokenCipher !== r.tokenCipher || credentialsJson !== r.credentialsJson) {
+      await db
+        .update(socialAccount)
+        .set({ tokenCipher, credentialsJson })
+        .where(and(eq(socialAccount.id, r.id), eq(socialAccount.workspaceId, workspaceId)));
     }
     return {
       id: r.id,
@@ -107,7 +131,7 @@ accountRoutes.get("/", async (c) => {
       slackChannelName: r.network === "slack" ? channelName : undefined,
       needsSlackChannel: r.network === "slack" && !channelId,
     };
-  });
+  }));
   return c.json({ accounts, networks: NETWORKS, meta: NETWORK_META });
 });
 
@@ -181,8 +205,8 @@ accountRoutes.post("/", async (c) => {
       network: body.network,
       handle: body.handle,
       externalId: body.handle,
-      tokenCipher: secret,
-      credentialsJson: Object.keys(creds).length ? JSON.stringify(creds) : null,
+      tokenCipher: await encryptSecret(c.env, secret),
+      credentialsJson: await encryptCredentials(c.env, creds),
       groupId: body.groupId ?? null,
       status: active ? "active" : "needs_credentials",
       createdAt: new Date(),
@@ -245,17 +269,18 @@ accountRoutes.patch("/:id", async (c) => {
     let creds: Record<string, string> = {};
     if (row.credentialsJson) {
       try {
-        creds = JSON.parse(row.credentialsJson) as Record<string, string>;
+        creds = (await decryptCredentials(c.env, row.credentialsJson)) || {};
       } catch {
         creds = {};
       }
     }
-    if (!creds.botToken && row.tokenCipher && row.tokenCipher !== "pending") {
-      creds.botToken = row.tokenCipher;
+    const token = await decryptSecret(c.env, row.tokenCipher);
+    if (!creds.botToken && token && token !== "pending") {
+      creds.botToken = token;
     }
     creds.channelId = body.slackChannelId;
     if (body.slackChannelName) creds.channelName = body.slackChannelName;
-    patch.credentialsJson = JSON.stringify(creds);
+    patch.credentialsJson = (await encryptCredentials(c.env, creds)) ?? undefined;
     patch.status = "active";
   }
 
@@ -282,10 +307,11 @@ accountRoutes.get("/:id/slack/channels", async (c) => {
     .limit(1);
   if (!row || row.network !== "slack") return c.json({ error: "not_found" }, 404);
 
-  let botToken = row.tokenCipher;
+  let botToken = await decryptSecret(c.env, row.tokenCipher);
   if (row.credentialsJson) {
     try {
-      const creds = JSON.parse(row.credentialsJson) as Record<string, string>;
+      const creds = await decryptCredentials(c.env, row.credentialsJson);
+      if (!creds) throw new Error("missing credentials");
       if (creds.botToken) botToken = creds.botToken;
     } catch {
       /* ignore */
@@ -588,6 +614,9 @@ orgRoutes.post("/sets", async (c) => {
     .parse(await c.req.json());
   const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
+  if (!(await allChannelsInWorkspace(c.env, body.workspaceId, body.channelIds))) {
+    return c.json({ error: "invalid_channel" }, 400);
+  }
   const id = crypto.randomUUID();
   const db = drizzle(c.env.DB);
   await db.insert(postingSet).values({
@@ -638,6 +667,9 @@ orgRoutes.post("/plugs", async (c) => {
     if (!body.workspaceId) return c.json({ error: "workspaceId required" }, 400);
     const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
     if (!ws) return c.json({ error: "forbidden" }, 403);
+    if (body.action.channelId && !(await allChannelsInWorkspace(c.env, body.workspaceId, [body.action.channelId]))) {
+      return c.json({ error: "invalid_channel" }, 400);
+    }
   }
   const id = crypto.randomUUID();
   const db = drizzle(c.env.DB);
@@ -670,6 +702,9 @@ orgRoutes.post("/plugs/:id/run", async (c) => {
     channelId = ch?.id;
   }
   if (!channelId) return c.json({ error: "no_channel" }, 400);
+  if (!(await allChannelsInWorkspace(c.env, workspaceId, [channelId]))) {
+    return c.json({ error: "invalid_channel" }, 400);
+  }
   const postId = crypto.randomUUID();
   await db.insert(posts).values({
     id: postId,
@@ -712,6 +747,18 @@ orgRoutes.post("/rss", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   if (!body.channelIds.length && !body.groupId) {
     return c.json({ error: "target_required", message: "Pick at least one channel or a customer group" }, 400);
+  }
+  if (body.channelIds.length && !(await allChannelsInWorkspace(c.env, body.workspaceId, body.channelIds))) {
+    return c.json({ error: "invalid_channel" }, 400);
+  }
+  if (body.groupId) {
+    const db = drizzle(c.env.DB);
+    const [group] = await db
+      .select({ id: customerGroup.id })
+      .from(customerGroup)
+      .where(and(eq(customerGroup.id, body.groupId), eq(customerGroup.workspaceId, body.workspaceId)))
+      .limit(1);
+    if (!group) return c.json({ error: "invalid_group" }, 400);
   }
   const id = crypto.randomUUID();
   const db = drizzle(c.env.DB);

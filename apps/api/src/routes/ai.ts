@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
 import { media, agentRun, posts, postDestination, socialAccount } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertQuota, consumeQuota, planErrorResponse } from "../lib/entitlements";
@@ -221,6 +221,12 @@ aiRoutes.post("/agent", async (c) => {
       channelId = ch?.id;
     }
     if (!channelId) return c.json({ error: "no_channel", message: "Connect a channel first" }, 400);
+    const [channel] = await db
+      .select({ id: socialAccount.id })
+      .from(socialAccount)
+      .where(and(eq(socialAccount.id, channelId), eq(socialAccount.workspaceId, body.workspaceId)))
+      .limit(1);
+    if (!channel) return c.json({ error: "invalid_channel" }, 400);
 
     const userId = c.get("userId");
     const authorId = userId.startsWith("token:") ? ws.ownerId : userId;

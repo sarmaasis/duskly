@@ -6,7 +6,7 @@ BETTER_AUTH_URL=http://localhost:8787
 WEB_ORIGIN=http://localhost:4200
 # From-address for Cloudflare Email (auth + team invites)
 EMAIL_FROM=Duskly <noreply@duskly.site>
-# Reserved for encrypting stored network tokens (Env type; set a 32-byte hex)
+# Encrypts stored network tokens. Generate with: openssl rand -hex 32
 TOKEN_ENCRYPTION_KEY=replace-with-32-byte-hex
 # Product display name (also set in wrangler.jsonc vars)
 APP_NAME=Duskly

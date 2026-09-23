@@ -9,6 +9,18 @@ import { makePosterSvg } from "../lib/media-gen";
 
 export const mediaRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_EDIT_IMAGE_CHARS = Math.ceil((MAX_UPLOAD_BYTES * 4) / 3) + 128;
+const ALLOWED_UPLOAD_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+]);
+
 mediaRoutes.get("/", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
@@ -39,6 +51,9 @@ mediaRoutes.get("/:id/file", async (c) => {
     headers: {
       "content-type": row.contentType,
       "cache-control": "private, max-age=3600",
+      "content-security-policy": row.contentType === "image/svg+xml" ? "sandbox; default-src 'none'; style-src 'unsafe-inline'" : "default-src 'none'",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
     },
   });
 });
@@ -50,18 +65,22 @@ mediaRoutes.post("/upload", async (c) => {
   if (!workspaceId || !(file instanceof File)) return c.json({ error: "workspaceId and file required" }, 400);
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
+  const contentType = file.type || "application/octet-stream";
+  if (!ALLOWED_UPLOAD_TYPES.has(contentType)) return c.json({ error: "unsupported_media_type" }, 415);
+  if (file.size > MAX_UPLOAD_BYTES) return c.json({ error: "file_too_large", maxBytes: MAX_UPLOAD_BYTES }, 413);
   const id = crypto.randomUUID();
   const key = `${workspaceId}/${id}-${file.name.replace(/[^\w.-]+/g, "_")}`;
   const buf = await file.arrayBuffer();
-  await c.env.MEDIA.put(key, buf, { httpMetadata: { contentType: file.type || "application/octet-stream" } });
+  if (buf.byteLength > MAX_UPLOAD_BYTES) return c.json({ error: "file_too_large", maxBytes: MAX_UPLOAD_BYTES }, 413);
+  await c.env.MEDIA.put(key, buf, { httpMetadata: { contentType } });
   const db = drizzle(c.env.DB);
   await db.insert(media).values({
     id,
     workspaceId,
     r2Key: key,
-    contentType: file.type || "application/octet-stream",
+    contentType,
     bytes: buf.byteLength,
-    kind: (file.type || "").startsWith("video") ? "clip" : "image",
+    kind: contentType.startsWith("video") ? "clip" : "image",
   });
   return c.json({ id, url: `/v1/media/${id}/file?workspaceId=${workspaceId}` }, 201);
 });
@@ -111,9 +130,15 @@ mediaRoutes.post("/edit", async (c) => {
   const db = drizzle(c.env.DB);
 
   if (body.imageBase64) {
+    if (body.imageBase64.length > MAX_EDIT_IMAGE_CHARS) {
+      return c.json({ error: "file_too_large", maxBytes: MAX_UPLOAD_BYTES }, 413);
+    }
     const decoded = decodeDataUrl(body.imageBase64);
     if (!decoded) return c.json({ error: "invalid_image" }, 400);
     const contentType = body.contentType || decoded.contentType;
+    if (decoded.bytes.byteLength > MAX_UPLOAD_BYTES) {
+      return c.json({ error: "file_too_large", maxBytes: MAX_UPLOAD_BYTES }, 413);
+    }
     const id = crypto.randomUUID();
     const ext = contentType === "image/jpeg" ? "jpg" : "png";
     const key = `${body.workspaceId}/${id}-edit.${ext}`;

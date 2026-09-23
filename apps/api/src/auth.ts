@@ -5,6 +5,13 @@ import { drizzle } from "drizzle-orm/d1";
 import { schema } from "./db/schema";
 import type { Env } from "./env";
 
+type SecondaryStorage = {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttl?: number): Promise<void>;
+  delete(key: string): Promise<void>;
+  getAndDelete?: (key: string) => Promise<string | null>;
+};
+
 function isLocalAuthHost(env: Env) {
   const url = env.BETTER_AUTH_URL || "";
   return url.includes("localhost") || url.includes("127.0.0.1");
@@ -12,6 +19,7 @@ function isLocalAuthHost(env: Env) {
 
 async function deliverOtp(env: Env, email: string, otp: string, type: string) {
   const send = env.EMAIL?.send;
+  const localAuth = isLocalAuthHost(env);
   if (typeof send === "function") {
     try {
       await send({
@@ -24,9 +32,9 @@ async function deliverOtp(env: Env, email: string, otp: string, type: string) {
       return;
     } catch (err) {
       console.error("[auth] EMAIL.send failed", err);
-      if (env.DUSKLY_MODE === "cloud" && !isLocalAuthHost(env)) throw err;
+      if (!localAuth) throw err;
     }
-  } else if (env.DUSKLY_MODE === "cloud" && !isLocalAuthHost(env)) {
+  } else if (!localAuth) {
     throw new Error("EMAIL binding is not configured");
   }
   console.info(`[auth] OTP for ${email} (${type}): ${otp}`);
@@ -38,7 +46,7 @@ export function createAuth(env: Env, cf?: IncomingRequestCfProperties | null) {
   const config = withCloudflare(
     {
       d1: { db, options: { schema } },
-      kv: env.KV,
+      kv: env.KV as never,
       cf: cfCtx,
       autoDetectIpAddress: false,
       geolocationTracking: false,
@@ -60,19 +68,19 @@ export function createAuth(env: Env, cf?: IncomingRequestCfProperties | null) {
         }),
       ],
     },
-  );
+  ) as ReturnType<typeof withCloudflare> & { secondaryStorage?: SecondaryStorage };
   const storage = config.secondaryStorage;
   if (storage) {
     config.secondaryStorage = {
-      get: (key) => storage.get(key),
-      set: (key, value, ttl) => storage.set(key, value, ttl),
-      delete: (key) => storage.delete(key),
-      getAndDelete: async (key) => {
+      get: (key: string) => storage.get(key),
+      set: (key: string, value: string, ttl?: number) => storage.set(key, value, ttl),
+      delete: (key: string) => storage.delete(key),
+      getAndDelete: async (key: string) => {
         const value = await storage.get(key);
         if (value != null) await storage.delete(key);
         return value ?? null;
       },
     };
   }
-  return betterAuth(config);
+  return betterAuth(config as never);
 }

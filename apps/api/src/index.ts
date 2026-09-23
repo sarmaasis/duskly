@@ -23,10 +23,19 @@ import { dispatchWebhooks } from "./lib/webhooks-out";
 import { sha256Hex } from "./lib/workspace";
 import { apiToken } from "./db/schema";
 import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
+import { decryptCredentials, decryptSecret } from "./lib/secrets";
 
 export { SchedulerLock };
 
 const app = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
+
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function securityHeaders(res: Response) {
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  return res;
+}
 
 app.use("*", async (c, next) => {
   return cors({
@@ -37,8 +46,13 @@ app.use("*", async (c, next) => {
   })(c, next);
 });
 
+app.use("*", async (c, next) => {
+  await next();
+  securityHeaders(c.res);
+});
+
 app.on(["POST", "GET"], "/api/auth/*", (c) => {
-  const auth = createAuth(c.env, c.req.raw.cf);
+  const auth = createAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
   return auth.handler(c.req.raw);
 });
 
@@ -53,6 +67,10 @@ app.use("/v1/*", async (c, next) => {
     return;
   }
   const token = c.req.header("x-api-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token && MUTATING.has(c.req.method)) {
+    const origin = c.req.header("origin");
+    if (origin !== c.env.WEB_ORIGIN) return c.json({ error: "bad_origin" }, 403);
+  }
   if (token?.startsWith("dk_")) {
     const hash = await sha256Hex(token);
     const db = drizzle(c.env.DB);
@@ -63,10 +81,11 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
-  const auth = createAuth(c.env, c.req.raw.cf);
-  let session: { user: { id: string; email: string } } | null = null;
+  const auth = createAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
+  type AuthSession = { user: { id: string; email: string } };
+  let session: AuthSession | null = null;
   try {
-    session = (await auth.api.getSession({ headers: c.req.raw.headers })) as typeof session;
+    session = (await auth.api.getSession({ headers: c.req.raw.headers })) as AuthSession | null;
   } catch {
     return c.json({ error: "unauthorized" }, 401);
   }
@@ -194,11 +213,11 @@ async function publishPost(env: Env, postId: string) {
       await db.update(postDestination).set({ status: "failed", error: "unknown network" }).where(eq(postDestination.id, d.id));
       continue;
     }
-    const creds = d.credentialsJson ? (JSON.parse(d.credentialsJson) as Record<string, string>) : undefined;
+    const creds = await decryptCredentials(env, d.credentialsJson);
     const result = await adapter.publish({
       body: post.body,
       handle: d.handle,
-      token: d.tokenCipher,
+      token: await decryptSecret(env, d.tokenCipher),
       credentials: creds,
       commentBody: post.commentBody,
       skipComment: deferComment,
@@ -281,12 +300,12 @@ async function publishComments(env: Env, postId: string) {
     }
     const adapter = adapters[d.network as Network];
     if (!adapter?.comment) continue;
-    const creds = d.credentialsJson ? (JSON.parse(d.credentialsJson) as Record<string, string>) : undefined;
+    const creds = await decryptCredentials(env, d.credentialsJson);
     const result = await adapter.comment({
       remoteId: d.remoteId,
       commentBody: post.commentBody,
       handle: d.handle,
-      token: d.tokenCipher,
+      token: await decryptSecret(env, d.tokenCipher),
       credentials: creds,
     });
     const prev = (d.error || "").replace(/comment:deferred;?\s*/g, "").trim();

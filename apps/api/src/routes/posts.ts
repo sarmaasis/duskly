@@ -3,8 +3,10 @@ import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
 import { eq, and, desc } from "drizzle-orm";
 import {
+  media,
   posts,
   postDestination,
+  socialAccount,
   signature as signatureTable,
   postingSet,
 } from "../db/schema";
@@ -29,6 +31,28 @@ const createPost = z.object({
 });
 
 export const postRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
+
+async function validateWorkspaceRefs(env: Env, workspaceId: string, destinations: string[], mediaIds: string[] = []) {
+  const db = drizzle(env.DB);
+  const uniqueDestinations = [...new Set(destinations)];
+  for (const id of uniqueDestinations) {
+    const [row] = await db
+      .select({ id: socialAccount.id })
+      .from(socialAccount)
+      .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, workspaceId)))
+      .limit(1);
+    if (!row) return { error: "invalid_destination", id };
+  }
+  for (const id of [...new Set(mediaIds)]) {
+    const [row] = await db
+      .select({ id: media.id })
+      .from(media)
+      .where(and(eq(media.id, id), eq(media.workspaceId, workspaceId)))
+      .limit(1);
+    if (!row) return { error: "invalid_media", id };
+  }
+  return null;
+}
 
 postRoutes.get("/", async (c) => {
   const workspaceId = c.req.query("workspaceId");
@@ -65,6 +89,8 @@ postRoutes.post("/", async (c) => {
       }
     }
     if (!destinations.length) return c.json({ error: "destinations_required" }, 400);
+    const invalid = await validateWorkspaceRefs(c.env, body.workspaceId, destinations, body.mediaIds);
+    if (invalid) return c.json(invalid, 400);
 
     let appliedSignatureId = body.signatureId ?? null;
     if (body.signatureId) {

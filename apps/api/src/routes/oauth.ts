@@ -5,6 +5,7 @@ import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertChannelLimit, planErrorResponse } from "../lib/entitlements";
 import { NETWORK_META, type Network } from "../lib/networks";
+import { encryptCredentials, encryptSecret } from "../lib/secrets";
 
 export const oauthRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -409,8 +410,8 @@ oauthRoutes.get("/:network/callback", async (c) => {
     network,
     handle,
     externalId: handle,
-    tokenCipher: accessToken,
-    credentialsJson: JSON.stringify(credentials),
+    tokenCipher: await encryptSecret(c.env, accessToken),
+    credentialsJson: await encryptCredentials(c.env, credentials),
     groupId: stored.groupId || null,
     status: network === "slack" ? "needs_channel" : "active",
     createdAt: new Date(),

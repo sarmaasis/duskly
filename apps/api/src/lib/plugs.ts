@@ -24,6 +24,12 @@ async function createPlugPost(
     channelId = ch?.id;
   }
   if (!channelId) return null;
+  const [validChannel] = await db
+    .select({ id: socialAccount.id })
+    .from(socialAccount)
+    .where(and(eq(socialAccount.id, channelId), eq(socialAccount.workspaceId, workspaceId)))
+    .limit(1);
+  if (!validChannel) return null;
   const postId = crypto.randomUUID();
   await db.insert(posts).values({
     id: postId,

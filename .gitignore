@@ -16,5 +16,6 @@ coverage
 !.vscode/extensions.json
 apps/web/.angular
 apps/api/.wrangler
+wrangler.production.jsonc
 *.tsbuildinfo
 internal-docs
