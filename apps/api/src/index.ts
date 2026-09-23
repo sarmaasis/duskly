@@ -12,18 +12,20 @@ import {
   orgRoutes,
 } from "./routes/workspace";
 import { oauthRoutes } from "./routes/oauth";
+import { metaDeletionRoutes } from "./routes/meta-deletion";
 import { mcpRoutes } from "./routes/mcp";
+import { refreshAccessToken } from "./lib/oauth-tokens";
 import { SchedulerLock } from "./do/scheduler-lock";
 import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
-import { and, eq, lte } from "drizzle-orm";
-import { posts, postDestination, socialAccount, rssFeed, workspace } from "./db/schema";
+import { and, eq, inArray, lte } from "drizzle-orm";
+import { posts, postDestination, socialAccount, rssFeed, workspace, media, apiToken } from "./db/schema";
 import { adapters, type Network } from "./lib/networks";
 import { dispatchWebhooks } from "./lib/webhooks-out";
 import { sha256Hex } from "./lib/workspace";
-import { apiToken } from "./db/schema";
 import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
-import { decryptCredentials, decryptSecret } from "./lib/secrets";
+import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "./lib/secrets";
+import { commentQueueDelay, mergeRssChannelIds, shouldDeferFirstComment } from "./lib/schedule";
 
 export { SchedulerLock };
 
@@ -66,6 +68,11 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
+  // Meta signed data-deletion callback is public (reviewers and Facebook hit it unauthenticated).
+  if (c.req.path === "/v1/meta/data-deletion") {
+    await next();
+    return;
+  }
   const token = c.req.header("x-api-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token && MUTATING.has(c.req.method)) {
     const origin = c.req.header("origin");
@@ -101,6 +108,7 @@ app.route("/v1/media", mediaRoutes);
 app.route("/v1/ai", aiRoutes);
 app.route("/v1/workspaces", workspaceRoutes);
 app.route("/v1/accounts/oauth", oauthRoutes);
+app.route("/v1/meta/data-deletion", metaDeletionRoutes);
 app.route("/v1/accounts", accountRoutes);
 app.route("/v1/team", teamRoutes);
 app.route("/v1/org", orgRoutes);
@@ -133,7 +141,7 @@ async function pollRss(env: Env) {
           .select({ id: socialAccount.id })
           .from(socialAccount)
           .where(and(eq(socialAccount.workspaceId, feed.workspaceId), eq(socialAccount.groupId, feed.groupId)));
-        channelIds = [...new Set([...channelIds, ...members.map((m) => m.id)])];
+        channelIds = mergeRssChannelIds(channelIds, members.map((m) => m.id));
       }
       if (!channelIds.length) continue;
       let newestGuid = feed.lastGuid;
@@ -202,10 +210,34 @@ async function publishPost(env: Env, postId: string) {
     .where(eq(postDestination.postId, postId));
 
   const delay = post.commentDelaySeconds ?? 0;
-  const deferComment = delay > 0 && !!post.commentBody?.trim();
+  const deferComment = shouldDeferFirstComment(delay, post.commentBody);
   let anyPublished = false;
   let anyQueued = false;
   const commentNotes: string[] = [];
+
+  let videoBytes: ArrayBuffer | undefined;
+  let videoContentType: string | undefined;
+  let imageUrl: string | undefined;
+  try {
+    const mediaIds = post.mediaIds ? (JSON.parse(post.mediaIds) as string[]) : [];
+    if (mediaIds.length) {
+      const mediaRows = await db.select().from(media).where(inArray(media.id, mediaIds));
+      const video = mediaRows.find((m) => m.kind === "clip" || m.contentType.startsWith("video/"));
+      const image = mediaRows.find((m) => m.contentType.startsWith("image/"));
+      if (video) {
+        const obj = await env.MEDIA.get(video.r2Key);
+        if (obj) {
+          videoBytes = await obj.arrayBuffer();
+          videoContentType = video.contentType;
+        }
+      }
+      if (image) {
+        imageUrl = `${env.BETTER_AUTH_URL}/v1/media/${image.id}/file?workspaceId=${post.workspaceId}`;
+      }
+    }
+  } catch {
+    /* media lookup is optional */
+  }
 
   for (const d of rows) {
     const adapter = adapters[d.network as Network];
@@ -213,14 +245,30 @@ async function publishPost(env: Env, postId: string) {
       await db.update(postDestination).set({ status: "failed", error: "unknown network" }).where(eq(postDestination.id, d.id));
       continue;
     }
-    const creds = await decryptCredentials(env, d.credentialsJson);
+    let creds = (await decryptCredentials(env, d.credentialsJson)) || {};
+    let token = await decryptSecret(env, d.tokenCipher);
+    const refreshed = await refreshAccessToken(env, d.network as Network, creds);
+    if (refreshed.ok && !("skipped" in refreshed && refreshed.skipped)) {
+      creds = refreshed.creds;
+      token = refreshed.accessToken;
+      await db
+        .update(socialAccount)
+        .set({
+          tokenCipher: await encryptSecret(env, token),
+          credentialsJson: await encryptCredentials(env, creds),
+        })
+        .where(eq(socialAccount.id, d.socialAccountId));
+    }
+    if (imageUrl && !creds.imageUrl) creds = { ...creds, imageUrl };
     const result = await adapter.publish({
       body: post.body,
       handle: d.handle,
-      token: await decryptSecret(env, d.tokenCipher),
+      token,
       credentials: creds,
       commentBody: post.commentBody,
       skipComment: deferComment,
+      videoBytes,
+      videoContentType,
     });
     if ("remoteId" in result) {
       anyPublished = true;
@@ -260,7 +308,7 @@ async function publishPost(env: Env, postId: string) {
   if (anyPublished && deferComment) {
     await env.PUBLISH.send(
       { postId, action: "comment" },
-      { delaySeconds: Math.min(Math.max(1, delay), 43200) },
+      { delaySeconds: commentQueueDelay(delay) },
     );
   }
 

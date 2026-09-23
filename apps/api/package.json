@@ -11,7 +11,7 @@
     "db:migrate": "wrangler d1 migrations apply duskly --remote",
     "db:migrate:prod": "wrangler d1 migrations apply duskly --remote --config wrangler.production.jsonc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "lint": "echo ok"
   },
   "dependencies": {

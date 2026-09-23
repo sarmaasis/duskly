@@ -13,6 +13,9 @@ type SessionPayload = {
   session?: { id?: string; userId?: string } | null;
 };
 
+export const AUTH_SIGN_OUT_PATH = "/api/auth/sign-out";
+export const AUTH_GET_SESSION_PATH = "/api/auth/get-session";
+
 @Injectable({ providedIn: "root" })
 export class SessionService {
   readonly user = signal<AuthUser | null>(null);
@@ -39,7 +42,7 @@ export class SessionService {
   async signOut(): Promise<void> {
     if (isBrowser()) {
       try {
-        await fetch(`${apiBase()}/api/auth/sign-out`, {
+        await fetch(`${apiBase()}${AUTH_SIGN_OUT_PATH}`, {
           method: "POST",
           credentials: "include",
           headers: { "content-type": "application/json" },
@@ -68,7 +71,7 @@ export class SessionService {
 
   private async fetchSession(): Promise<void> {
     try {
-      const res = await fetch(`${apiBase()}/api/auth/get-session`, {
+      const res = await fetch(`${apiBase()}${AUTH_GET_SESSION_PATH}`, {
         method: "GET",
         credentials: "include",
       });

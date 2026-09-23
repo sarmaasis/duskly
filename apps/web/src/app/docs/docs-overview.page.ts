@@ -20,6 +20,17 @@ import { RouterLink } from "@angular/router";
           <li><span class="font-semibold text-[#09090b]">API &amp; agents</span> — mint <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code> tokens for scripts, or drive scheduling from Cursor/Claude via MCP.</li>
         </ul>
 
+        <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">OAuth callbacks and legal</h2>
+        <p class="mt-4 text-[14px] leading-relaxed text-[#52525b]">
+          Cloud OAuth redirects are <code class="rounded bg-[#f4f4f1] px-1.5 py-0.5 font-mono text-[13px]">https://api.duskly.site/v1/accounts/oauth/&#123;network&#125;/callback</code>
+          (replace <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">network</code> with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">x</code>, <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">linkedin</code>, <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">instagram</code>, and so on).
+          Register that exact URL in each vendor portal. Privacy, terms, and data-deletion live at
+          <a routerLink="/privacy" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/privacy</a>,
+          <a routerLink="/terms" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/terms</a>, and
+          <a routerLink="/data-deletion" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/data-deletion</a>.
+          Meta’s signed callback is <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST https://api.duskly.site/v1/meta/data-deletion</code>.
+        </p>
+
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">Where to go next</h2>
         <div class="mt-4 grid gap-3 sm:grid-cols-2">
           <a routerLink="/docs/api" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">

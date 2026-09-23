@@ -1,5 +1,6 @@
 import { Component, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
+import { MarketingFooter } from "../layout/marketing-footer";
 import { SessionService } from "../lib/session";
 
 const CF_DEPLOY =
@@ -92,7 +93,7 @@ const FAQS = [
 
 @Component({
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, MarketingFooter],
   template: `
     <div class="min-h-dvh w-full max-w-full overflow-x-hidden bg-[#fbfbfa] font-sans text-[#09090b] antialiased">
       <header class="sticky top-0 z-50 border-b border-[#e4e4e7] bg-[#fbfbfa]/90 backdrop-blur-md">
@@ -524,35 +525,7 @@ const FAQS = [
         </div>
       </section>
 
-      <footer class="border-t border-[#e4e4e7] bg-white">
-        <div class="mx-auto max-w-6xl px-4 pb-8 pt-12 sm:px-6">
-          <div class="mb-12 grid grid-cols-2 gap-8 md:grid-cols-6">
-            <div class="col-span-2 space-y-3">
-              <a routerLink="/" class="font-display text-[15px] font-extrabold tracking-tight text-[#09090b]">Dus<span class="text-cta">kly</span></a>
-              <p class="max-w-xs text-[13px] leading-5 text-[#52525b]">Social scheduling for U.S. managers and agencies. Self-host free, or Cloud at duskly.site.</p>
-              <a href="mailto:hello@duskly.site" class="inline-block font-mono text-[12px] text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">hello&#64;duskly.site</a>
-            </div>
-            @for (col of footerCols; track col.label) {
-              <div class="space-y-2.5 font-mono text-[12px]">
-                <p class="text-[11px] font-semibold uppercase tracking-wider text-[#09090b]">{{ col.label }}</p>
-                @for (link of col.links; track link.label) {
-                  @if (link.external) {
-                    <a [href]="link.href" class="block text-[#52525b] hover:text-[#09090b]">{{ link.label }}</a>
-                  } @else if (link.href.startsWith('/#')) {
-                    <a [href]="link.href" class="block text-[#52525b] hover:text-[#09090b]">{{ link.label }}</a>
-                  } @else {
-                    <a [routerLink]="link.href" class="block text-[#52525b] hover:text-[#09090b]">{{ link.label }}</a>
-                  }
-                }
-              </div>
-            }
-          </div>
-          <div class="flex flex-col gap-2 border-t border-[#e4e4e7] pt-6 font-mono text-[12px] text-[#71717a] sm:flex-row sm:items-center sm:justify-between">
-            <p>&copy; {{ year }} Duskly. Cloud billing by Dodo Payments.</p>
-            <p>Self-host free. Cloud from $29/mo.</p>
-          </div>
-        </div>
-      </footer>
+      <dk-marketing-footer />
     </div>
   `,
 })
@@ -561,7 +534,6 @@ export class LandingPage {
   readonly cfDeploy = CF_DEPLOY;
   readonly plans = PLANS;
   readonly faqs = FAQS;
-  readonly year = new Date().getFullYear();
   readonly annual = signal(false);
   readonly openFaq = signal(0);
   readonly menuOpen = signal(false);
@@ -570,6 +542,7 @@ export class LandingPage {
     { label: "How it works", href: "/#how" },
     { label: "Pricing", href: "/#pricing" },
     { label: "Docs", href: "/docs" },
+    { label: "Privacy", href: "/privacy" },
     { label: "GitHub", href: "https://github.com/sarmaasis/duskly" },
   ];
 
@@ -605,43 +578,6 @@ export class LandingPage {
     { label: "Calendar", detail: "Month and agenda of what’s due" },
     { label: "Accounts", detail: "Connect LinkedIn, X, Instagram, and more" },
     { label: "Publish", detail: "Queue → send when the slot hits" },
-  ];
-
-  readonly footerCols = [
-    {
-      label: "Product",
-      links: [
-        { label: "How it works", href: "/#how", external: false },
-        { label: "Pricing", href: "/#pricing", external: false },
-        { label: "Docs", href: "/docs", external: false },
-        { label: "FAQ", href: "/#faq", external: false },
-      ],
-    },
-    {
-      label: "Deploy",
-      links: [
-        { label: "GitHub", href: "https://github.com/sarmaasis/duskly", external: true },
-        { label: "One-click deploy", href: CF_DEPLOY, external: true },
-      ],
-    },
-    {
-      label: "Cloud",
-      links: [
-        { label: "Plans", href: "/pricing", external: false },
-        { label: "Sign in", href: "/signin", external: false },
-        { label: "Sign up", href: "/signup", external: false },
-        { label: "Standard $29", href: "/signup", external: false },
-        { label: "Ultimate $99", href: "/signup", external: false },
-      ],
-    },
-    {
-      label: "App",
-      links: [
-        { label: "Calendar", href: "/app", external: false },
-        { label: "Compose", href: "/app/compose", external: false },
-        { label: "Settings", href: "/app/settings", external: false },
-      ],
-    },
   ];
 
   price(plan: (typeof PLANS)[number]) {

@@ -1,5 +1,6 @@
 import { Component, signal } from "@angular/core";
 import { RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
+import { MarketingFooter } from "../layout/marketing-footer";
 
 const NAV = [
   {
@@ -21,9 +22,9 @@ const NAV = [
 
 @Component({
   standalone: true,
-  imports: [RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, MarketingFooter],
   template: `
-    <div class="min-h-dvh bg-[#fbfbfa] font-sans text-[#09090b] antialiased">
+    <div class="flex min-h-dvh flex-col bg-[#fbfbfa] font-sans text-[#09090b] antialiased">
       <header class="sticky top-0 z-40 border-b border-[#e4e4e7] bg-[#fbfbfa]/95 backdrop-blur-md">
         <div class="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-4 px-4 sm:px-6">
           <div class="flex items-center gap-4">
@@ -55,7 +56,7 @@ const NAV = [
         </div>
       </header>
 
-      <div class="mx-auto flex max-w-[1400px]">
+      <div class="mx-auto flex w-full max-w-[1400px] flex-1">
         <aside
           class="fixed inset-y-0 left-0 z-30 w-64 shrink-0 overflow-y-auto border-r border-[#e4e4e7] bg-[#fbfbfa] pt-14 transition-transform lg:static lg:translate-x-0 lg:pt-0"
           [class.-translate-x-full]="!navOpen()"
@@ -91,6 +92,7 @@ const NAV = [
           <router-outlet />
         </main>
       </div>
+      <dk-marketing-footer />
     </div>
   `,
 })

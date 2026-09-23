@@ -20,10 +20,14 @@ import { DocsOverviewPage } from "./docs/docs-overview.page";
 import { DocsApiPage } from "./docs/docs-api.page";
 import { DocsAgentsPage } from "./docs/docs-agents.page";
 import { DocsMcpPage } from "./docs/docs-mcp.page";
+import { PrivacyPage, TermsPage, DataDeletionPage } from "./pages/legal.page";
 
 export const routes: Routes = [
   { path: "", component: LandingPage },
   { path: "pricing", component: PricingPage },
+  { path: "privacy", component: PrivacyPage },
+  { path: "terms", component: TermsPage },
+  { path: "data-deletion", component: DataDeletionPage },
   { path: "signin", component: AuthPage },
   { path: "signup", component: SignupPage },
   { path: "onboarding", component: OnboardingPage },

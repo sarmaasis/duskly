@@ -1,14 +1,16 @@
 import { Component, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
+import { MarketingFooter } from "../layout/marketing-footer";
 import { nextAfterAuth } from "../lib/api";
 import { SessionService } from "../lib/session";
 
 @Component({
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, MarketingFooter],
   template: `
-    <div class="flex min-h-dvh bg-[#fbfbfa] font-sans text-[#09090b] antialiased">
+    <div class="flex min-h-dvh flex-col bg-[#fbfbfa] font-sans text-[#09090b] antialiased">
+      <div class="flex flex-1">
       <div class="flex flex-1 flex-col px-6 py-8 sm:px-10 lg:px-16">
         <a routerLink="/" class="font-display text-[17px] font-extrabold tracking-tight">Dus<span class="text-cta">kly</span></a>
         <div class="flex flex-1 items-center py-10">
@@ -54,6 +56,8 @@ import { SessionService } from "../lib/session";
           <p class="mt-4 text-[12px] text-[#a1a1aa]">Cloud billing by Dodo Payments.</p>
         </div>
       </aside>
+      </div>
+      <dk-marketing-footer />
     </div>
   `,
 })

@@ -1,3 +1,5 @@
+import { REDDIT_UA } from "../oauth-tokens";
+
 export type Network =
   | "linkedin"
   | "x"
@@ -23,6 +25,8 @@ export type PublishInput = {
   commentBody?: string | null;
   /** When true, adapters skip first-comment (publisher will schedule it later). */
   skipComment?: boolean;
+  videoBytes?: ArrayBuffer;
+  videoContentType?: string;
 };
 
 export type CommentInput = {
@@ -366,10 +370,22 @@ async function metaGraphPublish(
   kind: "instagram" | "threads" | "facebook",
 ): Promise<PublishOk | PublishQueued> {
   const token = input.credentials?.accessToken ?? input.token;
-  const pageId = input.credentials?.pageId || input.credentials?.igUserId || input.credentials?.threadsUserId;
-  if (!hasToken(token) || !pageId) {
+  const igUserId = input.credentials?.igUserId;
+  const pageId = input.credentials?.pageId;
+  const threadsUserId = input.credentials?.threadsUserId;
+  if (kind === "instagram" && (!hasToken(token) || !igUserId)) {
     return missingCreds(
-      `${kind} OAuth credentials are not configured — scheduled and queued honestly, not marked published`,
+      "Instagram Page token / professional account id are not configured — scheduled and queued honestly, not marked published",
+    );
+  }
+  if (kind === "facebook" && (!hasToken(token) || !pageId)) {
+    return missingCreds(
+      "Facebook Page id / Page token are not configured — scheduled and queued honestly, not marked published",
+    );
+  }
+  if (kind === "threads" && (!hasToken(token) || !threadsUserId)) {
+    return missingCreds(
+      "Threads user token / user id are not configured — scheduled and queued honestly, not marked published",
     );
   }
   try {
@@ -394,7 +410,7 @@ async function metaGraphPublish(
       if (!input.credentials?.imageUrl) {
         return missingCreds("Instagram Graph API requires an image URL for feed posts — queued until media is attached");
       }
-      const create = await fetch(`https://graph.facebook.com/v21.0/${pageId}/media`, {
+      const create = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ image_url: input.credentials.imageUrl, caption: input.body, access_token: token }),
@@ -404,7 +420,7 @@ async function metaGraphPublish(
         return missingCreds(`Instagram media create failed (${create.status}): ${err.slice(0, 200)}`);
       }
       const created = (await create.json()) as { id?: string };
-      const pub = await fetch(`https://graph.facebook.com/v21.0/${pageId}/media_publish`, {
+      const pub = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ creation_id: created.id, access_token: token }),
@@ -419,8 +435,7 @@ async function metaGraphPublish(
         commentSkipped: input.commentBody?.trim() ? "Instagram first-comment requires separate comment API scope" : undefined,
       };
     }
-    // Threads text post
-    const create = await fetch(`https://graph.threads.net/v1.0/${pageId}/threads`, {
+    const create = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ media_type: "TEXT", text: input.body, access_token: token }),
@@ -430,7 +445,7 @@ async function metaGraphPublish(
       return missingCreds(`Threads create failed (${create.status}): ${err.slice(0, 200)}`);
     }
     const created = (await create.json()) as { id?: string };
-    const pub = await fetch(`https://graph.threads.net/v1.0/${pageId}/threads_publish`, {
+    const pub = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads_publish`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ creation_id: created.id, access_token: token }),
@@ -450,19 +465,75 @@ async function metaGraphPublish(
 }
 
 /* ——— YouTube ——— */
+async function youtubeUploadVideo(
+  token: string,
+  input: PublishInput,
+  bytes: ArrayBuffer,
+  contentType: string,
+): Promise<PublishOk | PublishQueued> {
+  const init = await fetch(
+    "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json; charset=UTF-8",
+        "x-upload-content-type": contentType,
+        "x-upload-content-length": String(bytes.byteLength),
+      },
+      body: JSON.stringify({
+        snippet: {
+          title: input.body.slice(0, 100) || "Untitled",
+          description: input.body,
+        },
+        status: { privacyStatus: "public" },
+      }),
+    },
+  );
+  const location = init.headers.get("location");
+  if (!init.ok || !location) {
+    const err = await init.text();
+    return missingCreds(`YouTube resumable init failed (${init.status}): ${err.slice(0, 200)}`);
+  }
+  const put = await fetch(location, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": contentType,
+      "content-length": String(bytes.byteLength),
+    },
+    body: bytes,
+  });
+  if (!put.ok) {
+    const err = await put.text();
+    return missingCreds(`YouTube video upload failed (${put.status}): ${err.slice(0, 200)}`);
+  }
+  const data = (await put.json()) as { id?: string };
+  return {
+    remoteId: data.id ?? crypto.randomUUID(),
+    commentSkipped: input.commentBody?.trim() ? "YouTube first-comment nested replies skipped" : undefined,
+  };
+}
+
 async function youtubePublish(input: PublishInput): Promise<PublishOk | PublishQueued> {
   const token = input.credentials?.accessToken ?? input.token;
   if (!hasToken(token)) {
     return missingCreds("YouTube OAuth credentials are not configured — scheduled and queued honestly, not marked published");
   }
-  // Text posts aren't native; community posts need channel + special APIs. Without video upload, queue.
-  if (!input.credentials?.videoId && !input.credentials?.videoUrl) {
-    return missingCreds("YouTube publish needs a video upload — text-only posts stay queued");
-  }
   try {
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet`,
-      {
+    let bytes = input.videoBytes;
+    let contentType = input.videoContentType || "video/mp4";
+    if (!bytes && input.credentials?.videoUrl) {
+      const fetched = await fetch(input.credentials.videoUrl);
+      if (!fetched.ok) return missingCreds(`YouTube source video fetch failed (${fetched.status})`);
+      bytes = await fetched.arrayBuffer();
+      contentType = fetched.headers.get("content-type") || contentType;
+    }
+    if (bytes) {
+      return youtubeUploadVideo(token, input, bytes, contentType);
+    }
+    if (input.credentials?.videoId) {
+      const res = await fetch("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet", {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify({
@@ -471,17 +542,18 @@ async function youtubePublish(input: PublishInput): Promise<PublishOk | PublishQ
             topLevelComment: { snippet: { textOriginal: input.body } },
           },
         }),
-      },
-    );
-    if (!res.ok) {
-      const err = await res.text();
-      return missingCreds(`YouTube comment/post failed (${res.status}): ${err.slice(0, 200)}`);
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        return missingCreds(`YouTube comment/post failed (${res.status}): ${err.slice(0, 200)}`);
+      }
+      const data = (await res.json()) as { id?: string };
+      return {
+        remoteId: data.id ?? crypto.randomUUID(),
+        commentSkipped: input.commentBody?.trim() ? "YouTube first-comment nested replies skipped" : undefined,
+      };
     }
-    const data = (await res.json()) as { id?: string };
-    return {
-      remoteId: data.id ?? crypto.randomUUID(),
-      commentSkipped: input.commentBody?.trim() ? "YouTube first-comment nested replies skipped" : undefined,
-    };
+    return missingCreds("YouTube publish needs a video file — text-only posts stay queued");
   } catch (e) {
     return missingCreds(e instanceof Error ? e.message : "YouTube error");
   }
@@ -507,7 +579,7 @@ async function redditPublish(input: PublishInput): Promise<PublishOk | PublishQu
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": "application/x-www-form-urlencoded",
-        "user-agent": "duskly/1.0",
+        "user-agent": REDDIT_UA,
       },
       body,
     });

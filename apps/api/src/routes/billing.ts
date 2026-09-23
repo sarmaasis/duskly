@@ -8,7 +8,7 @@ import { isPlanId, type PlanId } from "../lib/plans";
 
 export const billingRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
 
-function productId(env: Env, plan: PlanId, interval: "month" | "year"): string | null {
+export function productId(env: Env, plan: PlanId, interval: "month" | "year"): string | null {
   const key = `DODO_${plan.toUpperCase()}_${interval === "year" ? "YEARLY" : "MONTHLY"}_PRODUCT_ID` as keyof Env;
   const fromEnv = env[key];
   if (typeof fromEnv === "string" && fromEnv.trim()) return fromEnv.trim();

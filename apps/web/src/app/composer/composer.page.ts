@@ -1,95 +1,99 @@
 import { Component, ElementRef, OnInit, ViewChild, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
+import { RouterLink } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
 import { lsSet } from "../lib/browser";
-import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/forms";
+import { PICTURE_EDITOR_FRAME_MAX, pictureEditorFrameRects } from "../lib/picture-editor";
+import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
 
 @Component({
   standalone: true,
-  imports: [FormsModule, DkSelect, DkChoice, DkDate, DkDateTime, DkPill],
+  imports: [FormsModule, RouterLink, DkSelect, DkChoice, DkDate, DkDateTime, DkPill],
   template: `
-    <div class="mx-auto max-w-6xl">
-      <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div class="mx-auto w-full max-w-7xl">
+      <div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Schedule</p>
-          <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Compose</h1>
-          <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">Draft once, cross-post, attach media, and schedule.</p>
+          <h1 class="font-display text-2xl font-bold tracking-tight text-[#121417] dark:text-zinc-50">Compose</h1>
+          <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Draft once, cross-post, attach media, and schedule.</p>
         </div>
-        <button type="button" (click)="schedule()" class="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-cta px-5 text-sm font-semibold text-white shadow-[0_1px_3px_rgba(15,18,24,0.12)] hover:bg-cta-hover">
+        <button type="button" (click)="schedule()" class="hidden rounded-xl bg-cta px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-cta-hover lg:inline-flex">
           Schedule post
         </button>
       </div>
 
       @if (msg()) {
-        <p class="mb-4 rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900" [class.text-red-600]="err()" [class.text-[#365314]]="!err()">{{ msg() }}</p>
+        <p class="mb-6 rounded-2xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-xs dark:border-zinc-700 dark:bg-zinc-900" [class.text-red-600]="err()" [class.text-[#365314]]="!err()">{{ msg() }}</p>
       }
 
-      <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div class="space-y-5">
-          <section class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e3] px-4 py-3 dark:border-zinc-700">
-              <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Draft</p>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <button type="button" (click)="copilot()" class="inline-flex h-8 items-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-[11px] font-semibold text-[#121417] hover:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">AI copilot</button>
-                <button type="button" (click)="aiImage()" [disabled]="(usage()?.limits.aiImages||0)===0" class="inline-flex h-8 items-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-[11px] font-semibold text-[#121417] hover:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">AI image</button>
-                <label class="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 text-[11px] font-semibold text-[#52525b] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+      <div class="grid grid-cols-1 items-start gap-8 lg:grid-cols-3">
+        <div class="space-y-6 lg:col-span-2">
+          <section class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e3] pb-3 dark:border-zinc-700">
+              <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Draft</p>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" (click)="copilot()" class="inline-flex items-center gap-1.5 rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">
+                  <span class="size-1.5 rounded-full bg-cta"></span>
+                  AI copilot
+                </button>
+                <button type="button" (click)="aiImage()" [disabled]="(usage()?.limits.aiImages||0)===0" class="rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">AI image</button>
+                <label class="inline-flex items-center rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
                   <span class="sr-only">Clip seconds</span>
-                  <select [(ngModel)]="clipDurationSec" name="clipSec" class="appearance-none bg-transparent font-mono text-[11px] outline-none dark:text-zinc-100">
+                  <select [(ngModel)]="clipDurationSec" name="clipSec" class="appearance-none bg-transparent font-medium outline-none dark:text-zinc-100">
                     <option [ngValue]="6">6s</option>
                     <option [ngValue]="8">8s</option>
                     <option [ngValue]="10">10s</option>
                     <option [ngValue]="12">12s</option>
                   </select>
                 </label>
-                <button type="button" (click)="aiVideo()" class="inline-flex h-8 items-center rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-[11px] font-semibold text-[#121417] hover:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700">AI clip</button>
+                <button type="button" (click)="aiVideo()" class="rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">AI clip</button>
               </div>
             </div>
             <textarea
               [(ngModel)]="body"
-              rows="10"
+              rows="6"
               placeholder="What are you posting?"
-              class="w-full resize-y border-0 bg-transparent px-4 py-4 font-sans text-[15px] leading-relaxed text-[#121417] outline-none placeholder:text-[#a1a1aa] dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              class="w-full resize-y border-0 bg-transparent p-0 font-sans text-sm text-[#121417] outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             ></textarea>
             @if (videoPreview()) {
-              <div class="border-t border-[#e8e8e3] px-4 py-3 dark:border-zinc-700">
-                <video [src]="videoPreview()!" controls class="max-h-56 w-full rounded-lg border border-[#e8e8e3] dark:border-zinc-700"></video>
+              <div class="mt-3 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
+                <video [src]="videoPreview()!" controls class="max-h-56 w-full rounded-xl border border-[#e8e8e3] dark:border-zinc-700"></video>
               </div>
             }
             @if (mediaPreview() && !videoPreview()) {
-              <div class="border-t border-[#e8e8e3] px-4 py-3 dark:border-zinc-700">
-                <img [src]="mediaPreview()!" alt="Edited media" class="max-h-48 rounded-lg border border-[#e8e8e3] dark:border-zinc-700" />
+              <div class="mt-3 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
+                <img [src]="mediaPreview()!" alt="Edited media" class="max-h-48 rounded-xl border border-[#e8e8e3] dark:border-zinc-700" />
               </div>
             }
           </section>
 
-          <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <div class="mb-4 flex items-baseline justify-between gap-2">
-              <div>
-                <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Publish options</p>
-                <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">When it goes out, and how it repeats.</p>
-              </div>
+          <section class="space-y-5 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <div>
+              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Publish Options</h2>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">When it goes out, and how it repeats.</p>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Schedule
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 md:col-span-2">Schedule
                 <div class="mt-1.5"><dk-datetime [(ngModel)]="when" placeholder="Pick date & time" /></div>
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Post delay (seconds)
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Post delay (seconds)
                 <input type="number" [(ngModel)]="delaySeconds" min="0" [class]="fieldMt" />
               </label>
-              <div class="sm:col-span-2">
-                <p class="mb-2 text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Repeat</p>
-                <div class="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Repeat">
-                  <dk-choice value="none" [selected]="repeatRule==='none'" (pick)="repeatRule=$event">None</dk-choice>
-                  <dk-choice value="daily" [selected]="repeatRule==='daily'" (pick)="repeatRule=$event">Daily</dk-choice>
-                  <dk-choice value="weekly" [selected]="repeatRule==='weekly'" (pick)="repeatRule=$event">Weekly</dk-choice>
-                </div>
+            </div>
+            <div>
+              <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat</p>
+              <div class="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Repeat">
+                <dk-choice value="none" [selected]="repeatRule==='none'" (pick)="repeatRule=$event">None</dk-choice>
+                <dk-choice value="daily" [selected]="repeatRule==='daily'" (pick)="repeatRule=$event">Daily</dk-choice>
+                <dk-choice value="weekly" [selected]="repeatRule==='weekly'" (pick)="repeatRule=$event">Weekly</dk-choice>
               </div>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Repeat until
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat until
                 <div class="mt-1.5" [class.pointer-events-none]="repeatRule==='none'" [class.opacity-40]="repeatRule==='none'">
                   <dk-date [(ngModel)]="repeatUntil" placeholder="End date" />
                 </div>
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Signature
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Signature
                 <div class="mt-1.5">
                   <dk-select [(ngModel)]="signatureId">
                     <option value="">Account default</option>
@@ -99,7 +103,9 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
                   </dk-select>
                 </div>
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Posting set
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Posting set
                 <div class="mt-1.5">
                   <dk-select [(ngModel)]="postingSetId" (ngModelChange)="applySet($event)">
                     <option value="">Manual channels</option>
@@ -109,7 +115,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
                   </dk-select>
                 </div>
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] sm:col-span-2 dark:text-zinc-400">Target group
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Target group
                 <div class="mt-1.5">
                   <dk-select [(ngModel)]="groupId" (ngModelChange)="applyGroup($event)">
                     <option value="">Manual channels</option>
@@ -122,79 +128,87 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
             </div>
           </section>
 
-          <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">First comment</p>
-            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">Optional reply under the post. Delay waits before sending.</p>
-            <div class="mt-3 grid gap-3 sm:grid-cols-[1fr_10rem]">
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Comment body
+          <section class="space-y-4 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <div>
+              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">First Comment</h2>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">Optional reply under the post. Delay waits before sending.</p>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 md:col-span-2">Comment body
                 <input [(ngModel)]="commentBody" placeholder="Link in bio…" [class]="fieldMt" />
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Delay (sec)
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Delay (sec)
                 <input type="number" [(ngModel)]="commentDelaySeconds" min="0" [disabled]="!commentBody" [class]="fieldMt" />
               </label>
             </div>
           </section>
 
-          <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <div class="mb-4">
-              <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Picture editor</p>
-              <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">Upload, adjust, overlay text, export into the media library.</p>
+          <section class="space-y-6 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <div>
+              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Picture Editor</h2>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">Upload, adjust, overlay text, export into the media library.</p>
             </div>
-            <label class="relative mb-3 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-[#e8e8e3] bg-[#f7f7f4] px-4 py-5 text-center transition-colors hover:border-[#c4c4c0] hover:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-800/80">
-              <span class="text-[12px] font-semibold text-[#121417] dark:text-zinc-100">Choose an image</span>
-              <span class="mt-0.5 text-[11px] text-[#63676c] dark:text-zinc-400">PNG or JPEG</span>
+            <label class="relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#e8e8e3] bg-[#fcfcf9] p-8 text-center transition-colors hover:bg-[#f7f7f4] dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-800/80">
+              <span class="text-sm font-medium text-[#121417] dark:text-zinc-100">Choose an image</span>
+              <span class="mt-1 text-xs text-zinc-400 dark:text-zinc-400">PNG or JPEG</span>
               <input type="file" accept="image/*" (change)="onFile($event)" class="absolute inset-0 cursor-pointer opacity-0" />
             </label>
-            <div class="mb-3 flex justify-center rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] p-2 dark:border-zinc-700 dark:bg-zinc-800">
-              <canvas #canvas width="640" height="480" class="max-h-56 max-w-full h-auto w-auto rounded-md"></canvas>
+            <div class="flex h-64 items-center justify-center rounded-xl border border-[#e8e8e3] bg-[#f7f7f4] p-2 dark:border-zinc-700 dark:bg-zinc-800">
+              <canvas #canvas width="640" height="480" class="max-h-full max-w-full h-auto w-auto rounded-md"></canvas>
             </div>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <div class="sm:col-span-2">
-                <p class="mb-2 text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Aspect</p>
-                <div class="grid gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Aspect">
-                  <dk-choice value="original" [selected]="aspectPreset==='original'" (pick)="setAspect($event)">Original</dk-choice>
-                  <dk-choice value="1:1" [selected]="aspectPreset==='1:1'" (pick)="setAspect($event)">1:1</dk-choice>
-                  <dk-choice value="4:5" [selected]="aspectPreset==='4:5'" (pick)="setAspect($event)">4:5</dk-choice>
-                  <dk-choice value="16:9" [selected]="aspectPreset==='16:9'" (pick)="setAspect($event)">16:9</dk-choice>
-                </div>
+            <div>
+              <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Aspect</p>
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-4" role="radiogroup" aria-label="Aspect">
+                <dk-choice value="original" [selected]="aspectPreset==='original'" (pick)="setAspect($event)">Original</dk-choice>
+                <dk-choice value="1:1" [selected]="aspectPreset==='1:1'" (pick)="setAspect($event)">1:1</dk-choice>
+                <dk-choice value="4:5" [selected]="aspectPreset==='4:5'" (pick)="setAspect($event)">4:5</dk-choice>
+                <dk-choice value="16:9" [selected]="aspectPreset==='16:9'" (pick)="setAspect($event)">16:9</dk-choice>
               </div>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <p class="mb-2 text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Format</p>
-                <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Format">
+                <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Format</p>
+                <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Format">
                   <dk-choice value="image/png" [selected]="exportFormat==='image/png'" (pick)="exportFormat=$any($event)">PNG</dk-choice>
                   <dk-choice value="image/jpeg" [selected]="exportFormat==='image/jpeg'" (pick)="exportFormat=$any($event)">JPEG</dk-choice>
                 </div>
               </div>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Overlay text
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Overlay text
                 <input [(ngModel)]="overlay" (ngModelChange)="redraw()" [class]="fieldMt" />
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Brightness {{ brightness }}
-                <input type="range" min="50" max="150" [(ngModel)]="brightness" (ngModelChange)="redraw()" class="mt-2 w-full accent-cta" />
+            </div>
+            <div class="space-y-4 pt-2">
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Brightness {{ brightness }}
+                <input type="range" min="50" max="150" [(ngModel)]="brightness" (ngModelChange)="redraw()" class="mt-1.5 h-2 w-full cursor-pointer rounded-lg bg-zinc-200 accent-cta" />
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Contrast {{ contrast }}
-                <input type="range" min="50" max="150" [(ngModel)]="contrast" (ngModelChange)="redraw()" class="mt-2 w-full accent-cta" />
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Contrast {{ contrast }}
+                <input type="range" min="50" max="150" [(ngModel)]="contrast" (ngModelChange)="redraw()" class="mt-1.5 h-2 w-full cursor-pointer rounded-lg bg-zinc-200 accent-cta" />
               </label>
-              <label class="block text-[11px] font-semibold text-[#71717a] sm:col-span-2 dark:text-zinc-400">Inset crop %
-                <input type="range" min="0" max="30" [(ngModel)]="cropPct" (ngModelChange)="redraw()" class="mt-2 w-full accent-cta" />
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Inset crop %
+                <input type="range" min="0" max="30" [(ngModel)]="cropPct" (ngModelChange)="redraw()" class="mt-1.5 h-2 w-full cursor-pointer rounded-lg bg-zinc-200 accent-cta" />
               </label>
             </div>
-            <button type="button" (click)="exportEdited()" class="mt-4 inline-flex h-9 items-center rounded-full bg-[#121417] px-4 text-xs font-semibold text-white hover:bg-[#27272a] dark:bg-zinc-100 dark:text-zinc-900">Export to media library</button>
+            <div>
+              <button type="button" (click)="exportEdited()" class="rounded-xl bg-[#121417] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">Export to media library</button>
+            </div>
           </section>
 
-          <div class="flex justify-end pb-2 lg:hidden">
-            <button type="button" (click)="schedule()" class="inline-flex h-10 items-center rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover">Schedule post</button>
+          <div class="pb-2 lg:hidden">
+            <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-cta-hover">Schedule post</button>
           </div>
         </div>
 
-        <aside class="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Channels</p>
-            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">Cross-post destinations</p>
-            <div class="mt-3 max-h-72 space-y-3 overflow-y-auto">
+        <aside class="space-y-6 lg:sticky lg:top-6">
+          <section class="space-y-3 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <div>
+              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Channels</h2>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400">Cross-post destinations</p>
+            </div>
+            <div class="space-y-3">
               @for (g of channelGroups; track g.id) {
                 @if (accountsIn(g.id).length) {
                   <div>
-                    <p class="mb-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">{{ g.label }}</p>
+                    <p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{{ g.label }}</p>
                     <div class="flex flex-wrap gap-1.5">
                       @for (a of accountsIn(g.id); track a.id) {
                         <dk-pill [on]="selected().includes(a.id)" (toggle)="toggle(a.id)">
@@ -209,24 +223,40 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
                 }
               }
               @if (!accounts().length) {
-                <p class="rounded-lg bg-[#f7f7f4] px-3 py-3 text-[12px] text-[#63676c] dark:bg-zinc-800 dark:text-zinc-400">Connect channels in Accounts.</p>
+                <p class="rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] p-4 text-center text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
+                  Connect channels in <a routerLink="/app/accounts" class="font-medium text-cta underline">Accounts</a>.
+                </p>
               }
             </div>
           </section>
 
-          <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b] dark:text-zinc-500">Plan quotas</p>
-            <dl class="mt-3 space-y-2 text-[12px]">
-              <div class="flex justify-between gap-2"><dt class="text-[#63676c] dark:text-zinc-400">AI images</dt><dd class="font-mono font-semibold dark:text-zinc-100">{{ usage()?.used?.['aiImages'] || 0 }}/{{ usage()?.limits?.aiImages ?? 0 }}</dd></div>
-              <div class="flex justify-between gap-2"><dt class="text-[#63676c] dark:text-zinc-400">AI videos</dt><dd class="font-mono font-semibold dark:text-zinc-100">{{ usage()?.used?.['aiVideos'] || 0 }}/{{ usage()?.limits?.aiVideos ?? 0 }}</dd></div>
-              <div class="flex justify-between gap-2"><dt class="text-[#63676c] dark:text-zinc-400">Clip min</dt><dd class="font-mono font-semibold dark:text-zinc-100">{{ usage()?.used?.['aiClipMinutes'] || 0 }}/{{ usage()?.limits?.aiClipMinutes ?? 0 }}</dd></div>
-              <div class="flex justify-between gap-2"><dt class="text-[#63676c] dark:text-zinc-400">Copilot</dt><dd class="font-mono font-semibold dark:text-zinc-100">{{ usage()?.used?.['aiCopilot'] || 0 }}/{{ usage()?.limits?.aiCopilot ?? 0 }}</dd></div>
+          <section class="space-y-4 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Plan Quotas</h2>
+            <dl class="space-y-2.5 text-xs">
+              <div class="flex items-center justify-between border-b border-[#e8e8e3]/60 pb-2 dark:border-zinc-700">
+                <dt class="text-zinc-600 dark:text-zinc-400">AI images</dt>
+                <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiImages'] || 0 }}/{{ usage()?.limits?.aiImages ?? 0 }}</dd>
+              </div>
+              <div class="flex items-center justify-between border-b border-[#e8e8e3]/60 pb-2 dark:border-zinc-700">
+                <dt class="text-zinc-600 dark:text-zinc-400">AI videos</dt>
+                <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiVideos'] || 0 }}/{{ usage()?.limits?.aiVideos ?? 0 }}</dd>
+              </div>
+              <div class="flex items-center justify-between border-b border-[#e8e8e3]/60 pb-2 dark:border-zinc-700">
+                <dt class="text-zinc-600 dark:text-zinc-400">Clip min</dt>
+                <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiClipMinutes'] || 0 }}/{{ usage()?.limits?.aiClipMinutes ?? 0 }}</dd>
+              </div>
+              <div class="flex items-center justify-between">
+                <dt class="text-zinc-600 dark:text-zinc-400">Copilot</dt>
+                <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiCopilot'] || 0 }}/{{ usage()?.limits?.aiCopilot ?? 0 }}</dd>
+              </div>
             </dl>
           </section>
 
-          <button type="button" (click)="schedule()" class="hidden w-full items-center justify-center rounded-full bg-cta px-5 py-2.5 text-sm font-semibold text-white hover:bg-cta-hover lg:inline-flex">
-            Schedule post
-          </button>
+          <section class="hidden rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs lg:block dark:border-zinc-700 dark:bg-zinc-900">
+            <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-all hover:bg-cta-hover">
+              Schedule post
+            </button>
+          </section>
         </aside>
       </div>
     </div>
@@ -234,7 +264,8 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect, FIELD } from "../ui/for
 })
 export class ComposerPage implements OnInit {
   @ViewChild("canvas") canvasRef?: ElementRef<HTMLCanvasElement>;
-  readonly fieldMt = `mt-1.5 ${FIELD}`;
+  readonly fieldMt =
+    "mt-1.5 h-11 w-full rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] px-3.5 text-sm text-[#121417] outline-none transition-colors focus:border-cta focus:ring-1 focus:ring-cta disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100";
   readonly channelGroups = [
     { id: "social" as const, label: "Social" },
     { id: "blogs" as const, label: "Blogs" },
@@ -277,7 +308,6 @@ export class ComposerPage implements OnInit {
   cropPct = 0;
   sourceMediaId = "";
   private sourceImg: HTMLImageElement | null = null;
-  private static readonly FRAME_MAX = 640;
   mediaPreview = signal<string | null>(null);
   videoPreview = signal<string | null>(null);
   accounts = signal<{ id: string; network: string; handle: string }[]>([]);
@@ -476,57 +506,8 @@ export class ComposerPage implements OnInit {
   }
 
   /** Source cover-rect + dest frame (same aspect → no stretch). */
-  private frameRects(img: HTMLImageElement): {
-    sx: number;
-    sy: number;
-    sw: number;
-    sh: number;
-    dw: number;
-    dh: number;
-  } {
-    const inset = this.cropPct / 100;
-    const baseX = img.width * inset;
-    const baseY = img.height * inset;
-    const baseW = img.width * (1 - 2 * inset);
-    const baseH = img.height * (1 - 2 * inset);
-    const targetAspect =
-      this.aspectPreset === "1:1"
-        ? 1
-        : this.aspectPreset === "4:5"
-          ? 4 / 5
-          : this.aspectPreset === "16:9"
-            ? 16 / 9
-            : baseW / Math.max(baseH, 1);
-
-    // Center-cover: largest sub-rect of targetAspect inside the inset box.
-    let sw: number;
-    let sh: number;
-    let sx: number;
-    let sy: number;
-    if (baseW / baseH > targetAspect) {
-      sh = baseH;
-      sw = baseH * targetAspect;
-      sx = baseX + (baseW - sw) / 2;
-      sy = baseY;
-    } else {
-      sw = baseW;
-      sh = baseW / targetAspect;
-      sx = baseX;
-      sy = baseY + (baseH - sh) / 2;
-    }
-
-    // Contain frame in MAX×MAX without changing aspect.
-    const max = ComposerPage.FRAME_MAX;
-    let dw: number;
-    let dh: number;
-    if (targetAspect >= 1) {
-      dw = max;
-      dh = Math.max(1, Math.round(max / targetAspect));
-    } else {
-      dh = max;
-      dw = Math.max(1, Math.round(max * targetAspect));
-    }
-    return { sx, sy, sw, sh, dw, dh };
+  private frameRects(img: HTMLImageElement) {
+    return pictureEditorFrameRects(img, this.aspectPreset, this.cropPct, PICTURE_EDITOR_FRAME_MAX);
   }
 
   redraw() {

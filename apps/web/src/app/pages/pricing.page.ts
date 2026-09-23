@@ -1,5 +1,6 @@
 import { Component, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
+import { MarketingFooter } from "../layout/marketing-footer";
 import { SessionService } from "../lib/session";
 
 const CF_DEPLOY =
@@ -7,7 +8,7 @@ const CF_DEPLOY =
 
 @Component({
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, MarketingFooter],
   template: `
     <div class="min-h-dvh w-full overflow-x-hidden bg-[#fbfbfa] font-sans text-[#09090b] antialiased">
       <header class="sticky top-0 z-50 border-b border-[#e4e4e7] bg-[#fbfbfa]/90 backdrop-blur-md">
@@ -122,10 +123,7 @@ const CF_DEPLOY =
         </div>
       </section>
 
-      <footer class="border-t border-[#e4e4e7] bg-white px-4 py-8 text-center font-mono text-[12px] text-[#71717a] sm:px-6">
-        Standard $29 · Team $39 · Pro $49 · Ultimate $99 — yearly is 10 × monthly.
-        <a routerLink="/" class="ml-2 font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Home</a>
-      </footer>
+      <dk-marketing-footer />
     </div>
   `,
 })

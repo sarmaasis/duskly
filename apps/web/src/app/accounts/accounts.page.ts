@@ -14,6 +14,8 @@ type AccountRow = {
   slackChannelId?: string | null;
   slackChannelName?: string | null;
   needsSlackChannel?: boolean;
+  needsPage?: boolean;
+  pendingPages?: { id: string; name: string }[];
 };
 type Company = { id: string; name: string; accountIds: string[] };
 type SlackChannel = { id: string; name: string; isPrivate: boolean };
@@ -254,7 +256,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
                 <th class="px-3 py-2 font-semibold">Channel</th>
                 <th class="px-3 py-2 font-semibold">Network</th>
                 <th class="px-3 py-2 font-semibold">Company</th>
-                <th class="px-3 py-2 font-semibold">Slack destination</th>
+                <th class="px-3 py-2 font-semibold">Destination</th>
                 <th class="px-3 py-2 font-semibold">Status</th>
                 <th class="px-3 py-2 font-semibold"></th>
               </tr>
@@ -296,6 +298,13 @@ const FALLBACK_META: Record<string, NetMeta> = {
                           <option [value]="ch.id">#{{ ch.name }}</option>
                         }
                       </select>
+                    } @else if (a.needsPage) {
+                      <dk-select [ngModel]="''" (ngModelChange)="pickPage(a.id, $event)" [name]="'page-' + a.id">
+                        <option value="">Pick a Page…</option>
+                        @for (p of a.pendingPages || []; track p.id) {
+                          <option [value]="p.id">{{ p.name }}</option>
+                        }
+                      </dk-select>
                     } @else {
                       <span class="font-mono text-[11px] text-[#a1a1aa]">—</span>
                     }
@@ -410,7 +419,15 @@ export class AccountsPage implements OnInit {
         this.msg.set(
           oauthNetwork === "slack"
             ? "Slack workspace connected — pick a channel on the board to finish."
-            : "OAuth connected",
+            : oauthNetwork === "instagram" || oauthNetwork === "facebook"
+              ? `${oauthNetwork === "instagram" ? "Instagram" : "Facebook"} connected — pick a Page if you have more than one.`
+              : "OAuth connected",
+        );
+      } else if (oauth === "no_page") {
+        this.msg.set(
+          oauthNetwork === "instagram"
+            ? "No Facebook Page with a linked Instagram professional account was found."
+            : "No Facebook Pages were found on that account.",
         );
       } else if (oauth === "error" || oauth === "token_failed") this.msg.set("OAuth failed — credentials or consent rejected");
       else if (oauth === "expired") this.msg.set("OAuth state expired — try again");
@@ -450,6 +467,8 @@ export class AccountsPage implements OnInit {
         slackChannelId: a.slackChannelId ?? null,
         slackChannelName: a.slackChannelName ?? null,
         needsSlackChannel: !!a.needsSlackChannel,
+        needsPage: !!a.needsPage,
+        pendingPages: a.pendingPages || [],
       })),
     );
     this.networks.set(data.networks?.length ? data.networks : Object.keys(FALLBACK_META));
@@ -489,6 +508,21 @@ export class AccountsPage implements OnInit {
     } catch (e: unknown) {
       const err = e as { body?: { message?: string }; message?: string };
       this.msg.set(err.body?.message || err.message || "Could not load Slack channels");
+    }
+  }
+
+  async pickPage(accountId: string, pageId: string) {
+    if (!pageId) return;
+    try {
+      await api(`/v1/accounts/${accountId}`, {
+        method: "PATCH",
+        json: { workspaceId: this.workspaceId, pageId },
+      });
+      this.msg.set("Page selected — posts will use that Page token");
+      await this.reload();
+    } catch (e: unknown) {
+      const err = e as { body?: { message?: string }; message?: string };
+      this.msg.set(err.body?.message || err.message || "Could not save Page");
     }
   }
 

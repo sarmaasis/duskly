@@ -13,8 +13,9 @@ import {
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { planErrorResponse } from "../lib/entitlements";
+import { expandRepeatTimes } from "../lib/schedule";
 
-const createPost = z.object({
+export const createPost = z.object({
   workspaceId: z.string(),
   body: z.string().min(1).max(5000),
   scheduledAt: z.number().optional(),
@@ -152,11 +153,7 @@ postRoutes.post("/", async (c) => {
     }
 
     if (body.repeatRule && body.repeatRule !== "none" && scheduledAt && body.repeatUntil) {
-      const step = body.repeatRule === "daily" ? 86_400_000 : 604_800_000;
-      let next = scheduledAt.getTime() + step;
-      const until = body.repeatUntil;
-      let n = 0;
-      while (next <= until && n < 52) {
+      for (const next of expandRepeatTimes(scheduledAt.getTime(), body.repeatRule, body.repeatUntil)) {
         const rid = crypto.randomUUID();
         await db.insert(posts).values({
           id: rid,
@@ -184,8 +181,6 @@ postRoutes.post("/", async (c) => {
             status: "pending",
           });
         }
-        next += step;
-        n += 1;
       }
     }
 

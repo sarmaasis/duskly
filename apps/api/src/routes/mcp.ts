@@ -22,7 +22,7 @@ function err(id: JsonRpcId | undefined, code: number, message: string) {
   return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
 }
 
-const TOOLS = [
+export const MCP_TOOLS = [
   {
     name: "list_channels",
     description: "List connected social channels/accounts in the Duskly workspace for this API token.",
@@ -224,7 +224,7 @@ mcpRoutes.get("/", async (c) => {
     transport: "streamable-http",
     protocolVersion: "2025-03-26",
     workspaceId: auth.workspaceId,
-    tools: TOOLS.map((t) => t.name),
+    tools: MCP_TOOLS.map((t) => t.name),
   });
 });
 
@@ -261,7 +261,7 @@ mcpRoutes.post("/", async (c) => {
   }
 
   if (method === "tools/list") {
-    return c.json(ok(id, { tools: TOOLS }));
+    return c.json(ok(id, { tools: MCP_TOOLS }));
   }
 
   if (method === "tools/call") {

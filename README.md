@@ -34,6 +34,8 @@ pnpm dev:web
 
 `DUSKLY_MODE=selfhost` keeps billing off (free self-host). Set `cloud` on the hosted workers for Duskly Cloud at duskly.site.
 
+OAuth callbacks (Cloud): `https://api.duskly.site/v1/accounts/oauth/{network}/callback`. Privacy / terms / data deletion: `/privacy`, `/terms`, `/data-deletion` on duskly.site.
+
 See [docs/DEPLOY.md](docs/DEPLOY.md). Cloud billing setup is kept in untracked internal docs for operators.
 
 Apache-2.0

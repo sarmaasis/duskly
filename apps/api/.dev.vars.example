@@ -26,26 +26,36 @@ DODO_PRO_YEARLY_PRODUCT_ID=
 DODO_ULTIMATE_MONTHLY_PRODUCT_ID=
 DODO_ULTIMATE_YEARLY_PRODUCT_ID=
 
-# X (Twitter) OAuth 2.0
+# Production OAuth callback for every network:
+#   https://api.duskly.site/v1/accounts/oauth/{network}/callback
+# Local: ${BETTER_AUTH_URL}/v1/accounts/oauth/{network}/callback
+
+# X (Twitter) OAuth 2.0 — callback https://api.duskly.site/v1/accounts/oauth/x/callback
 X_CLIENT_ID=
 X_CLIENT_SECRET=
-# LinkedIn OAuth
+# LinkedIn OAuth — callback https://api.duskly.site/v1/accounts/oauth/linkedin/callback
 LINKEDIN_CLIENT_ID=
 LINKEDIN_CLIENT_SECRET=
-# Mastodon OAuth (default instance; UI can override)
+# Mastodon: optional override for one instance. Other hosts register via POST /api/v1/apps.
+# Callback https://api.duskly.site/v1/accounts/oauth/mastodon/callback
 MASTODON_CLIENT_ID=
 MASTODON_CLIENT_SECRET=
 MASTODON_INSTANCE=https://mastodon.social
-# Meta Graph OAuth — Instagram, Threads, Facebook
+# Meta — Instagram + Facebook Login, Threads app id/secret
+# Callbacks:
+#   https://api.duskly.site/v1/accounts/oauth/instagram/callback
+#   https://api.duskly.site/v1/accounts/oauth/facebook/callback
+#   https://api.duskly.site/v1/accounts/oauth/threads/callback
+# Data deletion: https://api.duskly.site/v1/meta/data-deletion
 META_APP_ID=
 META_APP_SECRET=
-# Google OAuth — YouTube
+# Google OAuth — YouTube — callback https://api.duskly.site/v1/accounts/oauth/youtube/callback
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-# Reddit OAuth
+# Reddit OAuth (web app) — callback https://api.duskly.site/v1/accounts/oauth/reddit/callback
 REDDIT_CLIENT_ID=
 REDDIT_CLIENT_SECRET=
-# Slack OAuth v2 (Add to Slack → bot token + channel picker)
+# Slack OAuth v2 — callback https://api.duskly.site/v1/accounts/oauth/slack/callback
 SLACK_CLIENT_ID=
 SLACK_CLIENT_SECRET=
 

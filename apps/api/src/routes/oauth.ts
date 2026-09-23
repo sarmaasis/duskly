@@ -6,6 +6,17 @@ import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertChannelLimit, planErrorResponse } from "../lib/entitlements";
 import { NETWORK_META, type Network } from "../lib/networks";
 import { encryptCredentials, encryptSecret } from "../lib/secrets";
+import {
+  buildAuthorizeUrl,
+  credsFromTokenJson,
+  exchangeLongLivedFacebookToken,
+  exchangeThreadsUserToken,
+  listFacebookPages,
+  oauthConfigured,
+  registerMastodonApp,
+  REDDIT_UA,
+} from "../lib/oauth-providers";
+import { applyTokenResponse } from "../lib/oauth-tokens";
 
 export const oauthRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -20,20 +31,6 @@ const OAUTH_NETWORKS = new Set<Network>([
   "reddit",
   "slack",
 ]);
-
-function oauthConfigured(env: Env, network: Network): boolean {
-  if (network === "x") return !!(env.X_CLIENT_ID && env.X_CLIENT_SECRET);
-  if (network === "linkedin") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
-  if (network === "mastodon") return !!(env.MASTODON_CLIENT_ID && env.MASTODON_CLIENT_SECRET);
-  if (network === "instagram" || network === "threads" || network === "facebook") {
-    return !!(env.META_APP_ID && env.META_APP_SECRET);
-  }
-  if (network === "youtube") return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
-  if (network === "reddit") return !!(env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET);
-  if (network === "slack") return !!(env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET);
-  if (network === "bluesky") return true;
-  return NETWORK_META[network]?.connect === "token";
-}
 
 function b64url(buf: ArrayBuffer | Uint8Array | string): string {
   const bytes =
@@ -53,6 +50,10 @@ async function pkcePair() {
   return { verifier, challenge: b64url(digest) };
 }
 
+function webRedirect(env: Env, qs: string) {
+  return `${env.WEB_ORIGIN}/app/accounts?${qs}`;
+}
+
 oauthRoutes.get("/status", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
@@ -60,7 +61,7 @@ oauthRoutes.get("/status", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const status: Record<string, boolean> = {};
   for (const n of Object.keys(NETWORK_META) as Network[]) {
-    status[n] = oauthConfigured(c.env, n);
+    status[n] = oauthConfigured(c.env, n) || NETWORK_META[n]?.connect === "token";
   }
   return c.json(status);
 });
@@ -94,6 +95,22 @@ oauthRoutes.get("/:network/start", async (c) => {
     "",
   );
 
+  const redirectUri = `${c.env.BETTER_AUTH_URL}/v1/accounts/oauth/${network}/callback`;
+  let mastodonClientId: string | undefined;
+  let mastodonClientSecret: string | undefined;
+  if (network === "mastodon") {
+    try {
+      const app = await registerMastodonApp(instance, redirectUri, c.env);
+      mastodonClientId = app.clientId;
+      mastodonClientSecret = app.clientSecret;
+    } catch {
+      return c.json(
+        { error: "mastodon_app_register_failed", message: `Could not register an OAuth app on ${instance}` },
+        502,
+      );
+    }
+  }
+
   await c.env.KV.put(
     `oauth:${state}`,
     JSON.stringify({
@@ -103,91 +120,21 @@ oauthRoutes.get("/:network/start", async (c) => {
       verifier,
       instance,
       groupId: c.req.query("groupId") || null,
+      mastodonClientId,
+      mastodonClientSecret,
     }),
     { expirationTtl: 600 },
   );
 
-  const redirectUri = `${c.env.BETTER_AUTH_URL}/v1/accounts/oauth/${network}/callback`;
-  let url: string;
-
-  if (network === "x") {
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: c.env.X_CLIENT_ID!,
-      redirect_uri: redirectUri,
-      scope: "tweet.read tweet.write users.read offline.access",
-      state,
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-    });
-    url = `https://twitter.com/i/oauth2/authorize?${params}`;
-  } else if (network === "linkedin") {
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: c.env.LINKEDIN_CLIENT_ID!,
-      redirect_uri: redirectUri,
-      scope: "openid profile w_member_social",
-      state,
-    });
-    url = `https://www.linkedin.com/oauth/v2/authorization?${params}`;
-  } else if (network === "mastodon") {
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: c.env.MASTODON_CLIENT_ID!,
-      redirect_uri: redirectUri,
-      scope: "read write",
-      state,
-    });
-    url = `${instance}/oauth/authorize?${params}`;
-  } else if (network === "instagram" || network === "threads" || network === "facebook") {
-    const scopes =
-      network === "instagram"
-        ? "instagram_basic,instagram_content_publish,pages_show_list"
-        : network === "threads"
-          ? "threads_basic,threads_content_publish"
-          : "pages_manage_posts,pages_read_engagement,pages_show_list";
-    const params = new URLSearchParams({
-      client_id: c.env.META_APP_ID!,
-      redirect_uri: redirectUri,
-      state,
-      scope: scopes,
-      response_type: "code",
-    });
-    url = `https://www.facebook.com/v21.0/dialog/oauth?${params}`;
-  } else if (network === "youtube") {
-    const params = new URLSearchParams({
-      client_id: c.env.GOOGLE_CLIENT_ID!,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "https://www.googleapis.com/auth/youtube.force-ssl",
-      access_type: "offline",
-      prompt: "consent",
-      state,
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-    });
-    url = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  } else if (network === "slack") {
-    const params = new URLSearchParams({
-      client_id: c.env.SLACK_CLIENT_ID!,
-      scope: "chat:write,channels:read,groups:read,chat:write.public",
-      redirect_uri: redirectUri,
-      state,
-    });
-    url = `https://slack.com/oauth/v2/authorize?${params}`;
-  } else {
-    // reddit
-    const params = new URLSearchParams({
-      client_id: c.env.REDDIT_CLIENT_ID!,
-      response_type: "code",
-      state,
-      redirect_uri: redirectUri,
-      duration: "permanent",
-      scope: "submit identity",
-    });
-    url = `https://www.reddit.com/api/v1/authorize?${params}`;
-  }
-
+  const url = buildAuthorizeUrl({
+    env: c.env,
+    network,
+    redirectUri,
+    state,
+    challenge,
+    instance,
+    mastodonClientId,
+  });
   return c.redirect(url);
 });
 
@@ -197,12 +144,12 @@ oauthRoutes.get("/:network/callback", async (c) => {
   const state = c.req.query("state");
   const err = c.req.query("error");
   if (err || !code || !state) {
-    return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=error`);
+    return c.redirect(webRedirect(c.env, "oauth=error"));
   }
 
   const raw = await c.env.KV.get(`oauth:${state}`);
   await c.env.KV.delete(`oauth:${state}`);
-  if (!raw) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=expired`);
+  if (!raw) return c.redirect(webRedirect(c.env, "oauth=expired"));
 
   const stored = JSON.parse(raw) as {
     workspaceId: string;
@@ -211,8 +158,10 @@ oauthRoutes.get("/:network/callback", async (c) => {
     verifier: string;
     instance: string;
     groupId?: string | null;
+    mastodonClientId?: string;
+    mastodonClientSecret?: string;
   };
-  if (stored.network !== network) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=mismatch`);
+  if (stored.network !== network) return c.redirect(webRedirect(c.env, "oauth=mismatch"));
 
   try {
     await assertChannelLimit(c.env, stored.workspaceId, 1);
@@ -226,6 +175,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
   let accessToken = "";
   let handle = "";
   let credentials: Record<string, string> = {};
+  let status: string = "active";
 
   try {
     if (network === "x") {
@@ -245,15 +195,19 @@ oauthRoutes.get("/:network/callback", async (c) => {
         },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
-      const tok = (await tokenRes.json()) as { access_token: string };
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      const tok = (await tokenRes.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in?: number;
+      };
       accessToken = tok.access_token;
       const me = await fetch("https://api.x.com/2/users/me", {
         headers: { authorization: `Bearer ${accessToken}` },
       });
       const meJson = (await me.json()) as { data?: { username?: string; id?: string } };
       handle = meJson.data?.username ? `@${meJson.data.username}` : "x-user";
-      credentials = { accessToken, userId: meJson.data?.id || "" };
+      credentials = applyTokenResponse({ userId: meJson.data?.id || "" }, tok);
     } else if (network === "linkedin") {
       const body = new URLSearchParams({
         grant_type: "authorization_code",
@@ -267,8 +221,12 @@ oauthRoutes.get("/:network/callback", async (c) => {
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
-      const tok = (await tokenRes.json()) as { access_token: string };
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      const tok = (await tokenRes.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in?: number;
+      };
       accessToken = tok.access_token;
       const me = await fetch("https://api.linkedin.com/v2/userinfo", {
         headers: { authorization: `Bearer ${accessToken}` },
@@ -276,31 +234,44 @@ oauthRoutes.get("/:network/callback", async (c) => {
       const meJson = (await me.json()) as { sub?: string; name?: string; email?: string };
       const authorUrn = meJson.sub ? `urn:li:person:${meJson.sub}` : "";
       handle = meJson.name || meJson.email || "linkedin-user";
-      credentials = { accessToken, authorUrn };
+      credentials = applyTokenResponse({ authorUrn }, tok);
     } else if (network === "mastodon") {
       const instance = stored.instance;
+      const clientId = stored.mastodonClientId || c.env.MASTODON_CLIENT_ID!;
+      const clientSecret = stored.mastodonClientSecret || c.env.MASTODON_CLIENT_SECRET!;
       const body = new URLSearchParams({
         grant_type: "authorization_code",
         code,
         redirect_uri: redirectUri,
-        client_id: c.env.MASTODON_CLIENT_ID!,
-        client_secret: c.env.MASTODON_CLIENT_SECRET!,
+        client_id: clientId,
+        client_secret: clientSecret,
       });
       const tokenRes = await fetch(`${instance}/oauth/token`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
-      const tok = (await tokenRes.json()) as { access_token: string };
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      const tok = (await tokenRes.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
       accessToken = tok.access_token;
       const me = await fetch(`${instance}/api/v1/accounts/verify_credentials`, {
         headers: { authorization: `Bearer ${accessToken}` },
       });
       const meJson = (await me.json()) as { username?: string; acct?: string };
       handle = meJson.acct || meJson.username || "mastodon-user";
-      credentials = { accessToken, instance };
-    } else if (network === "instagram" || network === "threads" || network === "facebook") {
+      credentials = applyTokenResponse(
+        { instance, mastodonClientId: clientId, mastodonClientSecret: clientSecret },
+        tok,
+      );
+    } else if (network === "threads") {
+      const th = await exchangeThreadsUserToken(c.env, code, redirectUri);
+      accessToken = th.accessToken;
+      handle = th.handle;
+      credentials = applyTokenResponse(
+        { threadsUserId: th.userId },
+        { access_token: th.accessToken, expires_in: th.expiresIn },
+      );
+    } else if (network === "instagram" || network === "facebook") {
       const tokenRes = await fetch(
         `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
           client_id: c.env.META_APP_ID!,
@@ -309,18 +280,32 @@ oauthRoutes.get("/:network/callback", async (c) => {
           code,
         })}`,
       );
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
       const tok = (await tokenRes.json()) as { access_token: string };
-      accessToken = tok.access_token;
-      const me = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${accessToken}`);
-      const meJson = (await me.json()) as { id?: string; name?: string };
-      handle = meJson.name || `${network}-user`;
-      credentials = {
-        accessToken,
-        pageId: meJson.id || "",
-        igUserId: meJson.id || "",
-        threadsUserId: meJson.id || "",
-      };
+      const longLived = await exchangeLongLivedFacebookToken(c.env, tok.access_token);
+      const pages = await listFacebookPages(longLived, network === "instagram");
+      if (!pages.length) {
+        return c.redirect(webRedirect(c.env, `oauth=no_page&network=${network}`));
+      }
+      if (pages.length === 1) {
+        const page = pages[0];
+        accessToken = page.accessToken;
+        handle = page.name;
+        credentials = {
+          accessToken: page.accessToken,
+          pageId: page.id,
+          pageName: page.name,
+          ...(page.igUserId ? { igUserId: page.igUserId } : {}),
+        };
+      } else {
+        accessToken = pages[0].accessToken;
+        handle = `${network} · pick a Page`;
+        status = "needs_page";
+        credentials = {
+          accessToken: pages[0].accessToken,
+          pendingPagesJson: JSON.stringify(pages),
+        };
+      }
     } else if (network === "youtube") {
       const body = new URLSearchParams({
         code,
@@ -335,11 +320,15 @@ oauthRoutes.get("/:network/callback", async (c) => {
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
-      const tok = (await tokenRes.json()) as { access_token: string };
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      const tok = (await tokenRes.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in?: number;
+      };
       accessToken = tok.access_token;
       handle = "youtube-channel";
-      credentials = { accessToken };
+      credentials = credsFromTokenJson({}, tok);
     } else if (network === "reddit") {
       const basic = btoa(`${c.env.REDDIT_CLIENT_ID}:${c.env.REDDIT_CLIENT_SECRET}`);
       const body = new URLSearchParams({
@@ -352,19 +341,23 @@ oauthRoutes.get("/:network/callback", async (c) => {
         headers: {
           "content-type": "application/x-www-form-urlencoded",
           authorization: `Basic ${basic}`,
-          "user-agent": "duskly/1.0",
+          "user-agent": REDDIT_UA,
         },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
-      const tok = (await tokenRes.json()) as { access_token: string };
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      const tok = (await tokenRes.json()) as {
+        access_token: string;
+        refresh_token?: string;
+        expires_in?: number;
+      };
       accessToken = tok.access_token;
       const me = await fetch("https://oauth.reddit.com/api/v1/me", {
-        headers: { authorization: `Bearer ${accessToken}`, "user-agent": "duskly/1.0" },
+        headers: { authorization: `Bearer ${accessToken}`, "user-agent": REDDIT_UA },
       });
       const meJson = (await me.json()) as { name?: string };
       handle = meJson.name ? `u/${meJson.name}` : "reddit-user";
-      credentials = { accessToken, subreddit: "" };
+      credentials = applyTokenResponse({ subreddit: "" }, tok);
     } else if (network === "slack") {
       const body = new URLSearchParams({
         code,
@@ -377,7 +370,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
+      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
       const tok = (await tokenRes.json()) as {
         ok?: boolean;
         error?: string;
@@ -386,20 +379,21 @@ oauthRoutes.get("/:network/callback", async (c) => {
         bot_user_id?: string;
       };
       if (!tok.ok || !tok.access_token) {
-        return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
+        return c.redirect(webRedirect(c.env, "oauth=token_failed"));
       }
       accessToken = tok.access_token;
       handle = tok.team?.name ? `slack · ${tok.team.name}` : "slack-workspace";
+      status = "needs_channel";
       credentials = {
         botToken: accessToken,
         teamId: tok.team?.id || "",
         botUserId: tok.bot_user_id || "",
       };
     } else {
-      return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=unsupported`);
+      return c.redirect(webRedirect(c.env, "oauth=unsupported"));
     }
   } catch {
-    return c.redirect(`${c.env.WEB_ORIGIN}/app/accounts?oauth=token_failed`);
+    return c.redirect(webRedirect(c.env, "oauth=token_failed"));
   }
 
   const id = crypto.randomUUID();
@@ -413,11 +407,13 @@ oauthRoutes.get("/:network/callback", async (c) => {
     tokenCipher: await encryptSecret(c.env, accessToken),
     credentialsJson: await encryptCredentials(c.env, credentials),
     groupId: stored.groupId || null,
-    status: network === "slack" ? "needs_channel" : "active",
+    status,
     createdAt: new Date(),
   });
 
-  return c.redirect(
-    `${c.env.WEB_ORIGIN}/app/accounts?oauth=ok&network=${network}${network === "slack" ? `&accountId=${id}` : ""}`,
-  );
+  const extra =
+    network === "slack" || status === "needs_page"
+      ? `&accountId=${id}`
+      : "";
+  return c.redirect(webRedirect(c.env, `oauth=ok&network=${network}${extra}`));
 });

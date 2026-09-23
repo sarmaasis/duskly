@@ -31,6 +31,7 @@ import { NETWORKS, NETWORK_META } from "../lib/networks";
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
+import { rssHasPublishTarget } from "../lib/schedule";
 
 export const workspaceRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -101,12 +102,23 @@ accountRoutes.get("/", async (c) => {
     let credentialsJson = r.credentialsJson;
     let channelId: string | null = null;
     let channelName: string | null = null;
+    let pendingPages: Array<{ id: string; name: string }> = [];
     if (r.credentialsJson) {
       try {
         const creds = await decryptCredentials(c.env, r.credentialsJson);
         if (!creds) throw new Error("missing credentials");
         channelId = creds.channelId || null;
         channelName = creds.channelName || null;
+        if (creds.pendingPagesJson) {
+          try {
+            const raw = JSON.parse(creds.pendingPagesJson) as Array<{ id?: string; name?: string }>;
+            pendingPages = raw
+              .filter((p) => p.id)
+              .map((p) => ({ id: p.id!, name: p.name || p.id! }));
+          } catch {
+            pendingPages = [];
+          }
+        }
         credentialsJson = await encryptCredentials(c.env, creds);
       } catch {
         /* ignore */
@@ -130,6 +142,8 @@ accountRoutes.get("/", async (c) => {
       slackChannelId: r.network === "slack" ? channelId : undefined,
       slackChannelName: r.network === "slack" ? channelName : undefined,
       needsSlackChannel: r.network === "slack" && !channelId,
+      needsPage: (r.network === "instagram" || r.network === "facebook") && r.status === "needs_page",
+      pendingPages: (r.network === "instagram" || r.network === "facebook") && r.status === "needs_page" ? pendingPages : undefined,
     };
   }));
   return c.json({ accounts, networks: NETWORKS, meta: NETWORK_META });
@@ -240,6 +254,7 @@ accountRoutes.patch("/:id", async (c) => {
       groupId: z.string().nullable().optional(),
       slackChannelId: z.string().optional(),
       slackChannelName: z.string().optional(),
+      pageId: z.string().optional(),
     })
     .parse(await c.req.json());
   const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
@@ -282,6 +297,43 @@ accountRoutes.patch("/:id", async (c) => {
     if (body.slackChannelName) creds.channelName = body.slackChannelName;
     patch.credentialsJson = (await encryptCredentials(c.env, creds)) ?? undefined;
     patch.status = "active";
+  }
+
+  if (body.pageId) {
+    if (row.network !== "instagram" && row.network !== "facebook") {
+      return c.json({ error: "not_page_network" }, 400);
+    }
+    let creds: Record<string, string> = {};
+    if (row.credentialsJson) {
+      try {
+        creds = (await decryptCredentials(c.env, row.credentialsJson)) || {};
+      } catch {
+        creds = {};
+      }
+    }
+    let pages: Array<{ id: string; name: string; accessToken: string; igUserId?: string }> = [];
+    try {
+      pages = creds.pendingPagesJson ? JSON.parse(creds.pendingPagesJson) : [];
+    } catch {
+      pages = [];
+    }
+    const picked = pages.find((p) => p.id === body.pageId);
+    if (!picked?.accessToken) return c.json({ error: "page_not_found" }, 404);
+    if (row.network === "instagram" && !picked.igUserId) {
+      return c.json({ error: "no_instagram_account", message: "That Page has no Instagram professional account" }, 400);
+    }
+    creds.accessToken = picked.accessToken;
+    creds.pageId = picked.id;
+    creds.pageName = picked.name;
+    if (picked.igUserId) creds.igUserId = picked.igUserId;
+    delete creds.pendingPagesJson;
+    patch.credentialsJson = (await encryptCredentials(c.env, creds)) ?? undefined;
+    patch.status = "active";
+    await db
+      .update(socialAccount)
+      .set({ ...patch, handle: picked.name, externalId: picked.id, tokenCipher: await encryptSecret(c.env, picked.accessToken) })
+      .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, body.workspaceId)));
+    return c.json({ ok: true, pageId: picked.id, handle: picked.name });
   }
 
   if (!Object.keys(patch).length) return c.json({ error: "nothing_to_update" }, 400);
@@ -745,7 +797,7 @@ orgRoutes.post("/rss", async (c) => {
     .parse(await c.req.json());
   const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
-  if (!body.channelIds.length && !body.groupId) {
+  if (!rssHasPublishTarget(body.channelIds, body.groupId)) {
     return c.json({ error: "target_required", message: "Pick at least one channel or a customer group" }, 400);
   }
   if (body.channelIds.length && !(await allChannelsInWorkspace(c.env, body.workspaceId, body.channelIds))) {
