@@ -46,6 +46,12 @@ const INSTAGRAM_BUSINESS_SCOPES = [
   "instagram_business_manage_comments",
   "instagram_business_manage_insights",
 ].join(",");
+const THREADS_SCOPES = [
+  "threads_basic",
+  "threads_content_publish",
+  "threads_manage_replies",
+  "threads_manage_insights",
+].join(",");
 
 export function isInstagramLoginCreds(creds?: Record<string, string> | null): boolean {
   return creds?.authKind === INSTAGRAM_LOGIN_AUTH;
@@ -71,22 +77,41 @@ export function instagramAppCreds(env: Env): { appId: string; appSecret: string 
   return { appId: (env.INSTAGRAM_APP_ID || "").trim(), appSecret: (env.INSTAGRAM_APP_SECRET || "").trim() };
 }
 
+export function linkedinAppCreds(
+  env: Env,
+  network: "linkedin" | "linkedin-page",
+): { clientId: string; clientSecret: string } {
+  if (network === "linkedin-page") {
+    return {
+      clientId: (env.LINKEDIN_PAGE_CLIENT_ID || env.LINKEDIN_CLIENT_ID || "").trim(),
+      clientSecret: (env.LINKEDIN_PAGE_CLIENT_SECRET || env.LINKEDIN_CLIENT_SECRET || "").trim(),
+    };
+  }
+  return {
+    clientId: (env.LINKEDIN_CLIENT_ID || "").trim(),
+    clientSecret: (env.LINKEDIN_CLIENT_SECRET || "").trim(),
+  };
+}
+
 function threadsAppCreds(env: Env): { appId: string; appSecret: string } {
   return {
-    appId: (env.THREADS_APP_ID || env.META_APP_ID || "").trim(),
-    appSecret: (env.THREADS_APP_SECRET || env.META_APP_SECRET || "").trim(),
+    appId: (env.THREADS_APP_ID || "").trim(),
+    appSecret: (env.THREADS_APP_SECRET || "").trim(),
   };
 }
 
 export function oauthConfigured(env: Env, network: Network): boolean {
   if (network === "x") return !!(env.X_CLIENT_ID && env.X_CLIENT_SECRET);
-  if (network === "linkedin" || network === "linkedin-page") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
+  if (network === "linkedin" || network === "linkedin-page") {
+    const { clientId, clientSecret } = linkedinAppCreds(env, network);
+    return !!(clientId && clientSecret);
+  }
   if (network === "mastodon") return true;
   if (network === "instagram") {
     return instagramLoginConfigured(env) || facebookLoginConfigured(env);
   }
   if (network === "threads") {
-    return threadsLoginConfigured(env) || facebookLoginConfigured(env);
+    return threadsLoginConfigured(env);
   }
   if (network === "facebook") {
     return facebookLoginConfigured(env);
@@ -112,9 +137,10 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     return `https://x.com/i/oauth2/authorize?${params}`;
   }
   if (network === "linkedin" || network === "linkedin-page") {
+    const { clientId } = linkedinAppCreds(env, network);
     const params = new URLSearchParams({
       response_type: "code",
-      client_id: env.LINKEDIN_CLIENT_ID!,
+      client_id: clientId,
       redirect_uri: redirectUri,
       scope:
         network === "linkedin-page"
@@ -139,7 +165,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     const params = new URLSearchParams({
       client_id: appId,
       redirect_uri: redirectUri,
-      scope: "threads_basic,threads_content_publish,threads_manage_replies",
+      scope: THREADS_SCOPES,
       response_type: "code",
       state,
     });

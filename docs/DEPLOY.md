@@ -90,10 +90,11 @@ Common optional secrets:
 | `DUSKLY_MODE` | `selfhost` or `cloud`; omit or set `selfhost` for self-hosting |
 | `API_ORIGIN` | Web Worker runtime API URL |
 | `X_CLIENT_ID`, `X_CLIENT_SECRET` | X OAuth |
-| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth |
+| `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn member OAuth |
+| `LINKEDIN_PAGE_CLIENT_ID`, `LINKEDIN_PAGE_CLIENT_SECRET` | LinkedIn Page OAuth; falls back to `LINKEDIN_*` when unset |
 | `META_APP_ID`, `META_APP_SECRET` | Facebook Login, Facebook Pages, Page-linked Instagram fallback |
 | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | Direct Instagram Business Login |
-| `THREADS_APP_ID`, `THREADS_APP_SECRET` | Direct Threads Login and publishing |
+| `THREADS_APP_ID`, `THREADS_APP_SECRET` | Meta Threads API OAuth and publishing |
 | `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` | Instagram webhook verification |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | YouTube upload |
 | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Reddit OAuth |
@@ -128,7 +129,7 @@ https://api.duskly.site/v1/accounts/oauth/slack/callback
 
 Instagram professional accounts that are not linked to Facebook use Instagram Login. Set `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET` from the Meta app's Instagram API setup. Add the Instagram callback under Instagram API / Business Login OAuth redirect URIs, not only under Facebook Login.
 
-Threads uses the Threads API, not Facebook Login or Instagram Login. Set `THREADS_APP_ID` and `THREADS_APP_SECRET` from Meta's Threads API setup. Add this redirect callback URL under Threads API settings:
+Threads uses Meta's Threads API OAuth, not the Facebook Page OAuth flow and not Instagram Login. Set `THREADS_APP_ID` and `THREADS_APP_SECRET` from Meta's Threads API setup. Add this redirect callback URL under Threads API settings:
 
 ```text
 https://api.example.com/v1/accounts/oauth/threads/callback

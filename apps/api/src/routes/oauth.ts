@@ -20,6 +20,7 @@ import {
   fetchInstagramLoginProfile,
   fetchInstagramLoginUsername,
   instagramAccountLabel,
+  linkedinAppCreds,
   listFacebookPages,
   oauthConfigured,
   facebookUserId,
@@ -281,12 +282,13 @@ async function completeOAuthCallback(
       handle = meJson.data?.username ? `@${meJson.data.username}` : "x-user";
       credentials = applyTokenResponse({ userId: meJson.data?.id || "" }, tok);
     } else if (network === "linkedin" || network === "linkedin-page") {
+      const linkedInCreds = linkedinAppCreds(c.env, network);
       const body = new URLSearchParams({
         grant_type: "authorization_code",
         code,
         redirect_uri: redirectUri,
-        client_id: c.env.LINKEDIN_CLIENT_ID!,
-        client_secret: c.env.LINKEDIN_CLIENT_SECRET!,
+        client_id: linkedInCreds.clientId,
+        client_secret: linkedInCreds.clientSecret,
       });
       const tokenRes = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
         method: "POST",

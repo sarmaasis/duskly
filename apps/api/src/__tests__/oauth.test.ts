@@ -41,6 +41,8 @@ const env = {
   X_CLIENT_SECRET: "x-secret",
   LINKEDIN_CLIENT_ID: "li-id",
   LINKEDIN_CLIENT_SECRET: "li-secret",
+  LINKEDIN_PAGE_CLIENT_ID: "li-page-id",
+  LINKEDIN_PAGE_CLIENT_SECRET: "li-page-secret",
   META_APP_ID: "meta-id",
   META_APP_SECRET: "meta-secret",
   THREADS_APP_ID: "threads-id",
@@ -93,6 +95,46 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("client_id")).toBe("li-id");
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin/callback");
     expect(q.get("scope")).toBe("openid profile email w_member_social");
+  });
+
+  it("LinkedIn Page uses the Page OAuth app when configured", () => {
+    const url = buildAuthorizeUrl({
+      ...base,
+      network: "linkedin-page",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback",
+    });
+    const q = new URL(url).searchParams;
+    expect(q.get("client_id")).toBe("li-page-id");
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback");
+    expect(q.get("scope")).toBe("openid profile email w_member_social w_organization_social");
+  });
+
+  it("LinkedIn Page falls back to the member OAuth app for self-host installs", () => {
+    expect(oauthConfigured({ LINKEDIN_CLIENT_ID: "li", LINKEDIN_CLIENT_SECRET: "sec" } as Env, "linkedin-page")).toBe(true);
+    const url = buildAuthorizeUrl({
+      ...base,
+      env: { LINKEDIN_CLIENT_ID: "li", LINKEDIN_CLIENT_SECRET: "sec" } as Env,
+      network: "linkedin-page",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback",
+    });
+    expect(new URL(url).searchParams.get("client_id")).toBe("li");
+  });
+
+  it("LinkedIn Page refresh uses the Page OAuth app when configured", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: "page-access", refresh_token: "page-refresh", expires_in: 3600 }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const result = await refreshAccessToken(env, "linkedin-page", {
+      accessToken: "old",
+      refreshToken: "refresh",
+      expiresAt: "1",
+    });
+    expect(result.ok).toBe(true);
+    const body = fetch.mock.calls[0][1].body as URLSearchParams;
+    expect(body.get("client_id")).toBe("li-page-id");
+    expect(body.get("client_secret")).toBe("li-page-secret");
   });
 
   it("Instagram adds pages_read_engagement", () => {
@@ -163,20 +205,14 @@ describe("OAuth authorize URLs", () => {
     expect(url).not.toContain("facebook.com");
     expect(new URL(url).searchParams.get("client_id")).toBe("threads-id");
     expect(new URL(url).searchParams.get("scope")).toBe(
-      "threads_basic,threads_content_publish,threads_manage_replies",
+      "threads_basic,threads_content_publish,threads_manage_replies,threads_manage_insights",
     );
   });
 
-  it("Threads can fall back to META_APP_* for existing self-host installs", () => {
-    const url = buildAuthorizeUrl({
-      ...base,
-      env: { META_APP_ID: "legacy-meta-id", META_APP_SECRET: "legacy-meta-secret" } as Env,
-      network: "threads",
-      redirectUri: "https://api.duskly.site/v1/accounts/oauth/threads/callback",
-    });
+  it("Threads is configured from THREADS_APP_* only", () => {
     expect(oauthConfigured({ THREADS_APP_ID: "th", THREADS_APP_SECRET: "sec" } as Env, "threads")).toBe(true);
     expect(oauthConfigured({ THREADS_APP_ID: "th", THREADS_APP_SECRET: "" } as Env, "threads")).toBe(false);
-    expect(new URL(url).searchParams.get("client_id")).toBe("legacy-meta-id");
+    expect(oauthConfigured({ META_APP_ID: "legacy-meta-id", META_APP_SECRET: "legacy-meta-secret" } as Env, "threads")).toBe(false);
   });
 
   it("Facebook keeps Page publish scopes", () => {

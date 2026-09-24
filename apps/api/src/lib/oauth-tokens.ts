@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import type { Network } from "./networks";
+import { linkedinAppCreds } from "./oauth-providers";
 
 export const REDDIT_UA = "duskly/1.0 (https://duskly.site)";
 
@@ -64,14 +65,15 @@ export async function refreshAccessToken(
   }
 
   if (network === "linkedin" || network === "linkedin-page") {
-    if (!env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_CLIENT_SECRET) {
+    const linkedInCreds = linkedinAppCreds(env, network);
+    if (!linkedInCreds.clientId || !linkedInCreds.clientSecret) {
       return { ok: false, reason: "LinkedIn OAuth client is not configured" };
     }
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: creds.refreshToken,
-      client_id: env.LINKEDIN_CLIENT_ID,
-      client_secret: env.LINKEDIN_CLIENT_SECRET,
+      client_id: linkedInCreds.clientId,
+      client_secret: linkedInCreds.clientSecret,
     });
     const res = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
       method: "POST",

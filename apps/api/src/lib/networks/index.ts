@@ -964,16 +964,27 @@ async function metaGraphPublish(
     if (input.imageBytes && !imageUrl) {
       return missingCreds("Threads image posts need a public image URL — queued so the photo is not dropped");
     }
-    const createParams = new URLSearchParams({
-      media_type: imageUrl ? "IMAGE" : "TEXT",
-      text: input.body.slice(0, 500),
-      access_token: token,
-    });
-    if (imageUrl) createParams.set("image_url", imageUrl);
-    const create = await fetch(
-      `https://graph.threads.net/v1.0/${threadsUserId}/threads?${createParams}`,
-      { method: "POST" },
-    );
+    let create: Response;
+    if (imageUrl) {
+      const createParams = new URLSearchParams({
+        media_type: "IMAGE",
+        image_url: imageUrl,
+        text: input.body.slice(0, 500),
+        access_token: token,
+      });
+      create = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads?${createParams}`, {
+        method: "POST",
+      });
+    } else {
+      const body = new FormData();
+      body.set("media_type", "TEXT");
+      body.set("text", input.body.slice(0, 500));
+      body.set("access_token", token);
+      create = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads`, {
+        method: "POST",
+        body,
+      });
+    }
     if (!create.ok) {
       const err = await create.text();
       if (threadsPostAccessDenied(err)) {

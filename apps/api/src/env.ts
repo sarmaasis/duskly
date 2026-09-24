@@ -45,6 +45,8 @@ export type Env = {
   X_CLIENT_SECRET?: string;
   LINKEDIN_CLIENT_ID?: string;
   LINKEDIN_CLIENT_SECRET?: string;
+  LINKEDIN_PAGE_CLIENT_ID?: string;
+  LINKEDIN_PAGE_CLIENT_SECRET?: string;
   MASTODON_CLIENT_ID?: string;
   MASTODON_CLIENT_SECRET?: string;
   MASTODON_INSTANCE?: string;

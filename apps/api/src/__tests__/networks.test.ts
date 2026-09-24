@@ -441,6 +441,24 @@ describe("caption+image scheduled publish must attach the photo", () => {
     expect(String("reason" in result ? result.reason : "")).toMatch(/Threads Tester/i);
   });
 
+  it("Threads text posts create a TEXT container with form data", async () => {
+    const fetch = spyFetch();
+    fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => JSON.stringify({ id: "container" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "th1" }), text: async () => JSON.stringify({ id: "th1" }) });
+    const result = await adapters.threads.publish({
+      ...pending,
+      token: "TH_TOKEN",
+      credentials: { accessToken: "TH_TOKEN", threadsUserId: "99" },
+    });
+    expect(result).toMatchObject({ remoteId: "th1" });
+    expect(String(fetch.mock.calls[0][0])).toBe("https://graph.threads.net/v1.0/99/threads");
+    const body = fetch.mock.calls[0][1].body as FormData;
+    expect(body.get("media_type")).toBe("TEXT");
+    expect(body.get("text")).toBe("hello");
+    expect(body.get("access_token")).toBe("TH_TOKEN");
+  });
+
   it("X uploads the image and attaches media_ids on the tweet", async () => {
     const fetch = spyFetch();
     fetch
