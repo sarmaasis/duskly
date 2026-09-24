@@ -365,7 +365,8 @@ export class AppShell implements OnInit {
     this.loadError.set("");
     try {
       const data = await api<{ workspace: Workspace; usage: PlanSnapshot; cloud: boolean }>("/v1/workspaces/me");
-      if (!isOnboarded(data.workspace)) {
+      const role = data.workspace.role;
+      if (role !== "member" && role !== "admin" && !isOnboarded(data.workspace)) {
         await this.router.navigateByUrl("/onboarding");
         return;
       }

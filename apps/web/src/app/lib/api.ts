@@ -53,6 +53,7 @@ export type Workspace = {
   signature: string | null;
   accountKind?: "solo" | "agency" | null;
   onboardingCompleted?: boolean;
+  role?: "owner" | "admin" | "member";
 };
 
 const PLACEHOLDER_NAME = "My workspace";

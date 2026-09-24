@@ -51,9 +51,17 @@ async function allChannelsInWorkspace(env: Env, workspaceId: string, channelIds:
 }
 
 workspaceRoutes.get("/me", async (c) => {
-  const ws = await ensureDefaultWorkspace(c.env, c.get("userId"));
+  const userId = c.get("userId");
+  const ws = await ensureDefaultWorkspace(c.env, userId);
+  const db = drizzle(c.env.DB);
+  const [member] = await db
+    .select({ role: workspaceMember.role })
+    .from(workspaceMember)
+    .where(and(eq(workspaceMember.workspaceId, ws.id), eq(workspaceMember.userId, userId)))
+    .limit(1);
   const usage = await usageSnapshot(c.env, ws.id);
-  return c.json({ workspace: ws, usage, networks: NETWORKS, cloud: isCloud(c.env) });
+  const role = member?.role && member.role !== "owner" ? member.role : ws.ownerId === userId ? "owner" : "member";
+  return c.json({ workspace: { ...ws, role }, usage, networks: NETWORKS, cloud: isCloud(c.env) });
 });
 
 workspaceRoutes.patch("/:id", async (c) => {
@@ -565,12 +573,17 @@ teamRoutes.post("/invite/:id/accept", async (c) => {
     .from(workspaceMember)
     .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)))
     .limit(1);
+  const role = inv.role === "admin" ? "admin" : "member";
   if (!existing.length) {
-    await db.insert(workspaceMember).values({
-      workspaceId: inv.workspaceId,
-      userId,
-      role: inv.role,
-    });
+    await db.insert(workspaceMember).values({ workspaceId: inv.workspaceId, userId, role });
+  } else if (existing[0].role === "owner") {
+    const [home] = await db.select({ ownerId: workspace.ownerId }).from(workspace).where(eq(workspace.id, inv.workspaceId)).limit(1);
+    if (home && home.ownerId !== userId) {
+      await db
+        .update(workspaceMember)
+        .set({ role })
+        .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)));
+    }
   }
   await db.update(workspaceInvite).set({ status: "accepted" }).where(eq(workspaceInvite.id, inv.id));
   return c.json({ ok: true, workspaceId: inv.workspaceId });

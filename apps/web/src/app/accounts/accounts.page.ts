@@ -61,7 +61,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
               {{ usage()?.used?.['channels'] ?? accounts().length }}/{{ usage()?.limits?.channels ?? "—" }}
             </p>
           </div>
-          <button type="button" (click)="adding.set(!adding()); if (!adding()) replaceId = ''" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-hover">
+          <button type="button" (click)="toggleAdd()" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-hover">
             {{ adding() ? 'Close' : 'Add channel' }}
           </button>
         </div>
@@ -587,6 +587,11 @@ export class AccountsPage implements OnInit {
   }
 
   replaceId = "";
+
+  toggleAdd() {
+    this.adding.set(!this.adding());
+    if (!this.adding()) this.replaceId = "";
+  }
 
   reconnect(account: AccountRow) {
     this.replaceId = account.id;

@@ -135,7 +135,7 @@ export class OnboardingPage implements OnInit {
   async ngOnInit() {
     try {
       const me = await api<{ workspace: Workspace }>("/v1/workspaces/me");
-      if (isOnboarded(me.workspace)) {
+      if (me.workspace.role === "member" || me.workspace.role === "admin" || isOnboarded(me.workspace)) {
         await this.router.navigateByUrl("/app");
         return;
       }

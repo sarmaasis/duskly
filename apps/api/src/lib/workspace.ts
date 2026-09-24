@@ -1,15 +1,62 @@
 import { drizzle } from "drizzle-orm/d1";
 import { eq, and } from "drizzle-orm";
-import { workspace, workspaceMember } from "../db/schema";
+import { socialAccount, user, workspace, workspaceInvite, workspaceMember } from "../db/schema";
 import type { Env } from "../env";
+
+async function acceptPendingInvites(db: ReturnType<typeof drizzle>, userId: string) {
+  const [row] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId)).limit(1);
+  const email = row?.email?.toLowerCase();
+  if (!email) return;
+  const pending = await db
+    .select()
+    .from(workspaceInvite)
+    .where(and(eq(workspaceInvite.email, email), eq(workspaceInvite.status, "pending")));
+  for (const inv of pending) {
+    const [already] = await db
+      .select()
+      .from(workspaceMember)
+      .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)))
+      .limit(1);
+    const role = inv.role === "admin" ? "admin" : "member";
+    if (!already) {
+      await db.insert(workspaceMember).values({ workspaceId: inv.workspaceId, userId, role });
+    } else if (already.role === "owner") {
+      const [home] = await db.select({ ownerId: workspace.ownerId }).from(workspace).where(eq(workspace.id, inv.workspaceId)).limit(1);
+      if (home && home.ownerId !== userId) {
+        await db
+          .update(workspaceMember)
+          .set({ role })
+          .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)));
+      }
+    }
+    await db.update(workspaceInvite).set({ status: "accepted" }).where(eq(workspaceInvite.id, inv.id));
+  }
+}
 
 export async function ensureDefaultWorkspace(env: Env, userId: string, name = "") {
   const db = drizzle(env.DB);
+  await acceptPendingInvites(db, userId);
+  const memberships = await db.select().from(workspaceMember).where(eq(workspaceMember.userId, userId));
+  const invited = memberships.find((m) => m.role === "member" || m.role === "admin");
+  if (invited) {
+    const ownedMembership = memberships.find((m) => m.role === "owner");
+    const [channel] = ownedMembership
+      ? await db
+          .select({ id: socialAccount.id })
+          .from(socialAccount)
+          .where(eq(socialAccount.workspaceId, ownedMembership.workspaceId))
+          .limit(1)
+      : [];
+    if (!ownedMembership || !channel) {
+      const [ws] = await db.select().from(workspace).where(eq(workspace.id, invited.workspaceId)).limit(1);
+      if (ws) return ws;
+    }
+  }
   const owned = await db.select().from(workspace).where(eq(workspace.ownerId, userId)).limit(1);
   if (owned[0]) return owned[0];
-  const member = await db.select().from(workspaceMember).where(eq(workspaceMember.userId, userId)).limit(1);
-  if (member[0]) {
-    const [ws] = await db.select().from(workspace).where(eq(workspace.id, member[0].workspaceId)).limit(1);
+  const member = memberships[0];
+  if (member) {
+    const [ws] = await db.select().from(workspace).where(eq(workspace.id, member.workspaceId)).limit(1);
     if (ws) return ws;
   }
   const id = crypto.randomUUID();

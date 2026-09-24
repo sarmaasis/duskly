@@ -1,7 +1,7 @@
 import { Component, inject, signal, OnInit } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { api } from "../lib/api";
-import { lsGet, lsSet } from "../lib/browser";
+import { lsSet } from "../lib/browser";
 
 type Channel = { accountId?: string; network: string; handle: string; status: string };
 type Preview = { url: string; kind: string };
@@ -202,20 +202,15 @@ export class CalendarPage implements OnInit {
   private workspaceId = "";
 
   async ngOnInit() {
-    const ws = lsGet("dk-ws");
-    if (!ws) {
-      try {
-        const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
-        lsSet("dk-ws", me.workspace.id);
-        await this.load(me.workspace.id);
-      } catch {
-        this.error.set("Sign in to load your calendar.");
-        this.loading.set(false);
-        this.buildMonth([]);
-      }
-      return;
+    try {
+      const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
+      lsSet("dk-ws", me.workspace.id);
+      await this.load(me.workspace.id);
+    } catch {
+      this.error.set("Sign in to load your calendar.");
+      this.loading.set(false);
+      this.buildMonth([]);
     }
-    await this.load(ws);
   }
 
   monthLabel() {
