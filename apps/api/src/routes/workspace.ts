@@ -878,6 +878,13 @@ orgRoutes.post("/rss", async (c) => {
   return c.json({ id }, 201);
 });
 
+function analyticsDayShift(raw: string | undefined): string {
+  const tz = Number(raw);
+  if (!Number.isInteger(tz) || tz < -840 || tz > 840) return "+0 minutes";
+  const minutes = -tz;
+  return `${minutes >= 0 ? "+" : ""}${minutes} minutes`;
+}
+
 orgRoutes.get("/analytics", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
@@ -886,54 +893,86 @@ orgRoutes.get("/analytics", async (c) => {
 
   const breakdown = await c.env.DB.prepare(
     `SELECT sa.network AS network,
+            sa.handle AS handle,
             pd.status AS status,
-            date(COALESCE(p.published_at, p.scheduled_at, p.created_at) / 1000, 'unixepoch') AS day,
+            date(COALESCE(p.published_at, p.scheduled_at, p.created_at) / 1000, 'unixepoch', ?) AS day,
             COUNT(*) AS c
      FROM post_destination pd
      INNER JOIN posts p ON p.id = pd.post_id
      INNER JOIN social_account sa ON sa.id = pd.social_account_id
      WHERE p.workspace_id = ?
-     GROUP BY sa.network, pd.status, day
+     GROUP BY sa.network, sa.handle, pd.status, day
      ORDER BY day DESC`,
   )
-    .bind(workspaceId)
-    .all<{ network: string; status: string; day: string; c: number }>();
+    .bind(analyticsDayShift(c.req.query("tz")), workspaceId)
+    .all<{ network: string; handle: string; status: string; day: string; c: number }>();
 
   const totalsRow = await c.env.DB.prepare(
     `SELECT COUNT(*) AS posts,
             SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
             SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
-            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+            SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft,
+            SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled
      FROM posts WHERE workspace_id = ?`,
   )
     .bind(workspaceId)
-    .first<{ posts: number; published: number; queued: number; failed: number }>();
+    .first<{ posts: number; published: number; queued: number; failed: number; draft: number; scheduled: number }>();
 
-  const recent = await c.env.DB.prepare(
-    `SELECT id, status, scheduled_at AS scheduledAt, published_at AS publishedAt
+  const recentRows = await c.env.DB.prepare(
+    `SELECT id, body, status, COALESCE(published_at, scheduled_at, created_at) AS at
      FROM posts WHERE workspace_id = ?
-     ORDER BY COALESCE(published_at, scheduled_at, created_at) DESC
+     ORDER BY at DESC
      LIMIT 20`,
   )
     .bind(workspaceId)
-    .all<{ id: string; status: string; scheduledAt: number | null; publishedAt: number | null }>();
+    .all<{ id: string; body: string; status: string; at: number | null }>();
+
+  const db = drizzle(c.env.DB);
+  const recentIds = (recentRows.results || []).map((row) => row.id);
+  const destRows = recentIds.length
+    ? await db
+        .select({
+          postId: postDestination.postId,
+          status: postDestination.status,
+          error: postDestination.error,
+          network: socialAccount.network,
+          handle: socialAccount.handle,
+        })
+        .from(postDestination)
+        .innerJoin(socialAccount, eq(postDestination.socialAccountId, socialAccount.id))
+        .where(inArray(postDestination.postId, recentIds))
+    : [];
+  const destByPost = new Map<string, { network: string; handle: string; status: string; error: string | null }[]>();
+  for (const dest of destRows) {
+    const list = destByPost.get(dest.postId) ?? [];
+    list.push({ network: dest.network, handle: dest.handle, status: dest.status, error: dest.error });
+    destByPost.set(dest.postId, list);
+  }
 
   const byStatus: Record<string, number> = {
     published: totalsRow?.published ?? 0,
     queued: totalsRow?.queued ?? 0,
     failed: totalsRow?.failed ?? 0,
+    draft: totalsRow?.draft ?? 0,
+    scheduled: totalsRow?.scheduled ?? 0,
   };
   const byChannel: Record<string, Record<string, number>> = {};
   const byDay: Record<string, number> = {};
+  const channelMap = new Map<string, { network: string; handle: string; published: number; queued: number; failed: number; pending: number }>();
   for (const row of breakdown.results || []) {
     byChannel[row.network] ||= {};
     byChannel[row.network][row.status] = (byChannel[row.network][row.status] || 0) + row.c;
     byDay[row.day] = (byDay[row.day] || 0) + row.c;
+    const key = `${row.network}\0${row.handle}`;
+    const cur = channelMap.get(key) ?? { network: row.network, handle: row.handle, published: 0, queued: 0, failed: 0, pending: 0 };
+    if (row.status === "published" || row.status === "queued" || row.status === "failed" || row.status === "pending") cur[row.status] += row.c;
+    channelMap.set(key, cur);
   }
+  const channels = [...channelMap.values()].sort((a, b) => b.published + b.queued + b.failed + b.pending - (a.published + a.queued + a.failed + a.pending));
 
   // Network insights only when credentials exist; never invent numbers.
   const networkInsights: { network: string; note: string }[] = [];
-  const db = drizzle(c.env.DB);
   const connected = await db
     .select({ network: socialAccount.network, credentialsJson: socialAccount.credentialsJson, tokenCipher: socialAccount.tokenCipher })
     .from(socialAccount)
@@ -959,9 +998,16 @@ orgRoutes.get("/analytics", async (c) => {
     },
     byChannel,
     byDay,
+    channels,
     breakdown: breakdown.results || [],
     networkInsights,
-    recent: recent.results || [],
+    recent: (recentRows.results || []).map((row) => ({
+      id: row.id,
+      body: row.body,
+      status: row.status,
+      at: row.at,
+      channels: destByPost.get(row.id) ?? [],
+    })),
   });
 });
 
