@@ -402,7 +402,7 @@ export type InstagramLongLivedResult =
   | { ok: true; accessToken: string; expiresIn?: number }
   | { ok: false; reason: string; detail?: string };
 
-/** POST https://graph.instagram.com/access_token — GET returns Graph error 100 "Unsupported request - method type: get". */
+/** GET https://graph.instagram.com/access_token — Instagram Login long-lived exchange. POST returns Graph error 100 "Unsupported request - method type: post". */
 export async function exchangeLongLivedInstagramToken(
   env: Env,
   shortLived: string,
@@ -411,15 +411,14 @@ export async function exchangeLongLivedInstagramToken(
   const { appSecret } = instagramAppCreds(env);
   if (!appSecret) return { ok: false, reason: "missing_secret" };
   try {
-    const res = await fetch("https://graph.instagram.com/access_token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
+    const res = await fetch(
+      `https://graph.instagram.com/access_token?${new URLSearchParams({
         grant_type: "ig_exchange_token",
         client_secret: appSecret,
         access_token: shortLived,
-      }),
-    });
+      })}`,
+      { method: "GET" },
+    );
     const tok = parseFacebookTokenPayload(await res.text());
     const next = instagramAccessTokenFromPayload(tok);
     if (!res.ok || !next || tok.error) {
