@@ -5,7 +5,7 @@ import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertChannelLimit, planErrorResponse } from "../lib/entitlements";
 import { NETWORKS, NETWORK_META, type Network } from "../lib/networks";
-import { encryptCredentials, encryptSecret } from "../lib/secrets";
+import { encryptCredentials, encryptFailureDetail, encryptSecret, isTokenEncryptError } from "../lib/secrets";
 import {
   buildAuthorizeUrl,
   credsFromTokenJson,
@@ -477,9 +477,10 @@ async function completeOAuthCallback(
       createdAt: new Date(),
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    const reason = /TOKEN_ENCRYPTION_KEY/i.test(msg) ? "encrypt" : "persist";
-    return fail(oauthFailQs(network, "error", reason));
+    if (isTokenEncryptError(e)) {
+      return fail(oauthFailQs(network, "error", "encrypt", encryptFailureDetail(e)));
+    }
+    return fail(oauthFailQs(network, "error", "persist"));
   }
 
   const extra =

@@ -215,6 +215,7 @@ describe("Reddit subreddit", () => {
     expect(web).toContain("OAuth failed — credentials or consent rejected");
     expect(web).toContain("Facebook login succeeded but Pages could not be loaded.");
     expect(web).toContain("Set TOKEN_ENCRYPTION_KEY on the API.");
+    expect(web).toContain("could not encrypt the token (${detail})");
   });
 });
 
@@ -634,7 +635,7 @@ describe("Facebook OAuth callback", () => {
     expect(loc).not.toContain("oauth=no_page");
   });
 
-  it("redirects oauth=error reason=encrypt when persist/encrypt throws after a successful token exchange", async () => {
+  it("redirects oauth=error reason=encrypt detail=missing when TOKEN_ENCRYPTION_KEY is empty", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
@@ -648,9 +649,55 @@ describe("Facebook OAuth callback", () => {
         return graphRes(false, {});
       }),
     );
-    const res = await facebookCallback(callbackEnv({ TOKEN_ENCRYPTION_KEY: "not-a-32-byte-key" }));
+    const res = await facebookCallback(callbackEnv({ TOKEN_ENCRYPTION_KEY: "" }));
     expectAppRedirect(res, "error");
-    expect(res.headers.get("location") || "").toContain("reason=encrypt");
+    const loc = res.headers.get("location") || "";
+    expect(loc).toContain("reason=encrypt");
+    expect(loc).toContain("detail=missing");
+    expect(loc).toContain("network=facebook");
+  });
+
+  it("redirects oauth=error reason=encrypt with a crypto name when encrypt throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const { url: u, body } = fetchUrlAndBody(url, init);
+        if (isCodeExchange(u, body)) return graphRes(true, { access_token: "short-token" });
+        if (isLongLived(u, body)) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me?") && u.includes("fields=id")) return graphRes(true, { id: "99" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, { data: [{ id: "p1", name: "Page", access_token: "page-token" }] });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const encryptSpy = vi.spyOn(crypto.subtle, "encrypt").mockRejectedValueOnce(new DOMException("boom", "OperationError"));
+    const res = await facebookCallback(callbackEnv({ DB: mockD1() }));
+    encryptSpy.mockRestore();
+    expectAppRedirect(res, "error");
+    const loc = res.headers.get("location") || "";
+    expect(loc).toContain("reason=encrypt");
+    expect(loc).toContain("detail=OperationError");
+    expect(loc).not.toContain("detail=missing");
+    expect(loc).toContain("network=facebook");
+  });
+
+  it("connects a Page when TOKEN_ENCRYPTION_KEY is a passphrase rather than 64-hex", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const { url: u, body } = fetchUrlAndBody(url, init);
+        if (isCodeExchange(u, body)) return graphRes(true, { access_token: "short-token" });
+        if (isLongLived(u, body)) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me?") && u.includes("fields=id")) return graphRes(true, { id: "99" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, { data: [{ id: "p1", name: "Page", access_token: "page-token" }] });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await facebookCallback(callbackEnv({ TOKEN_ENCRYPTION_KEY: "not-a-32-byte-key", DB: mockD1() }));
+    expectAppRedirect(res, "ok");
     expect(res.headers.get("location") || "").toContain("network=facebook");
   });
 

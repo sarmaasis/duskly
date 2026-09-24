@@ -448,7 +448,10 @@ export class AccountsPage implements OnInit {
     }
     if (reason === "channel_limit") return "OAuth failed — this plan has no free channel slots.";
     if (reason === "encrypt") {
-      return "Facebook connected, but Duskly could not encrypt the token. Set TOKEN_ENCRYPTION_KEY on the API.";
+      if (!detail || detail === "missing") {
+        return "Facebook connected, but Duskly could not encrypt the token. Set TOKEN_ENCRYPTION_KEY on the API.";
+      }
+      return `Facebook connected, but Duskly could not encrypt the token (${detail}).`;
     }
     if (reason === "persist") return "Facebook connected, but Duskly could not save the Page. Try again.";
     if (reason === "kv" || reason === "bad_state" || reason === "callback") {
