@@ -476,13 +476,16 @@ export class AccountsPage implements OnInit {
     }
     if (reason && /^graph_\d+$/.test(reason)) {
       const code = reason.slice("graph_".length);
+      const label = instagram ? "Instagram" : "Facebook";
       return detail
-        ? `Facebook OAuth failed — Graph error ${code}: ${detail}`
-        : `Facebook OAuth failed — Graph error ${code}.`;
+        ? `${label} OAuth failed — Graph error ${code}: ${detail}`
+        : `${label} OAuth failed — Graph error ${code}.`;
     }
-    if (detail) return `Facebook OAuth failed — ${detail}`;
+    if (detail) {
+      return instagram ? `Instagram OAuth failed — ${detail}` : `Facebook OAuth failed — ${detail}`;
+    }
     if (reason && reason !== "token_failed" && reason !== "exchange" && reason !== "error") {
-      return `Facebook OAuth failed — ${reason}.`;
+      return instagram ? `Instagram OAuth failed — ${reason}.` : `Facebook OAuth failed — ${reason}.`;
     }
     if (oauth === "token_failed" || reason === "token_failed" || reason === "exchange") {
       return instagram

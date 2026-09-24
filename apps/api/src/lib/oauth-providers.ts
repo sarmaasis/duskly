@@ -305,7 +305,7 @@ export type FacebookTokenResult =
   | { ok: true; accessToken: string }
   | { ok: false; reason: string; detail?: string };
 
-/** Graph v21 accepts POST application/x-www-form-urlencoded (GET also works; POST keeps the secret out of the URL). */
+/** Graph oauth/access_token is POST-only — GET returns error 100 "Unsupported request - method type: get". */
 export async function exchangeFacebookUserToken(
   env: Env,
   code: string,
@@ -398,27 +398,38 @@ export async function exchangeInstagramUserToken(
   }
 }
 
+export type InstagramLongLivedResult =
+  | { ok: true; accessToken: string; expiresIn?: number }
+  | { ok: false; reason: string; detail?: string };
+
+/** POST https://graph.instagram.com/access_token — GET returns Graph error 100 "Unsupported request - method type: get". */
 export async function exchangeLongLivedInstagramToken(
   env: Env,
   shortLived: string,
-): Promise<{ accessToken: string; expiresIn?: number }> {
-  if (!shortLived) return { accessToken: shortLived };
+): Promise<InstagramLongLivedResult> {
+  if (!shortLived) return { ok: false, reason: "exchange" };
   const { appSecret } = instagramAppCreds(env);
+  if (!appSecret) return { ok: false, reason: "missing_secret" };
   try {
-    const res = await fetch(
-      `https://graph.instagram.com/access_token?${new URLSearchParams({
+    const res = await fetch("https://graph.instagram.com/access_token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
         grant_type: "ig_exchange_token",
         client_secret: appSecret,
         access_token: shortLived,
-      })}`,
-    );
+      }),
+    });
     const tok = parseFacebookTokenPayload(await res.text());
     const next = instagramAccessTokenFromPayload(tok);
+    if (!res.ok || !next || tok.error) {
+      return { ok: false, reason: graphOauthReason(tok), detail: graphOauthDetail(tok) || undefined };
+    }
     const expiresRaw = tok.expires_in;
     const expiresIn = typeof expiresRaw === "number" && expiresRaw > 0 ? expiresRaw : undefined;
-    return { accessToken: next || shortLived, ...(expiresIn ? { expiresIn } : {}) };
+    return { ok: true, accessToken: next, ...(expiresIn ? { expiresIn } : {}) };
   } catch {
-    return { accessToken: shortLived };
+    return { ok: false, reason: "exchange" };
   }
 }
 

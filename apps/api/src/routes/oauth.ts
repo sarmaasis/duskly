@@ -153,6 +153,7 @@ oauthRoutes.get("/:network/start", async (c) => {
       mastodonClientSecret,
       subreddit: normalizeSubreddit(c.req.query("subreddit")),
       redirectUri,
+      instagramLogin: network === "instagram" && instagramLoginConfigured(c.env),
     }),
     { expirationTtl: 600 },
   );
@@ -212,6 +213,7 @@ async function completeOAuthCallback(
     mastodonClientSecret?: string;
     subreddit?: string;
     redirectUri?: string;
+    instagramLogin?: boolean;
   };
   try {
     stored = JSON.parse(raw) as typeof stored;
@@ -328,12 +330,15 @@ async function completeOAuthCallback(
         { access_token: th.accessToken, expires_in: th.expiresIn },
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
-    } else if (network === "instagram" && instagramLoginConfigured(c.env)) {
+    } else if (network === "instagram" && (stored.instagramLogin ?? instagramLoginConfigured(c.env))) {
       const exchanged = await exchangeInstagramUserToken(c.env, code, redirectUri);
       if (!exchanged.ok) {
         return fail(oauthFailQs(network, "token_failed", exchanged.reason, exchanged.detail));
       }
       const longLived = await exchangeLongLivedInstagramToken(c.env, exchanged.accessToken);
+      if (!longLived.ok) {
+        return fail(oauthFailQs(network, "token_failed", longLived.reason, longLived.detail));
+      }
       const profile = await fetchInstagramLoginProfile(longLived.accessToken);
       if (!profile.ok) {
         return fail(oauthFailQs(network, "error", profile.reason, profile.detail));
