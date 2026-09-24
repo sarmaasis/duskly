@@ -1021,7 +1021,7 @@ describe("Instagram Login OAuth callback", () => {
     );
     expect(longLived).toBeTruthy();
     const longUrl = new URL(String(longLived![0]));
-    expect(`${longUrl.origin}${longUrl.pathname}`).toBe("https://graph.instagram.com/v25.0/access_token");
+    expect(`${longUrl.origin}${longUrl.pathname}`).toBe("https://graph.instagram.com/access_token");
     expect((longLived![1] as { method?: string } | undefined)?.method || "GET").toBe("GET");
     expect((longLived![1] as { body?: unknown } | undefined)?.body).toBeUndefined();
     expect(longUrl.searchParams.get("grant_type")).toBe("ig_exchange_token");
@@ -1029,9 +1029,7 @@ describe("Instagram Login OAuth callback", () => {
     expect(longUrl.searchParams.get("access_token")).toBe("ig-short");
     const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
     expect(meCall).toBeTruthy();
-    expect((meCall![1] as { headers?: { authorization?: string } } | undefined)?.headers?.authorization).toBe(
-      "Bearer ig-long",
-    );
+    expect(String(meCall![0])).toContain("access_token=ig-long");
     expect(
       fetch.mock.calls.some(
         ([u, init]) => isFacebookOauthAccessToken(String(u)) && (init?.method || "GET").toUpperCase() === "GET",
@@ -1101,7 +1099,7 @@ describe("Instagram Login OAuth callback", () => {
     expect(fetch.mock.calls.some(([u]) => isInstagramLoginMe(String(u)))).toBe(true);
   });
 
-  it("keeps the code-exchange token and saves the account when GET v25.0/access_token returns Graph 100 method type", async () => {
+  it("keeps the code-exchange token and saves the account when GET /access_token returns Graph 100 method type", async () => {
     const fetch = vi.fn(
       async (url: string, init?: { method?: string; body?: URLSearchParams | string; headers?: { authorization?: string } }) => {
         const u = String(url);
@@ -1113,7 +1111,7 @@ describe("Instagram Login OAuth callback", () => {
           });
         }
         if (isInstagramLoginMe(u)) {
-          expect(init?.headers?.authorization).toBe("Bearer ig-short");
+          expect(u).toContain("access_token=ig-short");
           return graphRes(true, { user_id: "1784", username: "dusklycafe" });
         }
         return graphRes(false, {});
@@ -1133,11 +1131,34 @@ describe("Instagram Login OAuth callback", () => {
     expect(longLived).toBeTruthy();
     expect((longLived?.[1] as { method?: string } | undefined)?.method || "GET").toBe("GET");
     expect(`${new URL(String(longLived?.[0])).origin}${new URL(String(longLived?.[0])).pathname}`).toBe(
-      "https://graph.instagram.com/v25.0/access_token",
+      "https://graph.instagram.com/access_token",
     );
     expect(String(longLived?.[0])).toContain("grant_type=ig_exchange_token");
     expect((longLived?.[1] as { body?: unknown } | undefined)?.body).toBeUndefined();
     expect(fetch.mock.calls.some(([u]) => isInstagramLoginMe(String(u)))).toBe(true);
+  });
+
+  it("saves the account from the code-exchange user_id when /me returns Graph 100 method type", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const u = String(url);
+        const body = init?.body != null ? String(init.body) : "";
+        if (isInstagramCodeExchange(u)) {
+          return graphRes(true, { data: [{ access_token: "ig-short", user_id: "1784" }] });
+        }
+        if (isInstagramLongLived(u, body)) return graphRes(true, { access_token: "ig-long", expires_in: 5184000 });
+        if (isInstagramLoginMe(u)) {
+          return graphRes(false, {
+            error: { message: "Unsupported request - method type: get", type: "IGApiException", code: 100 },
+          });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramLoginEnv({ DB: mockD1() }));
+    expectAppRedirect(res, "ok");
+    expect(res.headers.get("location") || "").not.toContain("reason=graph_100");
   });
 
   it("still fails Instagram Login when long-lived exchange returns a real Graph error", async () => {
@@ -1196,7 +1217,7 @@ describe("Instagram Login OAuth callback", () => {
     const providers = readFileSync(join(here, "../lib/oauth-providers.ts"), "utf8");
     expect(providers).toContain('fetch("https://api.instagram.com/oauth/access_token"');
     expect(providers).toContain('INSTAGRAM_GRAPH_VERSION = "v25.0"');
-    expect(providers).toMatch(/INSTAGRAM_GRAPH_BASE\}\/access_token\?/);
+    expect(providers).toContain("https://graph.instagram.com/access_token?");
     expect(providers).toContain('grant_type: "ig_exchange_token"');
     expect(providers).toMatch(/INSTAGRAM_GRAPH_BASE\}\/me\?/);
     expect(providers).not.toMatch(/graph\.instagram\.com\/v21\.0/);

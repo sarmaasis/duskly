@@ -391,7 +391,7 @@ function isUnsupportedGraphMethodType(tok: Record<string, unknown>): boolean {
 }
 
 export type InstagramUserTokenResult =
-  | { ok: true; accessToken: string; expiresIn?: number }
+  | { ok: true; accessToken: string; userId?: string; expiresIn?: number }
   | { ok: false; reason: string; detail?: string };
 
 /** POST https://api.instagram.com/oauth/access_token — Instagram Login code exchange. Docs: data[0].access_token. */
@@ -420,7 +420,13 @@ export async function exchangeInstagramUserToken(
       return { ok: false, reason: graphOauthReason(tok), detail: graphOauthDetail(tok) || undefined };
     }
     const expiresIn = instagramExpiresInFromPayload(tok);
-    return { ok: true, accessToken: access, ...(expiresIn ? { expiresIn } : {}) };
+    const userId = String(instagramObjectRow(tok).user_id || "").trim();
+    return {
+      ok: true,
+      accessToken: access,
+      ...(userId ? { userId } : {}),
+      ...(expiresIn ? { expiresIn } : {}),
+    };
   } catch {
     return { ok: false, reason: "exchange" };
   }
@@ -431,10 +437,10 @@ export type InstagramLongLivedResult =
   | { ok: false; reason: string; detail?: string };
 
 /**
- * GET https://graph.instagram.com/v25.0/access_token?grant_type=ig_exchange_token
- * Official doc is unversioned GET /access_token; v25.0 is tried first to match the IG Login playground.
- * Graph 100 "Unsupported request - method type" must not fail connect — keep the short-lived token.
- * https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login/
+ * GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token
+ * Unversioned. /v25.0/access_token is not this endpoint and returns Graph 100 method type get.
+ * https://developers.facebook.com/docs/instagram-platform/reference/access_token/
+ * A method-type 100 must not fail connect — keep the short-lived token.
  */
 export async function exchangeLongLivedInstagramToken(
   env: Env,
@@ -449,7 +455,7 @@ export async function exchangeLongLivedInstagramToken(
   if (!appSecret) return { ok: false, reason: "missing_secret" };
   try {
     const res = await fetch(
-      `${INSTAGRAM_GRAPH_BASE}/access_token?${new URLSearchParams({
+      `https://graph.instagram.com/access_token?${new URLSearchParams({
         grant_type: "ig_exchange_token",
         client_secret: appSecret,
         access_token: shortLived,
@@ -487,7 +493,6 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
         fields: "user_id,username",
         access_token: accessToken,
       })}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     const data = parseFacebookTokenPayload(await res.text());
     if (!res.ok || data.error) {

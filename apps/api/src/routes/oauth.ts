@@ -344,17 +344,20 @@ async function completeOAuthCallback(
         return fail(oauthFailQs(network, "token_failed", longLived.reason, longLived.detail));
       }
       const profile = await fetchInstagramLoginProfile(longLived.accessToken);
-      if (!profile.ok) {
-        return fail(oauthFailQs(network, "error", profile.reason, profile.detail));
+      const profileUserId = profile.ok ? profile.userId : "";
+      const userId = profileUserId || exchanged.userId || "";
+      if (!userId) {
+        return fail(oauthFailQs(network, "error", profile.ok ? "profile" : profile.reason, profile.ok ? undefined : profile.detail));
       }
       accessToken = longLived.accessToken;
-      handle = instagramAccountLabel({ igUsername: profile.username, igUserId: profile.userId }) || "instagram-account";
+      const username = profile.ok ? profile.username : undefined;
+      handle = instagramAccountLabel({ igUsername: username, igUserId: userId }) || "instagram-account";
       credentials = {
         accessToken: longLived.accessToken,
         authKind: INSTAGRAM_LOGIN_AUTH,
-        igUserId: profile.userId,
-        ...(profile.username ? { igUsername: profile.username } : {}),
-        metaUserId: profile.userId,
+        igUserId: userId,
+        ...(username ? { igUsername: username } : {}),
+        metaUserId: userId,
       };
       if (longLived.expiresIn) {
         credentials = applyTokenResponse(credentials, {
@@ -363,7 +366,7 @@ async function completeOAuthCallback(
         });
       }
       try {
-        await c.env.KV.put(`meta-user:${profile.userId}`, stored.workspaceId);
+        await c.env.KV.put(`meta-user:${userId}`, stored.workspaceId);
       } catch {
         /* best-effort map for Meta data-deletion */
       }
