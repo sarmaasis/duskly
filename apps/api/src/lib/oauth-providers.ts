@@ -24,7 +24,7 @@ export function oauthConfigured(env: Env, network: Network): boolean {
   if (network === "linkedin") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
   if (network === "mastodon") return true;
   if (network === "instagram" || network === "threads" || network === "facebook") {
-    return !!(env.META_APP_ID && env.META_APP_SECRET);
+    return !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
   }
   if (network === "youtube") return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
   if (network === "reddit") return !!(env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET);
@@ -152,44 +152,118 @@ export async function registerMastodonApp(
   return { clientId: data.client_id, clientSecret: data.client_secret };
 }
 
+export function metaAppCreds(env: Env): { appId: string; appSecret: string } {
+  return { appId: (env.META_APP_ID || "").trim(), appSecret: (env.META_APP_SECRET || "").trim() };
+}
+
+/** Short UI/query reason. Never include tokens, auth codes, or secrets. */
+export function safeOauthReason(raw: string | undefined | null, max = 80): string {
+  const s = (raw || "").replace(/\+/g, " ").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  if (/access[_-]?token|client_secret|app_secret|code_verifier|authorization code|bearer\s+[a-z0-9]|EAA[A-Za-z0-9]{8,}/i.test(s)) {
+    return "";
+  }
+  return s.replace(/[^\w .:,()\-/]/g, "").slice(0, max).trim();
+}
+
+export function classifyGraphOauthMessage(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("redirect_uri")) return "redirect_uri";
+  if (m.includes("application secret") || m.includes("app secret") || m.includes("client secret") || m.includes("invalid client")) {
+    return "bad_secret";
+  }
+  if (m.includes("been used") || m.includes("already used")) return "code_used";
+  if (m.includes("session has expired") || m.includes("code has expired") || m.includes("expired")) return "code_expired";
+  if (m.includes("verification code") || m.includes("invalid verification")) return "bad_code";
+  return "";
+}
+
+export function graphOauthReason(tok: Record<string, unknown>): string {
+  const err = tok.error;
+  const message =
+    typeof err === "string"
+      ? err
+      : err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string"
+        ? (err as { message: string }).message
+        : "";
+  const code =
+    err && typeof err === "object" && (err as { code?: unknown }).code != null
+      ? String((err as { code: unknown }).code)
+      : "";
+  return classifyGraphOauthMessage(message) || (code ? `graph_${code}` : "") || safeOauthReason(message) || "token_failed";
+}
+
+/** Facebook token endpoint is JSON; older Graph replies were form-encoded. */
+export function parseFacebookTokenPayload(text: string): Record<string, unknown> {
+  const raw = (text || "").trim();
+  if (!raw) return {};
+  try {
+    const body = JSON.parse(raw) as unknown;
+    if (body && typeof body === "object") return body as Record<string, unknown>;
+  } catch {
+    /* form-encoded fallback */
+  }
+  const params = new URLSearchParams(raw.includes("=") ? raw : "");
+  const access = params.get("access_token");
+  if (!access) return {};
+  const expires = params.get("expires_in") || params.get("expires");
+  return {
+    access_token: access,
+    token_type: params.get("token_type") || "bearer",
+    ...(expires ? { expires_in: Number(expires) } : {}),
+  };
+}
+
 export async function exchangeLongLivedFacebookToken(env: Env, shortLived: string): Promise<string> {
-  const res = await fetch(
-    `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
-      grant_type: "fb_exchange_token",
-      client_id: env.META_APP_ID!,
-      client_secret: env.META_APP_SECRET!,
-      fb_exchange_token: shortLived,
-    })}`,
-  );
-  if (!res.ok) return shortLived;
-  const tok = (await res.json()) as { access_token?: string };
-  return tok.access_token || shortLived;
+  if (!shortLived) return shortLived;
+  const { appId, appSecret } = metaAppCreds(env);
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
+        grant_type: "fb_exchange_token",
+        client_id: appId,
+        client_secret: appSecret,
+        fb_exchange_token: shortLived,
+      })}`,
+    );
+    const tok = parseFacebookTokenPayload(await res.text());
+    const next = typeof tok.access_token === "string" ? tok.access_token : "";
+    return next || shortLived;
+  } catch {
+    return shortLived;
+  }
 }
 
 export async function listFacebookPages(userToken: string, requireIg: boolean): Promise<FacebookPage[]> {
-  const res = await fetch(
-    `https://graph.facebook.com/v21.0/me/accounts?${new URLSearchParams({
-      fields: "id,name,access_token,instagram_business_account",
-      access_token: userToken,
-    })}`,
-  );
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
-    data?: Array<{
-      id?: string;
-      name?: string;
-      access_token?: string;
-      instagram_business_account?: { id?: string };
-    }>;
-  };
-  const pages: FacebookPage[] = [];
-  for (const p of data.data || []) {
-    if (!p.id || !p.access_token) continue;
-    const igUserId = p.instagram_business_account?.id;
-    if (requireIg && !igUserId) continue;
-    pages.push({ id: p.id, name: p.name || p.id, accessToken: p.access_token, igUserId });
+  if (!userToken) return [];
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/me/accounts?${new URLSearchParams({
+        fields: "id,name,access_token,instagram_business_account",
+        access_token: userToken,
+      })}`,
+    );
+    const data = parseFacebookTokenPayload(await res.text()) as {
+      error?: unknown;
+      data?: Array<{
+        id?: string;
+        name?: string;
+        access_token?: string;
+        instagram_business_account?: { id?: string };
+      }>;
+    };
+    if (!res.ok || data.error) return [];
+    const pages: FacebookPage[] = [];
+    for (const p of data.data || []) {
+      if (!p.id || !p.access_token) continue;
+      const igUserId = p.instagram_business_account?.id;
+      if (requireIg && !igUserId) continue;
+      pages.push({ id: p.id, name: p.name || p.id, accessToken: p.access_token, igUserId });
+    }
+    return pages;
+  } catch {
+    return [];
   }
-  return pages;
 }
 
 export async function exchangeThreadsUserToken(

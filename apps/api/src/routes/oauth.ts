@@ -11,12 +11,16 @@ import {
   credsFromTokenJson,
   exchangeLongLivedFacebookToken,
   exchangeThreadsUserToken,
+  graphOauthReason,
   listFacebookPages,
+  metaAppCreds,
   oauthConfigured,
   facebookUserId,
   normalizeSubreddit,
+  parseFacebookTokenPayload,
   registerMastodonApp,
   REDDIT_UA,
+  safeOauthReason,
 } from "../lib/oauth-providers";
 import { applyTokenResponse } from "../lib/oauth-tokens";
 import { apiPublicOrigin } from "../lib/media-signed-url";
@@ -62,13 +66,11 @@ function oauthCallbackUri(env: Env, network: string) {
   return `${apiPublicOrigin(env)}/v1/accounts/oauth/${network}/callback`;
 }
 
-async function readJsonObject(res: Response): Promise<Record<string, unknown>> {
-  try {
-    const body = await res.json();
-    return body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
+function oauthFailQs(network: string, oauth: string, reason?: string) {
+  const q = new URLSearchParams({ oauth, network });
+  const safe = safeOauthReason(reason);
+  if (safe) q.set("reason", safe);
+  return q.toString();
 }
 
 oauthRoutes.get("/status", async (c) => {
@@ -140,6 +142,7 @@ oauthRoutes.get("/:network/start", async (c) => {
       mastodonClientId,
       mastodonClientSecret,
       subreddit: normalizeSubreddit(c.req.query("subreddit")),
+      redirectUri,
     }),
     { expirationTtl: 600 },
   );
@@ -175,7 +178,8 @@ async function completeOAuthCallback(
   const state = c.req.query("state");
   const err = c.req.query("error");
   if (err || !code || !state) {
-    return fail("oauth=error");
+    const reason = err || c.req.query("error_reason") || (!code ? "missing_code" : "missing_state");
+    return fail(oauthFailQs(network, "error", reason));
   }
 
   let raw: string | null = null;
@@ -197,6 +201,7 @@ async function completeOAuthCallback(
     mastodonClientId?: string;
     mastodonClientSecret?: string;
     subreddit?: string;
+    redirectUri?: string;
   };
   try {
     stored = JSON.parse(raw) as typeof stored;
@@ -208,11 +213,11 @@ async function completeOAuthCallback(
   try {
     await assertChannelLimit(c.env, stored.workspaceId, 1);
   } catch (e) {
-    if (planErrorResponse(e)) return fail("oauth=error");
-    return fail("oauth=error");
+    if (planErrorResponse(e)) return fail(oauthFailQs(network, "limit", "channel_limit"));
+    return fail(oauthFailQs(network, "error"));
   }
 
-  const redirectUri = oauthCallbackUri(c.env, network);
+  const redirectUri = stored.redirectUri || oauthCallbackUri(c.env, network);
   let accessToken = "";
   let handle = "";
   let credentials: Record<string, string> = {};
@@ -314,20 +319,30 @@ async function completeOAuthCallback(
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
     } else if (network === "instagram" || network === "facebook") {
-      if (!c.env.META_APP_ID || !c.env.META_APP_SECRET) {
-        return fail("oauth=token_failed");
+      const { appId, appSecret } = metaAppCreds(c.env);
+      if (!appId || !appSecret) {
+        return fail(oauthFailQs(network, "token_failed", "missing_secret"));
       }
-      const tokenRes = await fetch(
-        `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
-          client_id: c.env.META_APP_ID,
-          client_secret: c.env.META_APP_SECRET,
-          redirect_uri: redirectUri,
-          code,
-        })}`,
-      );
-      const tok = await readJsonObject(tokenRes);
+      let tok: Record<string, unknown> = {};
+      let tokenResOk = false;
+      try {
+        const tokenRes = await fetch(
+          `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
+            client_id: appId,
+            client_secret: appSecret,
+            redirect_uri: redirectUri,
+            code,
+          })}`,
+        );
+        tokenResOk = tokenRes.ok;
+        tok = parseFacebookTokenPayload(await tokenRes.text());
+      } catch {
+        return fail(oauthFailQs(network, "token_failed", "exchange"));
+      }
       const access = typeof tok.access_token === "string" ? tok.access_token : "";
-      if (!tokenRes.ok || !access || tok.error) return fail("oauth=token_failed");
+      if (!tokenResOk || !access || tok.error) {
+        return fail(oauthFailQs(network, "token_failed", graphOauthReason(tok)));
+      }
       const longLived = await exchangeLongLivedFacebookToken(c.env, access);
       const metaUserId = await facebookUserId(longLived);
       const pages = await listFacebookPages(longLived, network === "instagram");
@@ -355,7 +370,13 @@ async function completeOAuthCallback(
           ...(metaUserId ? { metaUserId } : {}),
         };
       }
-      if (metaUserId) await c.env.KV.put(`meta-user:${metaUserId}`, stored.workspaceId);
+      if (metaUserId) {
+        try {
+          await c.env.KV.put(`meta-user:${metaUserId}`, stored.workspaceId);
+        } catch {
+          /* best-effort map for Meta data-deletion */
+        }
+      }
     } else if (network === "youtube") {
       const body = new URLSearchParams({
         code,

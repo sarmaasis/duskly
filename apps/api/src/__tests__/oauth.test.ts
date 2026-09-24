@@ -4,7 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import worker from "../index";
 import type { Env } from "../env";
-import { buildAuthorizeUrl, normalizeSubreddit, oauthConfigured } from "../lib/oauth-providers";
+import {
+  buildAuthorizeUrl,
+  graphOauthReason,
+  normalizeSubreddit,
+  oauthConfigured,
+  parseFacebookTokenPayload,
+  safeOauthReason,
+} from "../lib/oauth-providers";
 import { applyTokenResponse, refreshAccessToken, tokenExpiryMs } from "../lib/oauth-tokens";
 import { parseMetaSignedRequest } from "../routes/meta-deletion";
 import { encryptCredentials, decryptCredentials } from "../lib/secrets";
@@ -88,10 +95,17 @@ describe("OAuth authorize URLs", () => {
   });
 
   it("Facebook keeps Page publish scopes", () => {
-    const url = buildAuthorizeUrl({ ...base, network: "facebook" });
-    expect(new URL(url).searchParams.get("scope")).toBe(
-      "pages_manage_posts,pages_read_engagement,pages_show_list",
-    );
+    const url = buildAuthorizeUrl({
+      ...base,
+      network: "facebook",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/facebook/callback",
+    });
+    expect(url).toContain("facebook.com/v21.0/dialog/oauth");
+    const q = new URL(url).searchParams;
+    expect(q.get("scope")).toBe("pages_manage_posts,pages_read_engagement,pages_show_list");
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/facebook/callback");
+    expect(q.get("client_id")).toBe("meta-id");
+    expect(q.get("response_type")).toBe("code");
   });
 
   it("YouTube asks only for youtube.upload (upload-only, no force-ssl)", () => {
@@ -193,6 +207,8 @@ describe("Reddit subreddit", () => {
     expect(src).toContain("subreddit: stored.subreddit || \"\"");
     const web = readFileSync(join(here, "../../../web/src/app/accounts/accounts.page.ts"), "utf8");
     expect(web).toContain('q.set("subreddit", this.subreddit.trim())');
+    expect(web).toContain("oauthFailureMessage");
+    expect(web).toContain("OAuth failed — credentials or consent rejected");
   });
 });
 
@@ -327,7 +343,17 @@ function fbStored(network: "facebook" | "instagram" = "facebook") {
     network,
     verifier: "verifier",
     instance: "https://mastodon.social",
+    redirectUri: `https://api.duskly.site/v1/accounts/oauth/${network}/callback`,
   });
+}
+
+function graphRes(ok: boolean, body: unknown) {
+  const text = typeof body === "string" ? body : JSON.stringify(body);
+  return {
+    ok,
+    json: async () => (typeof body === "string" ? JSON.parse(body) : body),
+    text: async () => text,
+  };
 }
 
 function memoryKv(initial: Record<string, string> = {}) {
@@ -372,10 +398,30 @@ function expectAppRedirect(res: Response, oauth: string) {
   expect(loc).toContain(`oauth=${oauth}`);
 }
 
+describe("Facebook token payload helpers", () => {
+  it("reads JSON access_token and classifies Graph errors without leaking secrets", () => {
+    expect(parseFacebookTokenPayload(JSON.stringify({ access_token: "short", token_type: "bearer" })).access_token).toBe(
+      "short",
+    );
+    expect(parseFacebookTokenPayload("access_token=short-token&token_type=bearer&expires_in=3600").access_token).toBe(
+      "short-token",
+    );
+    expect(graphOauthReason({ error: { message: "redirect_uri mismatch", type: "OAuthException", code: 100 } })).toBe(
+      "redirect_uri",
+    );
+    expect(graphOauthReason({ error: { message: "Error validating application secret", code: 1 } })).toBe("bad_secret");
+    expect(graphOauthReason({ error: { message: "This authorization code has been used." } })).toBe("code_used");
+    expect(safeOauthReason("EAABsbCS0123456789 leaked")).toBe("");
+    expect(safeOauthReason("access_denied")).toBe("access_denied");
+  });
+});
+
 describe("Facebook OAuth callback", () => {
   it("redirects oauth=error when Facebook sends error= (not 500)", async () => {
     const res = await facebookCallback(callbackEnv(), `error=access_denied&state=${FB_STATE}`);
     expectAppRedirect(res, "error");
+    expect(res.headers.get("location") || "").toContain("reason=access_denied");
+    expect(res.headers.get("location") || "").toContain("network=facebook");
   });
 
   it("redirects oauth=expired when state is missing from KV", async () => {
@@ -407,51 +453,115 @@ describe("Facebook OAuth callback", () => {
   it("redirects oauth=token_failed when Graph returns an OAuthException (not 500)", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        json: async () => ({ error: { message: "redirect_uri mismatch", type: "OAuthException" } }),
-      }),
+      vi.fn().mockResolvedValue(graphRes(false, { error: { message: "redirect_uri mismatch", type: "OAuthException" } })),
     );
     const res = await facebookCallback(callbackEnv());
     expectAppRedirect(res, "token_failed");
+    expect(res.headers.get("location") || "").toContain("reason=redirect_uri");
   });
 
   it("redirects oauth=token_failed when Graph returns HTTP 200 with an error object", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ error: { message: "Invalid verification code format", type: "OAuthException" } }),
-      }),
+      vi.fn().mockResolvedValue(
+        graphRes(true, { error: { message: "Invalid verification code format", type: "OAuthException" } }),
+      ),
     );
     const res = await facebookCallback(callbackEnv());
     expectAppRedirect(res, "token_failed");
+    expect(res.headers.get("location") || "").toContain("reason=bad_code");
   });
 
   it("redirects oauth=token_failed when Graph fetch throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
     const res = await facebookCallback(callbackEnv());
     expectAppRedirect(res, "token_failed");
+    expect(res.headers.get("location") || "").toContain("reason=exchange");
   });
 
   it("redirects oauth=token_failed when META_APP_SECRET is missing", async () => {
-    const res = await facebookCallback(callbackEnv({ META_APP_SECRET: "" }));
+    const res = await facebookCallback(callbackEnv({ META_APP_SECRET: "  " }));
     expectAppRedirect(res, "token_failed");
+    expect(res.headers.get("location") || "").toContain("reason=missing_secret");
   });
 
   it("exchanges against the dashboard callback URL even if BETTER_AUTH_URL has a trailing slash", async () => {
-    const fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: { type: "OAuthException", message: "redirect_uri mismatch" } }),
-    });
+    const fetch = vi.fn().mockResolvedValue(
+      graphRes(false, { error: { type: "OAuthException", message: "redirect_uri mismatch" } }),
+    );
     vi.stubGlobal("fetch", fetch);
     const res = await facebookCallback(callbackEnv({ BETTER_AUTH_URL: "https://api.duskly.site/" }));
     expectAppRedirect(res, "token_failed");
     expect(fetch).toHaveBeenCalled();
     const called = String(fetch.mock.calls[0][0]);
+    expect(called.startsWith("https://graph.facebook.com/v21.0/oauth/access_token?")).toBe(true);
     const q = new URL(called).searchParams;
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/facebook/callback");
     expect(q.get("client_id")).toBe("meta-id");
+    expect(q.get("client_secret")).toBe("meta-secret");
+    expect(q.get("code")).toBe("test-code");
+  });
+
+  it("reuses the authorize redirect_uri stored on state even if BETTER_AUTH_URL changed", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      graphRes(false, { error: { type: "OAuthException", message: "redirect_uri mismatch" } }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const res = await facebookCallback(
+      callbackEnv({
+        BETTER_AUTH_URL: "https://other.example/",
+        KV: memoryKv({
+          [`oauth:${FB_STATE}`]: JSON.stringify({
+            workspaceId: "ws1",
+            userId: "u1",
+            network: "facebook",
+            verifier: "verifier",
+            instance: "https://mastodon.social",
+            redirectUri: "https://api.duskly.site/v1/accounts/oauth/facebook/callback",
+          }),
+        }),
+      }),
+    );
+    expectAppRedirect(res, "token_failed");
+    const q = new URL(String(fetch.mock.calls[0][0])).searchParams;
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/facebook/callback");
+  });
+
+  it("accepts a form-encoded short-lived token and does not treat it as credential rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes("/oauth/access_token") && !u.includes("fb_exchange_token")) {
+          return graphRes(true, "access_token=short-token&token_type=bearer&expires_in=3600");
+        }
+        if (u.includes("fb_exchange_token")) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me/accounts")) return graphRes(true, { data: [] });
+        return graphRes(true, { id: "99" });
+      }),
+    );
+    const res = await facebookCallback(callbackEnv());
+    expectAppRedirect(res, "no_page");
+  });
+
+  it("labels a Pages Graph failure as no_page after a successful user token", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes("/oauth/access_token") && !u.includes("fb_exchange_token")) {
+          return graphRes(true, { access_token: "short-token" });
+        }
+        if (u.includes("fb_exchange_token")) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(false, { error: { message: "Requires pages_show_list", code: 200 } });
+        }
+        return graphRes(true, { id: "99" });
+      }),
+    );
+    const res = await facebookCallback(callbackEnv());
+    expectAppRedirect(res, "no_page");
+    expect(res.headers.get("location") || "").not.toContain("oauth=token_failed");
   });
 
   it("redirects oauth=error when persist/encrypt throws after a successful token exchange", async () => {
@@ -460,21 +570,18 @@ describe("Facebook OAuth callback", () => {
       vi.fn(async (url: string) => {
         const u = String(url);
         if (u.includes("/oauth/access_token") && !u.includes("fb_exchange_token")) {
-          return { ok: true, json: async () => ({ access_token: "short-token" }) };
+          return graphRes(true, { access_token: "short-token" });
         }
         if (u.includes("fb_exchange_token")) {
-          return { ok: true, json: async () => ({ access_token: "long-token" }) };
+          return graphRes(true, { access_token: "long-token" });
         }
         if (u.includes("/me?") && u.includes("fields=id")) {
-          return { ok: true, json: async () => ({ id: "99" }) };
+          return graphRes(true, { id: "99" });
         }
         if (u.includes("/me/accounts")) {
-          return {
-            ok: true,
-            json: async () => ({ data: [{ id: "p1", name: "Page", access_token: "page-token" }] }),
-          };
+          return graphRes(true, { data: [{ id: "p1", name: "Page", access_token: "page-token" }] });
         }
-        return { ok: false, json: async () => ({}) };
+        return graphRes(false, {});
       }),
     );
     const res = await facebookCallback(callbackEnv({ TOKEN_ENCRYPTION_KEY: "not-a-32-byte-key" }));

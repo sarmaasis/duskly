@@ -396,6 +396,37 @@ export class AccountsPage implements OnInit {
     return "Handle / display name";
   }
 
+  oauthFailureMessage(oauth: string, network: string | null, reason: string | null) {
+    const meta = network === "facebook" || network === "instagram";
+    if (reason === "access_denied" || reason === "user_denied") {
+      return meta
+        ? "Facebook login was cancelled or permissions were denied."
+        : "OAuth failed — credentials or consent rejected";
+    }
+    if (!meta) return "OAuth failed — credentials or consent rejected";
+    if (reason === "redirect_uri") {
+      return "Facebook rejected the token exchange — the redirect URI must match the authorize URL exactly.";
+    }
+    if (reason === "bad_secret" || reason === "missing_secret") {
+      return "Facebook rejected the app secret. Check META_APP_ID and META_APP_SECRET on the API.";
+    }
+    if (reason === "code_used") return "Facebook authorization code was already used. Connect again from Accounts.";
+    if (reason === "code_expired" || reason === "bad_code") {
+      return "Facebook authorization code was invalid or expired. Connect again from Accounts.";
+    }
+    if (reason === "pages") return "Facebook login succeeded but Pages could not be loaded.";
+    if (reason === "channel_limit") return "OAuth failed — this plan has no free channel slots.";
+    if (reason && /^graph_\d+$/.test(reason)) {
+      return `Facebook OAuth failed — Graph error ${reason.slice("graph_".length)}.`;
+    }
+    if (reason && reason !== "token_failed" && reason !== "exchange" && reason !== "error") {
+      return `Facebook OAuth failed — ${reason}.`;
+    }
+    return oauth === "token_failed"
+      ? "Facebook token exchange failed. Check the Meta app id/secret and Valid OAuth Redirect URI."
+      : "OAuth failed — credentials or consent rejected";
+  }
+
   pickNetwork(n: string) {
     this.network = n;
   }
@@ -421,8 +452,10 @@ export class AccountsPage implements OnInit {
             ? "No Facebook Page with a linked Instagram professional account was found."
             : "No Facebook Pages were found on that account.",
         );
-      } else if (oauth === "error" || oauth === "token_failed") this.msg.set("OAuth failed — credentials or consent rejected");
-      else if (oauth === "expired") this.msg.set("OAuth state expired — try again");
+      } else if (oauth === "limit") this.msg.set("OAuth failed — this plan has no free channel slots.");
+      else if (oauth === "error" || oauth === "token_failed") {
+        this.msg.set(this.oauthFailureMessage(oauth, oauthNetwork, this.route.snapshot.queryParamMap.get("reason")));
+      } else if (oauth === "expired") this.msg.set("OAuth state expired — try again");
       await this.reload();
       try {
         const st = await api<Record<string, boolean>>(`/v1/accounts/oauth/status?workspaceId=${this.workspaceId}`);
