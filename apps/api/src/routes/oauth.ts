@@ -328,7 +328,7 @@ async function completeOAuthCallback(
       handle = th.handle;
       credentials = applyTokenResponse(
         { threadsUserId: th.userId, metaUserId: th.userId },
-        { access_token: th.accessToken, expires_in: th.expiresIn },
+        { access_token: th.accessToken, refresh_token: th.accessToken, expires_in: th.expiresIn },
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
     } else if (network === "instagram" && (stored.instagramLogin ?? useInstagramBusinessLogin(c.env))) {
@@ -445,8 +445,24 @@ async function completeOAuthCallback(
         expires_in?: number;
       };
       accessToken = tok.access_token;
-      handle = "youtube-channel";
-      credentials = credsFromTokenJson({}, tok);
+      let channelId = "";
+      let channelTitle = "";
+      try {
+        const ch = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+          headers: { authorization: `Bearer ${accessToken}` },
+        });
+        if (ch.ok) {
+          const chJson = (await ch.json()) as {
+            items?: Array<{ id?: string; snippet?: { title?: string } }>;
+          };
+          channelId = chJson.items?.[0]?.id || "";
+          channelTitle = chJson.items?.[0]?.snippet?.title || "";
+        }
+      } catch {
+        /* channel title is optional; upload still uses the token */
+      }
+      handle = channelTitle || "youtube-channel";
+      credentials = credsFromTokenJson(channelId ? { channelId } : {}, tok);
     } else if (network === "reddit") {
       const basic = btoa(`${c.env.REDDIT_CLIENT_ID}:${c.env.REDDIT_CLIENT_SECRET}`);
       const body = new URLSearchParams({

@@ -112,7 +112,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
       response_type: "code",
       client_id: input.mastodonClientId || env.MASTODON_CLIENT_ID!,
       redirect_uri: redirectUri,
-      scope: "read write",
+      scope: "write:statuses write:media profile",
       state,
     });
     return `${instance}/oauth/authorize?${params}`;
@@ -121,11 +121,11 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     const params = new URLSearchParams({
       client_id: env.META_APP_ID!,
       redirect_uri: redirectUri,
-      scope: "threads_basic,threads_content_publish",
+      scope: "threads_basic,threads_content_publish,threads_manage_replies",
       response_type: "code",
       state,
     });
-    return `https://threads.com/oauth/authorize?${params}`;
+    return `https://www.threads.net/oauth/authorize?${params}`;
   }
   if (network === "instagram" && useInstagramBusinessLogin(env)) {
     const { appId } = instagramAppCreds(env);
@@ -158,7 +158,11 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
       client_id: env.GOOGLE_CLIENT_ID!,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "https://www.googleapis.com/auth/youtube.upload",
+      scope: [
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/youtube.upload",
+      ].join(" "),
       access_type: "offline",
       prompt: "consent",
       state,
@@ -172,7 +176,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     // even if nobody has /invited the bot yet. Channel picker still uses channels:read / groups:read.
     const params = new URLSearchParams({
       client_id: env.SLACK_CLIENT_ID!,
-      scope: "chat:write,channels:read,groups:read,chat:write.public",
+      scope: "chat:write,channels:read,groups:read,chat:write.public,channels:join",
       redirect_uri: redirectUri,
       state,
     });
@@ -205,7 +209,7 @@ export async function registerMastodonApp(
     body: JSON.stringify({
       client_name: env.APP_NAME || "Duskly",
       redirect_uris: redirectUri,
-      scopes: "read write",
+      scopes: "write:statuses write:media profile",
       website: env.WEB_ORIGIN || "https://duskly.site",
     }),
   });

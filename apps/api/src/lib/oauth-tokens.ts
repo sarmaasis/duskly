@@ -107,6 +107,22 @@ export async function refreshAccessToken(
     return { ok: true, creds: next, accessToken: tok.access_token };
   }
 
+  if (network === "threads") {
+    const token = creds.refreshToken || creds.accessToken;
+    if (!token) return { ok: false, reason: "Threads token is missing" };
+    const res = await fetch(
+      `https://graph.threads.net/refresh_access_token?${new URLSearchParams({
+        grant_type: "th_refresh_token",
+        access_token: token,
+      })}`,
+    );
+    if (!res.ok) return { ok: false, reason: `Threads token refresh failed (${res.status})` };
+    const tok = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!tok.access_token) return { ok: false, reason: "Threads token refresh returned no access_token" };
+    const next = applyTokenResponse(creds, { ...tok, refresh_token: tok.access_token });
+    return { ok: true, creds: next, accessToken: tok.access_token };
+  }
+
   if (network === "reddit") {
     if (!env.REDDIT_CLIENT_ID || !env.REDDIT_CLIENT_SECRET) {
       return { ok: false, reason: "Reddit OAuth client is not configured" };

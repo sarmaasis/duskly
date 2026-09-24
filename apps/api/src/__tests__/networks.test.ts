@@ -113,7 +113,7 @@ describe("publish adapters — missing credentials stay queued", () => {
     });
     expect(result).toMatchObject({ remoteId: "urn:li:share:123" });
     expect(String(fetch.mock.calls[0][0])).toBe("https://api.linkedin.com/rest/posts");
-    expect(fetch.mock.calls[0][1].headers["linkedin-version"]).toBe("202603");
+    expect(fetch.mock.calls[0][1].headers["linkedin-version"]).toBe("202601");
     const body = JSON.parse(String(fetch.mock.calls[0][1].body));
     expect(body.commentary).toBe("hello");
     expect(body.distribution.feedDistribution).toBe("MAIN_FEED");
@@ -402,27 +402,29 @@ describe("caption+image scheduled publish must attach the photo", () => {
   it("Threads caption+image uses IMAGE + image_url, not TEXT-only", async () => {
     const fetch = spyFetch();
     fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => "" })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "th1" }), text: async () => "" });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => JSON.stringify({ id: "container" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: "FINISHED" }), text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "th1" }), text: async () => JSON.stringify({ id: "th1" }) });
     const result = await adapters.threads.publish({
       ...pending,
       token: "TH_TOKEN",
       credentials: { accessToken: "TH_TOKEN", threadsUserId: "99", imageUrl },
     });
     expect(result).toMatchObject({ remoteId: "th1" });
-    const createBody = new URLSearchParams(String(fetch.mock.calls[0][1].body));
-    expect(createBody.get("media_type")).toBe("IMAGE");
-    expect(createBody.get("image_url")).toBe(imageUrl);
-    expect(createBody.get("text")).toBe("hello");
-    expect(createBody.get("media_type")).not.toBe("TEXT");
-    const publishBody = new URLSearchParams(String(fetch.mock.calls[1][1].body));
-    expect(publishBody.get("creation_id")).toBe("container");
+    const createUrl = new URL(String(fetch.mock.calls[0][0]));
+    expect(createUrl.searchParams.get("media_type")).toBe("IMAGE");
+    expect(createUrl.searchParams.get("image_url")).toBe(imageUrl);
+    expect(createUrl.searchParams.get("text")).toBe("hello");
+    const publishUrl = new URL(String(fetch.mock.calls[2][0]));
+    expect(publishUrl.searchParams.get("creation_id")).toBe("container");
   });
 
   it("X uploads the image and attaches media_ids on the tweet", async () => {
     const fetch = spyFetch();
     fetch
       .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { id: "media99" } }), text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}), text: async () => "" })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}), text: async () => "" })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { id: "tw1" } }), text: async () => "" });
     const result = await adapters.x.publish({
       ...pending,
@@ -432,9 +434,10 @@ describe("caption+image scheduled publish must attach the photo", () => {
       imageContentType: "image/jpeg",
     });
     expect(result).toMatchObject({ remoteId: "tw1" });
-    expect(String(fetch.mock.calls[0][0])).toBe("https://api.x.com/2/media/upload");
-    expect(fetch.mock.calls[0][1].body).toBeInstanceOf(FormData);
-    const tweet = JSON.parse(String(fetch.mock.calls[1][1].body));
+    expect(String(fetch.mock.calls[0][0])).toBe("https://api.x.com/2/media/upload/initialize");
+    expect(String(fetch.mock.calls[1][0])).toBe("https://api.x.com/2/media/upload/media99/append");
+    expect(fetch.mock.calls[1][1].body).toBeInstanceOf(FormData);
+    const tweet = JSON.parse(String(fetch.mock.calls[3][1].body));
     expect(tweet.text).toBe("hello");
     expect(tweet.media.media_ids).toEqual(["media99"]);
   });
@@ -540,15 +543,36 @@ describe("caption+image scheduled publish must attach the photo", () => {
     expect(body.blocks.some((b: { type: string; image_url?: string }) => b.type === "image" && b.image_url === imageUrl)).toBe(true);
   });
 
-  it("Reddit queues an image post instead of submitting text-only", async () => {
+  it("Reddit uploads an image and submits kind=image", async () => {
     const fetch = spyFetch();
+    fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          args: { action: "//reddit-uploaded.s3.amazonaws.com/", fields: [{ name: "key", value: "abc" }] },
+        }),
+        text: async () => "",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        text: async () => "<Location>https://reddit.com/media/abc</Location>",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ json: { data: { name: "t3_img" } } }),
+        text: async () => "",
+      });
     const result = await adapters.reddit.publish({
       ...pending,
       token: "reddit-token",
       credentials: { accessToken: "reddit-token", subreddit: "duskly", imageUrl },
+      imageBytes: jpeg,
+      imageContentType: "image/jpeg",
     });
-    expect(result).toMatchObject({ queued: true });
-    expect(String("reason" in result ? result.reason : "")).toMatch(/photo is not dropped/i);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ remoteId: "t3_img" });
+    const submit = new URLSearchParams(String(fetch.mock.calls[2][1].body));
+    expect(submit.get("kind")).toBe("image");
+    expect(submit.get("url")).toBe("https://reddit.com/media/abc");
   });
 });

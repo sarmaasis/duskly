@@ -138,15 +138,17 @@ describe("OAuth authorize URLs", () => {
     expect(oauthConfigured({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "  " } as Env, "instagram")).toBe(false);
   });
 
-  it("Threads uses threads.com authorize, not Facebook Login", () => {
+  it("Threads uses www.threads.net authorize, not Facebook Login", () => {
     const url = buildAuthorizeUrl({
       ...base,
       network: "threads",
       redirectUri: "https://api.duskly.site/v1/accounts/oauth/threads/callback",
     });
-    expect(url.startsWith("https://threads.com/oauth/authorize?")).toBe(true);
+    expect(url.startsWith("https://www.threads.net/oauth/authorize?")).toBe(true);
     expect(url).not.toContain("facebook.com");
-    expect(new URL(url).searchParams.get("scope")).toBe("threads_basic,threads_content_publish");
+    expect(new URL(url).searchParams.get("scope")).toBe(
+      "threads_basic,threads_content_publish,threads_manage_replies",
+    );
   });
 
   it("Facebook keeps Page publish scopes", () => {
@@ -163,13 +165,16 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("response_type")).toBe("code");
   });
 
-  it("YouTube asks only for youtube.upload (upload-only, no force-ssl)", () => {
+  it("YouTube asks for upload plus channel read", () => {
     const url = buildAuthorizeUrl({
       ...base,
       network: "youtube",
       redirectUri: "https://api.duskly.site/v1/accounts/oauth/youtube/callback",
     });
-    expect(new URL(url).searchParams.get("scope")).toBe("https://www.googleapis.com/auth/youtube.upload");
+    const scope = new URL(url).searchParams.get("scope") || "";
+    expect(scope).toContain("https://www.googleapis.com/auth/youtube.upload");
+    expect(scope).toContain("https://www.googleapis.com/auth/youtube.readonly");
+    expect(scope).not.toContain("youtubepartner");
     expect(url).not.toContain("youtube.force-ssl");
   });
 
