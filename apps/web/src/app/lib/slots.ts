@@ -1,3 +1,18 @@
+export function occupiedSlotMs(
+  posts: { scheduledAt?: string | number | Date | null; accountIds?: string[] }[],
+  accountIds: string[],
+) {
+  const ids = new Set(accountIds);
+  const taken: number[] = [];
+  for (const post of posts) {
+    if (!post.scheduledAt) continue;
+    if (post.accountIds?.length && !post.accountIds.some((id) => ids.has(id))) continue;
+    const ms = new Date(post.scheduledAt).getTime();
+    if (Number.isFinite(ms)) taken.push(ms);
+  }
+  return taken;
+}
+
 export function nextSlotMs(slots: string[], fromMs: number, takenMs: number[] = []) {
   const minutes = slots
     .map((slot) => {

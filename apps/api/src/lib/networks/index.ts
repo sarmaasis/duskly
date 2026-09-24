@@ -71,6 +71,17 @@ export function publishImageUrl(input: PublishInput): string | undefined {
   return url || undefined;
 }
 
+export function publishAlt(input: PublishInput) {
+  return input.credentials?.altText?.trim().slice(0, 1000) || "";
+}
+
+function markdownWithAlt(input: PublishInput) {
+  const alt = publishAlt(input);
+  const url = publishImageUrl(input);
+  if (!alt || !url) return input.body;
+  return `${input.body}\n\n![${alt.replace(/[\[\]]/g, "")}](${url})`;
+}
+
 function imageFilename(contentType: string): string {
   if (contentType.includes("png")) return "image.png";
   if (contentType.includes("gif")) return "image.gif";
@@ -382,6 +393,15 @@ async function xPublish(input: PublishInput): Promise<PublishOk | PublishQueued>
       const uploaded = await xUploadMedia(token, image);
       if (typeof uploaded !== "string") return uploaded;
       mediaId = uploaded;
+      const alt = publishAlt(input);
+      if (alt) {
+        // ponytail: a failed alt call must not drop the photo
+        await fetch("https://api.x.com/2/media/metadata", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ id: mediaId, metadata: { alt_text: { text: alt } } }),
+        }).catch(() => undefined);
+      }
     }
     const payload: Record<string, unknown> = { text: input.body.slice(0, 280) };
     if (mediaId) payload.media = { media_ids: [mediaId] };
@@ -500,7 +520,10 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
       lifecycleState: "PUBLISHED",
       isReshareDisabledByAuthor: false,
     };
-    if (imageUrn) postBody.content = { media: { id: imageUrn } };
+    if (imageUrn) {
+      const alt = publishAlt(input);
+      postBody.content = { media: alt ? { id: imageUrn, altText: alt } : { id: imageUrn } };
+    }
     else if (input.credentials?.pollJson) {
       try {
         const poll = JSON.parse(input.credentials.pollJson) as { question?: string; options?: string[] };
@@ -588,6 +611,8 @@ async function mastodonPublish(input: PublishInput): Promise<PublishOk | Publish
     if (image) {
       const form = new FormData();
       form.append("file", imageBlob(image.bytes, image.contentType), imageFilename(image.contentType));
+      const alt = publishAlt(input);
+      if (alt) form.append("description", alt);
       const up = await fetch(`${instance}/api/v1/media`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}` },
@@ -1129,7 +1154,7 @@ async function hashnodePublish(input: PublishInput): Promise<PublishOk | Publish
         variables: {
           input: {
             title: input.body.slice(0, 80) || "Untitled",
-            contentMarkdown: input.body,
+            contentMarkdown: markdownWithAlt(input),
             publicationId,
             ...(imageUrl ? { coverImageOptions: { coverImageURL: imageUrl } } : {}),
           },
@@ -1170,7 +1195,7 @@ async function devtoPublish(input: PublishInput): Promise<PublishOk | PublishQue
       body: JSON.stringify({
         article: {
           title: input.body.slice(0, 100) || "Untitled",
-          body_markdown: input.body,
+          body_markdown: markdownWithAlt(input),
           published: true,
           ...(imageUrl ? { main_image: imageUrl } : {}),
         },

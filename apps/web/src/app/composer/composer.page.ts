@@ -3,7 +3,7 @@ import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, RouterLink } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
 import { CAPTION_LIMITS, countCaptionChars } from "../lib/caption-limits";
-import { nextSlotMs } from "../lib/slots";
+import { nextSlotMs, occupiedSlotMs } from "../lib/slots";
 import { Notices } from "../lib/notices";
 import { lsSet } from "../lib/browser";
 import { PICTURE_EDITOR_FRAME_MAX, pictureEditorFrameRects } from "../lib/picture-editor";
@@ -49,36 +49,115 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               class="w-full resize-y border-0 bg-transparent p-0 font-sans text-sm text-[#121417] outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             ></textarea>
             @if (previews().length) {
-              <div class="mt-3 grid gap-2 sm:grid-cols-2">
+              <div class="mt-3 grid gap-3 sm:grid-cols-2">
                 @for (card of previews(); track card.id) {
-                  <div class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white dark:border-zinc-700 dark:bg-zinc-900" [class.rounded-none]="card.layout === 'ig'">
-                    @if (card.layout === 'ig' && imageAttachments()[0]; as img) {
-                      <img [src]="img.url" alt="" class="aspect-square w-full object-cover" />
-                    }
-                    @if (card.layout === 'yt' && imageAttachments()[0]; as img) {
-                      <img [src]="img.url" alt="" class="aspect-video w-full object-cover" />
-                    }
-                    <div class="p-3">
-                      <div class="flex items-center justify-between gap-2">
-                        <p class="inline-flex items-center gap-1.5 text-[12px] font-semibold dark:text-zinc-100">
-                          <img [src]="'/assets/logos/' + card.network + '.svg'" alt="" width="14" height="14" class="size-3.5 object-contain" />
-                          {{ card.handle }}
-                        </p>
-                        <span class="font-mono text-[10px]" [class.text-red-600]="card.over" [class.text-zinc-400]="!card.over">{{ card.used }}/{{ card.limit }}</span>
-                      </div>
-                      <p class="mt-2 line-clamp-5 whitespace-pre-wrap text-[13px] dark:text-zinc-100">{{ card.text || 'Empty caption' }}</p>
-                      @if (card.layout !== 'ig' && card.layout !== 'yt' && imageAttachments()[0]; as shot) {
-                        <img [src]="shot.url" alt="" class="mt-2 h-24 w-full rounded-lg object-cover" />
+                  <article class="overflow-hidden border border-[#e8e8e3] bg-white text-[13px] text-[#121417] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" [class.rounded-2xl]="card.kind !== 'instagram'" [class.rounded-sm]="card.kind === 'instagram'">
+                    @switch (card.kind) {
+                      @case ('instagram') {
+                        <div class="flex items-center gap-2 px-3 py-2">
+                          <span class="size-7 rounded-full bg-gradient-to-br from-amber-400 to-cta"></span>
+                          <p class="text-[12px] font-semibold">{{ card.handle }}</p>
+                        </div>
+                        @if (imageAttachments()[0]; as img) {
+                          <img [src]="img.url" [alt]="alts[img.id] || ''" class="aspect-square w-full object-cover" />
+                        }
+                        <p class="px-3 pt-2 text-[11px] tracking-[0.2em] text-[#121417] dark:text-zinc-200">♡ ⌕ ↗</p>
+                        <p class="px-3 py-2"><span class="font-semibold">{{ card.handle }}</span> {{ card.text || 'Caption' }}</p>
                       }
-                      @if (pollQuestion && pollOptions().length > 1 && (card.network === 'x' || card.network === 'linkedin')) {
-                        <ul class="mt-2 space-y-1">
-                          @for (option of pollOptions(); track option) {
-                            <li class="rounded-full border border-[#e8e8e3] px-2 py-1 text-[11px] dark:border-zinc-700">{{ option }}</li>
+                      @case ('youtube') {
+                        @if (imageAttachments()[0]; as img) {
+                          <img [src]="img.url" [alt]="alts[img.id] || ''" class="aspect-video w-full object-cover" />
+                        } @else {
+                          <div class="flex aspect-video items-center justify-center bg-[#121417] text-[11px] font-semibold text-white">▶ Video</div>
+                        }
+                        <div class="flex gap-2 p-3">
+                          <span class="size-8 shrink-0 rounded-full bg-[#e8e8e3] dark:bg-zinc-700"></span>
+                          <div class="min-w-0">
+                            <p class="line-clamp-2 font-semibold">{{ card.text || 'Untitled' }}</p>
+                            <p class="text-[11px] text-[#71717a]">{{ card.handle }}</p>
+                          </div>
+                        </div>
+                      }
+                      @case ('linkedin') {
+                        <div class="flex gap-2 px-3 pt-3">
+                          <span class="size-8 shrink-0 rounded-full bg-[#0a66c2]"></span>
+                          <div>
+                            <p class="text-[12px] font-semibold">{{ card.handle }}</p>
+                            <p class="text-[10px] text-[#71717a]">Just now · 🌐</p>
+                          </div>
+                        </div>
+                        <p class="line-clamp-4 whitespace-pre-wrap px-3 py-2">{{ card.text || 'Empty caption' }}</p>
+                        @if (imageAttachments()[0]; as img) {
+                          <img [src]="img.url" [alt]="alts[img.id] || ''" class="max-h-40 w-full object-cover" />
+                        }
+                        <p class="border-t border-[#e8e8e3] px-3 py-2 text-[11px] text-[#71717a] dark:border-zinc-700">Like · Comment · Repost</p>
+                      }
+                      @case ('facebook') {
+                        <div class="flex gap-2 px-3 pt-3">
+                          <span class="size-8 shrink-0 rounded-full bg-[#1877f2]"></span>
+                          <div>
+                            <p class="text-[12px] font-semibold">{{ card.handle }}</p>
+                            <p class="text-[10px] text-[#71717a]">Just now · 🌐</p>
+                          </div>
+                        </div>
+                        <p class="line-clamp-4 whitespace-pre-wrap px-3 py-2">{{ card.text || 'Empty caption' }}</p>
+                        @if (imageAttachments()[0]; as img) {
+                          <img [src]="img.url" [alt]="alts[img.id] || ''" class="max-h-40 w-full object-cover" />
+                        }
+                        <p class="border-t border-[#e8e8e3] px-3 py-2 text-[11px] text-[#71717a] dark:border-zinc-700">Like · Comment · Share</p>
+                      }
+                      @case ('reddit') {
+                        <div class="flex gap-2 p-3">
+                          <p class="text-[11px] font-semibold text-cta">▲</p>
+                          <div class="min-w-0">
+                            <p class="text-[10px] text-[#71717a]">r/{{ card.handle }}</p>
+                            <p class="line-clamp-3 font-semibold">{{ card.text || 'Title' }}</p>
+                            @if (imageAttachments()[0]; as img) {
+                              <img [src]="img.url" [alt]="alts[img.id] || ''" class="mt-2 max-h-32 w-full rounded object-cover" />
+                            }
+                          </div>
+                        </div>
+                      }
+                      @case ('chat') {
+                        <div class="bg-[#f7f7f4] p-3 dark:bg-zinc-800">
+                          <p class="mb-1 text-[10px] font-semibold text-[#71717a]">{{ card.handle }}</p>
+                          <div class="max-w-[90%] rounded-2xl rounded-tl-sm bg-white p-2 dark:bg-zinc-900">
+                            @if (imageAttachments()[0]; as img) {
+                              <img [src]="img.url" [alt]="alts[img.id] || ''" class="mb-1 max-h-28 w-full rounded object-cover" />
+                            }
+                            <p class="whitespace-pre-wrap">{{ card.text || 'Message' }}</p>
+                          </div>
+                        </div>
+                      }
+                      @case ('blog') {
+                        <div class="p-3">
+                          <p class="text-[10px] uppercase tracking-wider text-[#71717a]">{{ card.handle }}</p>
+                          <p class="mt-1 font-display text-base font-bold">{{ card.text || 'Title' }}</p>
+                          @if (imageAttachments()[0]; as img) {
+                            <img [src]="img.url" [alt]="alts[img.id] || ''" class="mt-2 max-h-32 w-full rounded object-cover" />
                           }
-                        </ul>
+                        </div>
                       }
-                    </div>
-                  </div>
+                      @default {
+                        <div class="p-3">
+                          <p class="text-[12px] font-semibold">{{ card.handle }} <span class="font-normal text-[#71717a]">@{{ card.handle }}</span></p>
+                          <p class="mt-1 line-clamp-5 whitespace-pre-wrap">{{ card.text || 'Empty caption' }}</p>
+                          @if (imageAttachments()[0]; as img) {
+                            <img [src]="img.url" [alt]="alts[img.id] || ''" class="mt-2 max-h-36 w-full rounded-2xl object-cover" />
+                          }
+                          @if (pollQuestion && pollOptions().length > 1 && (card.network === 'x' || card.network === 'linkedin')) {
+                            <ul class="mt-2 space-y-1">
+                              @for (option of pollOptions(); track option) {
+                                <li class="rounded-full border border-[#e8e8e3] px-2 py-1 text-[11px] dark:border-zinc-700">{{ option }}</li>
+                              }
+                            </ul>
+                          }
+                          <p class="mt-2 text-[11px] text-[#71717a]">Reply · Repost · Like</p>
+                        </div>
+                      }
+                    }
+                    <p class="px-3 pb-2 font-mono text-[10px]" [class.text-red-600]="card.over" [class.text-zinc-400]="!card.over">{{ card.used }}/{{ card.limit }}</p>
+                  </article>
                 }
               </div>
             }
@@ -561,9 +640,24 @@ export class ComposerPage implements OnInit {
     this.body = `${this.body.trim()}\n\n${tags}`.trim();
   }
 
-  useNextSlot() {
+  async useNextSlot() {
     const slots = this.selectedAccounts().flatMap((account) => (account.queueSlots || "09:00,13:00,18:00").split(","));
-    const ms = nextSlotMs(slots, Date.now());
+    let taken: number[] = [];
+    try {
+      const data = await api<{ posts: { scheduledAt?: string | number | null; channels?: { accountId?: string }[] }[] }>(
+        `/v1/posts?workspaceId=${this.workspaceId}`,
+      );
+      taken = occupiedSlotMs(
+        (data.posts || []).map((post) => ({
+          scheduledAt: post.scheduledAt,
+          accountIds: (post.channels || []).map((channel) => channel.accountId).filter((id): id is string => !!id),
+        })),
+        this.selected(),
+      );
+    } catch {
+      taken = [];
+    }
+    const ms = nextSlotMs(slots, Date.now(), taken);
     if (!ms) return;
     const d = new Date(ms);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -603,13 +697,19 @@ export class ComposerPage implements OnInit {
     }
   }
 
+  previewKind(network: string) {
+    if (network === "instagram" || network === "youtube" || network === "linkedin" || network === "facebook" || network === "reddit") return network;
+    if (network === "slack" || network === "discord" || network === "telegram") return "chat";
+    if (network === "hashnode" || network === "devto") return "blog";
+    return "feed";
+  }
+
   previews() {
     return this.selectedAccounts().map((account) => {
       const text = this.variants[account.id]?.trim() || this.body;
       const cap = CAPTION_LIMITS.find((n) => n.id === account.network);
       const used = countCaptionChars(text);
-      const layout = account.network === "instagram" ? "ig" : account.network === "youtube" ? "yt" : account.network === "linkedin" ? "in" : "x";
-      return { ...account, text, used, limit: cap?.limit ?? 0, over: !!cap && used > cap.limit, layout };
+      return { ...account, text, used, limit: cap?.limit ?? 0, over: !!cap && used > cap.limit, kind: this.previewKind(account.network) };
     });
   }
 

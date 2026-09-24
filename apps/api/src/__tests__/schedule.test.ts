@@ -12,7 +12,7 @@ import {
   scheduleStatus,
   shouldDeferFirstComment,
 } from "../lib/schedule";
-import { nextSlotMs } from "../../../web/src/app/lib/slots";
+import { nextSlotMs, occupiedSlotMs } from "../../../web/src/app/lib/slots";
 
 describe("approvals, slots, and metrics", () => {
   it("keeps a member post pending until an admin approves it", () => {
@@ -27,6 +27,8 @@ describe("approvals, slots, and metrics", () => {
     expect(new Date(next || 0).getHours()).toBe(13);
     const taken = nextSlotMs(["13:00"], from, [Date.parse("2026-09-24T13:00:00")]);
     expect(new Date(taken || 0).getDate()).toBe(25);
+    const busy = Date.parse("2026-09-24T13:00:00");
+    expect(occupiedSlotMs([{ scheduledAt: busy, accountIds: ["a"] }, { scheduledAt: busy, accountIds: ["b"] }], ["a"])).toEqual([busy]);
   });
 
   it("drops engagement fields the network did not return", () => {
