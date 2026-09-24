@@ -173,8 +173,9 @@ describe("publish adapters — missing credentials stay queued", () => {
   it("Instagram publish uses the professional account id, not a Facebook user id alias", async () => {
     const fetch = spyFetch();
     fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => "" })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "igmedia" }), text: async () => "" });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => JSON.stringify({ id: "container" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: "FINISHED" }), text: async () => JSON.stringify({ status_code: "FINISHED" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "igmedia" }), text: async () => JSON.stringify({ id: "igmedia" }) });
     const result = await adapters.instagram.publish({
       ...pending,
       token: "PAGE_TOKEN",
@@ -182,15 +183,16 @@ describe("publish adapters — missing credentials stay queued", () => {
     });
     expect(result).toMatchObject({ remoteId: "igmedia" });
     expect(String(fetch.mock.calls[0][0])).toBe("https://graph.facebook.com/v21.0/1784/media");
-    expect(String(fetch.mock.calls[1][0])).toBe("https://graph.facebook.com/v21.0/1784/media_publish");
+    expect(String(fetch.mock.calls[2][0])).toBe("https://graph.facebook.com/v21.0/1784/media_publish");
     expect(String(fetch.mock.calls[0][0])).not.toContain("/page-9/media");
   });
 
   it("Instagram Login publish uses graph.instagram.com with the user token, not a Page path", async () => {
     const fetch = spyFetch();
     fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => "" })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "igmedia" }), text: async () => "" });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => JSON.stringify({ id: "container" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status_code: "FINISHED" }), text: async () => JSON.stringify({ status_code: "FINISHED" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "igmedia" }), text: async () => JSON.stringify({ id: "igmedia" }) });
     const result = await adapters.instagram.publish({
       ...pending,
       token: "IG_USER_TOKEN",
@@ -203,15 +205,15 @@ describe("publish adapters — missing credentials stay queued", () => {
     });
     expect(result).toMatchObject({ remoteId: "igmedia" });
     expect(String(fetch.mock.calls[0][0])).toBe("https://graph.instagram.com/v25.0/1784/media");
-    expect(String(fetch.mock.calls[1][0])).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
+    expect(String(fetch.mock.calls[2][0])).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
     const createInit = fetch.mock.calls[0][1] as { headers?: { authorization?: string }; body?: string };
     expect(createInit.headers?.authorization).toBe("Bearer IG_USER_TOKEN");
-    const createBody = JSON.parse(String(createInit.body));
-    expect(createBody.access_token).toBeUndefined();
-    expect(createBody.image_url).toBe("https://cdn.example/p.jpg");
-    const pubBody = JSON.parse(String(fetch.mock.calls[1][1].body));
-    expect(pubBody.creation_id).toBe("container");
-    expect(pubBody.access_token).toBeUndefined();
+    const createBody = new URLSearchParams(String(createInit.body));
+    expect(createBody.get("access_token")).toBeNull();
+    expect(createBody.get("image_url")).toBe("https://cdn.example/p.jpg");
+    const pubBody = new URLSearchParams(String(fetch.mock.calls[2][1].body));
+    expect(pubBody.get("creation_id")).toBe("container");
+    expect(pubBody.get("access_token")).toBeNull();
   });
 
   it("Instagram Login publish failures stay queued (no fake success)", async () => {
@@ -373,17 +375,18 @@ describe("caption+image scheduled publish must attach the photo", () => {
   it("Instagram Page-linked create includes image_url with the caption", async () => {
     const fetch = spyFetch();
     fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "container" }), text: async () => "" })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: "igmedia" }), text: async () => "" });
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ id: "container" }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ status_code: "FINISHED" }) })
+      .mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ id: "igmedia" }) });
     const result = await adapters.instagram.publish({
       ...pending,
       token: "PAGE_TOKEN",
       credentials: { accessToken: "PAGE_TOKEN", igUserId: "1784", imageUrl },
     });
     expect(result).toMatchObject({ remoteId: "igmedia" });
-    const createBody = JSON.parse(String(fetch.mock.calls[0][1].body));
-    expect(createBody.image_url).toBe(imageUrl);
-    expect(createBody.caption).toBe("hello");
+    const createBody = new URLSearchParams(String(fetch.mock.calls[0][1].body));
+    expect(createBody.get("image_url")).toBe(imageUrl);
+    expect(createBody.get("caption")).toBe("hello");
   });
 
   it("Threads caption+image uses IMAGE + image_url, not TEXT-only", async () => {

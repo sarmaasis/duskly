@@ -537,6 +537,64 @@ async function mastodonComment(input: CommentInput): Promise<{ commentRemoteId?:
   return { commentRemoteId: rd.id };
 }
 
+type IgGraphData = { id?: string; status_code?: string; error?: { message?: string; code?: number } };
+
+async function instagramGraph(
+  host: string,
+  version: string,
+  path: string,
+  token: string,
+  instagramLogin: boolean,
+  method: "GET" | "POST",
+  fields: Record<string, string>,
+): Promise<{ ok: boolean; status: number; data: IgGraphData; detail: string }> {
+  const headers: Record<string, string> = {};
+  const params = new URLSearchParams(fields);
+  if (instagramLogin) headers.authorization = `Bearer ${token}`;
+  else params.set("access_token", token);
+  let url = `${host}/${version}/${path}`;
+  let body: string | undefined;
+  if (method === "GET") url = `${url}?${params}`;
+  else {
+    headers["content-type"] = "application/x-www-form-urlencoded";
+    body = params.toString();
+  }
+  const res = await fetch(url, { method, headers, body });
+  const text = await res.text();
+  let data: IgGraphData = {};
+  try {
+    data = JSON.parse(text) as IgGraphData;
+  } catch {
+    data = {};
+  }
+  const detail = (data.error?.message || text).slice(0, 200);
+  return { ok: res.ok && !data.error, status: res.status, data, detail };
+}
+
+async function waitInstagramContainer(
+  host: string,
+  version: string,
+  containerId: string,
+  token: string,
+  instagramLogin: boolean,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  for (let i = 0; i < 5; i++) {
+    const status = await instagramGraph(host, version, containerId, token, instagramLogin, "GET", {
+      fields: "status_code",
+    });
+    const code = status.data.status_code;
+    if (code === "FINISHED") return { ok: true };
+    if (code === "ERROR" || code === "EXPIRED") {
+      return { ok: false, reason: `Instagram media container ${code}: ${status.detail}` };
+    }
+    if (!status.ok && status.data.error) {
+      return { ok: false, reason: `Instagram media container failed (${status.status}): ${status.detail}` };
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return { ok: false, reason: "Instagram media container was not ready to publish" };
+}
+
 /* ——— Meta: Instagram / Threads / Facebook ——— */
 async function metaGraphPublish(
   input: PublishInput,
@@ -619,43 +677,26 @@ async function metaGraphPublish(
       };
     }
     if (kind === "instagram") {
-      // Caption-only requires a media container; without a public URL we queue honestly.
-      if (!publishImageUrl(input)) {
+      const imageUrl = publishImageUrl(input);
+      if (!imageUrl) {
         return missingCreds("Instagram Graph API requires an image URL for feed posts — queued until media is attached");
       }
       const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
       const graphVersion = instagramLogin ? "v25.0" : "v21.0";
-      const igAuth = instagramLogin
-        ? { authorization: `Bearer ${token}`, "content-type": "application/json" }
-        : { "content-type": "application/json" };
-      const igCreateBody = instagramLogin
-        ? { image_url: publishImageUrl(input), caption: input.body }
-        : { image_url: publishImageUrl(input), caption: input.body, access_token: token };
-      const create = await fetch(`${graphHost}/${graphVersion}/${igUserId}/media`, {
-        method: "POST",
-        headers: igAuth,
-        body: JSON.stringify(igCreateBody),
-      });
-      if (!create.ok) {
-        const err = await create.text();
-        return missingCreds(`Instagram media create failed (${create.status}): ${err.slice(0, 200)}`);
+      const igPost = (path: string, fields: Record<string, string>) =>
+        instagramGraph(graphHost, graphVersion, path, token, instagramLogin, "POST", fields);
+      const created = await igPost(`${igUserId}/media`, { image_url: imageUrl, caption: input.body });
+      if (!created.ok || !created.data.id) {
+        return missingCreds(`Instagram media create failed (${created.status}): ${created.detail}`);
       }
-      const created = (await create.json()) as { id?: string };
-      const igPublishBody = instagramLogin
-        ? { creation_id: created.id }
-        : { creation_id: created.id, access_token: token };
-      const pub = await fetch(`${graphHost}/${graphVersion}/${igUserId}/media_publish`, {
-        method: "POST",
-        headers: igAuth,
-        body: JSON.stringify(igPublishBody),
-      });
-      if (!pub.ok) {
-        const err = await pub.text();
-        return missingCreds(`Instagram publish failed (${pub.status}): ${err.slice(0, 200)}`);
+      const ready = await waitInstagramContainer(graphHost, graphVersion, created.data.id, token, instagramLogin);
+      if (!ready.ok) return missingCreds(ready.reason);
+      const published = await igPost(`${igUserId}/media_publish`, { creation_id: created.data.id });
+      if (!published.ok || !published.data.id) {
+        return missingCreds(`Instagram publish failed (${published.status}): ${published.detail}`);
       }
-      const data = (await pub.json()) as { id?: string };
       return {
-        remoteId: data.id ?? crypto.randomUUID(),
+        remoteId: published.data.id,
         commentSkipped: input.commentBody?.trim() ? "Instagram first-comment requires separate comment API scope" : undefined,
       };
     }

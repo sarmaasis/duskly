@@ -1029,7 +1029,9 @@ describe("Instagram Login OAuth callback", () => {
     expect(longUrl.searchParams.get("access_token")).toBe("ig-short");
     const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
     expect(meCall).toBeTruthy();
-    expect(String(meCall![0])).toContain("access_token=ig-long");
+    expect((meCall![1] as { headers?: { authorization?: string } } | undefined)?.headers?.authorization).toBe(
+      "Bearer ig-long",
+    );
     expect(
       fetch.mock.calls.some(
         ([u, init]) => isFacebookOauthAccessToken(String(u)) && (init?.method || "GET").toUpperCase() === "GET",
@@ -1111,7 +1113,7 @@ describe("Instagram Login OAuth callback", () => {
           });
         }
         if (isInstagramLoginMe(u)) {
-          expect(u).toContain("access_token=ig-short");
+          expect(init?.headers?.authorization).toBe("Bearer ig-short");
           return graphRes(true, { user_id: "1784", username: "dusklycafe" });
         }
         return graphRes(false, {});

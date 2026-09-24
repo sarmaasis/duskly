@@ -108,7 +108,7 @@ accountRoutes.get("/", async (c) => {
     let pendingPages: Array<{ id: string; name: string }> = [];
     if (row.credentialsJson) {
       try {
-        const creds = await decryptCredentials(c.env, r.credentialsJson);
+        const creds = await decryptCredentials(c.env, row.credentialsJson);
         if (!creds) throw new Error("missing credentials");
         channelId = creds.channelId || null;
         channelName = creds.channelName || null;
