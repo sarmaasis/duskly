@@ -95,6 +95,7 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("client_id")).toBe("li-id");
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin/callback");
     expect(q.get("scope")).toBe("openid profile email w_member_social");
+    expect(url).toContain("scope=openid%20profile%20email%20w_member_social");
   });
 
   it("LinkedIn Page uses the Page OAuth app when configured", () => {

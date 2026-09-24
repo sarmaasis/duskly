@@ -148,7 +148,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
           : "openid profile email w_member_social",
       state,
     });
-    return `https://www.linkedin.com/oauth/v2/authorization?${params}`;
+    return `https://www.linkedin.com/oauth/v2/authorization?${params.toString().replace(/\+/g, "%20")}`;
   }
   if (network === "mastodon") {
     const params = new URLSearchParams({
