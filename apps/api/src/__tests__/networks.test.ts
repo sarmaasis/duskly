@@ -202,8 +202,8 @@ describe("publish adapters — missing credentials stay queued", () => {
       },
     });
     expect(result).toMatchObject({ remoteId: "igmedia" });
-    expect(String(fetch.mock.calls[0][0])).toBe("https://graph.instagram.com/v21.0/1784/media");
-    expect(String(fetch.mock.calls[1][0])).toBe("https://graph.instagram.com/v21.0/1784/media_publish");
+    expect(String(fetch.mock.calls[0][0])).toBe("https://graph.instagram.com/v25.0/1784/media");
+    expect(String(fetch.mock.calls[1][0])).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
     const createBody = JSON.parse(String(fetch.mock.calls[0][1].body));
     expect(createBody.access_token).toBe("IG_USER_TOKEN");
     const pubBody = JSON.parse(String(fetch.mock.calls[1][1].body));

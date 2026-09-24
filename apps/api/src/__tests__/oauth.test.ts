@@ -965,7 +965,7 @@ function isInstagramCodeExchange(url: string) {
 
 function isInstagramLongLived(url: string, body = "") {
   return (
-    url.includes("https://graph.instagram.com/access_token") &&
+    /https:\/\/graph\.instagram\.com(?:\/v[\d.]+)?\/access_token/.test(url) &&
     (url.includes("ig_exchange_token") || body.includes("ig_exchange_token"))
   );
 }
@@ -975,7 +975,7 @@ function isFacebookOauthAccessToken(url: string) {
 }
 
 function isInstagramLoginMe(url: string) {
-  return url.includes("https://graph.instagram.com/v21.0/me") && url.includes("user_id");
+  return url.includes("https://graph.instagram.com/v25.0/me") && url.includes("user_id");
 }
 
 describe("Instagram Login OAuth callback", () => {
@@ -1021,13 +1021,17 @@ describe("Instagram Login OAuth callback", () => {
     );
     expect(longLived).toBeTruthy();
     const longUrl = new URL(String(longLived![0]));
-    expect(`${longUrl.origin}${longUrl.pathname}`).toBe("https://graph.instagram.com/access_token");
+    expect(`${longUrl.origin}${longUrl.pathname}`).toBe("https://graph.instagram.com/v25.0/access_token");
     expect((longLived![1] as { method?: string } | undefined)?.method || "GET").toBe("GET");
     expect((longLived![1] as { body?: unknown } | undefined)?.body).toBeUndefined();
     expect(longUrl.searchParams.get("grant_type")).toBe("ig_exchange_token");
     expect(longUrl.searchParams.get("client_secret")).toBe("ig-app-secret");
     expect(longUrl.searchParams.get("access_token")).toBe("ig-short");
-    expect(fetch.mock.calls.some(([u]) => isInstagramLoginMe(String(u)))).toBe(true);
+    const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
+    expect(meCall).toBeTruthy();
+    expect((meCall![1] as { headers?: { authorization?: string } } | undefined)?.headers?.authorization).toBe(
+      "Bearer ig-long",
+    );
     expect(
       fetch.mock.calls.some(
         ([u, init]) => isFacebookOauthAccessToken(String(u)) && (init?.method || "GET").toUpperCase() === "GET",
@@ -1097,25 +1101,31 @@ describe("Instagram Login OAuth callback", () => {
     expect(fetch.mock.calls.some(([u]) => isInstagramLoginMe(String(u)))).toBe(true);
   });
 
-  it("keeps the code-exchange token when documented GET graph.instagram.com/access_token returns Graph 100 method type", async () => {
-    const fetch = vi.fn(async (url: string, init?: { method?: string; body?: URLSearchParams | string }) => {
-      const u = String(url);
-      const body = init?.body != null ? String(init.body) : "";
-      if (isInstagramCodeExchange(u)) return graphRes(true, { access_token: "ig-short", user_id: "1784" });
-      if (isInstagramLongLived(u, body)) {
-        return graphRes(false, {
-          error: { message: "Unsupported request - method type: get", type: "IGApiException", code: 100 },
-        });
-      }
-      if (isInstagramLoginMe(u)) {
-        expect(u).toContain("access_token=ig-short");
-        return graphRes(true, { user_id: "1784", username: "dusklycafe" });
-      }
-      return graphRes(false, {});
-    });
+  it("keeps the code-exchange token and saves the account when GET v25.0/access_token returns Graph 100 method type", async () => {
+    const fetch = vi.fn(
+      async (url: string, init?: { method?: string; body?: URLSearchParams | string; headers?: { authorization?: string } }) => {
+        const u = String(url);
+        const body = init?.body != null ? String(init.body) : "";
+        if (isInstagramCodeExchange(u)) return graphRes(true, { access_token: "ig-short", user_id: "1784" });
+        if (isInstagramLongLived(u, body)) {
+          return graphRes(false, {
+            error: { message: "Unsupported request - method type: get", type: "IGApiException", code: 100 },
+          });
+        }
+        if (isInstagramLoginMe(u)) {
+          expect(init?.headers?.authorization).toBe("Bearer ig-short");
+          return graphRes(true, { user_id: "1784", username: "dusklycafe" });
+        }
+        return graphRes(false, {});
+      },
+    );
     vi.stubGlobal("fetch", fetch);
     const res = await instagramCallback(instagramLoginEnv({ DB: mockD1() }));
     expectAppRedirect(res, "ok");
+    const loc = res.headers.get("location") || "";
+    expect(loc).not.toContain("oauth=token_failed");
+    expect(loc).not.toContain("reason=graph_100");
+    expect(loc).toContain("network=instagram");
     expect(fetch.mock.calls.some(([u]) => isFacebookOauthAccessToken(String(u)))).toBe(false);
     const longLived = fetch.mock.calls.find(([u, init]) =>
       isInstagramLongLived(String(u), init?.body != null ? String(init.body) : ""),
@@ -1123,10 +1133,11 @@ describe("Instagram Login OAuth callback", () => {
     expect(longLived).toBeTruthy();
     expect((longLived?.[1] as { method?: string } | undefined)?.method || "GET").toBe("GET");
     expect(`${new URL(String(longLived?.[0])).origin}${new URL(String(longLived?.[0])).pathname}`).toBe(
-      "https://graph.instagram.com/access_token",
+      "https://graph.instagram.com/v25.0/access_token",
     );
     expect(String(longLived?.[0])).toContain("grant_type=ig_exchange_token");
     expect((longLived?.[1] as { body?: unknown } | undefined)?.body).toBeUndefined();
+    expect(fetch.mock.calls.some(([u]) => isInstagramLoginMe(String(u)))).toBe(true);
   });
 
   it("still fails Instagram Login when long-lived exchange returns a real Graph error", async () => {
@@ -1184,8 +1195,11 @@ describe("Instagram Login OAuth callback", () => {
     expect(src).toContain("instagramLogin: network === \"instagram\" && instagramLoginConfigured(c.env)");
     const providers = readFileSync(join(here, "../lib/oauth-providers.ts"), "utf8");
     expect(providers).toContain('fetch("https://api.instagram.com/oauth/access_token"');
-    expect(providers).toMatch(/graph\.instagram\.com\/access_token\?/);
+    expect(providers).toContain('INSTAGRAM_GRAPH_VERSION = "v25.0"');
+    expect(providers).toMatch(/INSTAGRAM_GRAPH_BASE\}\/access_token\?/);
     expect(providers).toContain('grant_type: "ig_exchange_token"');
+    expect(providers).toMatch(/INSTAGRAM_GRAPH_BASE\}\/me\?/);
+    expect(providers).not.toMatch(/graph\.instagram\.com\/v21\.0/);
     expect(providers).toContain('fetch("https://graph.facebook.com/v21.0/oauth/access_token"');
     expect(providers).not.toMatch(
       /fetch\(\s*`https:\/\/graph\.facebook\.com\/[^`]*oauth\/access_token\?/,

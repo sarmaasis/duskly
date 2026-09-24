@@ -37,6 +37,10 @@ export function facebookConnectHandle(network: "instagram" | "facebook", pages: 
 /** Stored on Instagram Login credentials so publish uses graph.instagram.com, not a Page token. */
 export const INSTAGRAM_LOGIN_AUTH = "instagram_login";
 
+/** Instagram API with Instagram Login (graph.instagram.com). Playground uses v25.0; Facebook Graph stays v21.0. */
+export const INSTAGRAM_GRAPH_VERSION = "v25.0";
+const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
+
 export function isInstagramLoginCreds(creds?: Record<string, string> | null): boolean {
   return creds?.authKind === INSTAGRAM_LOGIN_AUTH;
 }
@@ -427,10 +431,10 @@ export type InstagramLongLivedResult =
   | { ok: false; reason: string; detail?: string };
 
 /**
- * GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token
+ * GET https://graph.instagram.com/v25.0/access_token?grant_type=ig_exchange_token
+ * Official doc is unversioned GET /access_token; v25.0 is tried first to match the IG Login playground.
+ * Graph 100 "Unsupported request - method type" must not fail connect — keep the short-lived token.
  * https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login/
- * Unversioned GET/POST both return Graph 100 "Unsupported request - method type" for some IG Login tokens;
- * skip when the code exchange already returned a long-lived expires_in, otherwise keep the first token.
  */
 export async function exchangeLongLivedInstagramToken(
   env: Env,
@@ -445,7 +449,7 @@ export async function exchangeLongLivedInstagramToken(
   if (!appSecret) return { ok: false, reason: "missing_secret" };
   try {
     const res = await fetch(
-      `https://graph.instagram.com/access_token?${new URLSearchParams({
+      `${INSTAGRAM_GRAPH_BASE}/access_token?${new URLSearchParams({
         grant_type: "ig_exchange_token",
         client_secret: appSecret,
         access_token: shortLived,
@@ -479,10 +483,11 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
   if (!accessToken) return { ok: false, reason: "profile" };
   try {
     const res = await fetch(
-      `https://graph.instagram.com/v21.0/me?${new URLSearchParams({
+      `${INSTAGRAM_GRAPH_BASE}/me?${new URLSearchParams({
         fields: "user_id,username",
         access_token: accessToken,
       })}`,
+      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     const data = parseFacebookTokenPayload(await res.text());
     if (!res.ok || data.error) {

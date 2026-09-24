@@ -624,7 +624,8 @@ async function metaGraphPublish(
         return missingCreds("Instagram Graph API requires an image URL for feed posts — queued until media is attached");
       }
       const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
-      const create = await fetch(`${graphHost}/v21.0/${igUserId}/media`, {
+      const graphVersion = instagramLogin ? "v25.0" : "v21.0";
+      const create = await fetch(`${graphHost}/${graphVersion}/${igUserId}/media`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ image_url: publishImageUrl(input), caption: input.body, access_token: token }),
@@ -634,7 +635,7 @@ async function metaGraphPublish(
         return missingCreds(`Instagram media create failed (${create.status}): ${err.slice(0, 200)}`);
       }
       const created = (await create.json()) as { id?: string };
-      const pub = await fetch(`${graphHost}/v21.0/${igUserId}/media_publish`, {
+      const pub = await fetch(`${graphHost}/${graphVersion}/${igUserId}/media_publish`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ creation_id: created.id, access_token: token }),
