@@ -1,7 +1,8 @@
 import { Component, ElementRef, OnInit, ViewChild, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { RouterLink } from "@angular/router";
+import { ActivatedRoute, RouterLink } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
+import { CAPTION_LIMITS, countCaptionChars } from "../lib/caption-limits";
 import { Notices } from "../lib/notices";
 import { lsSet } from "../lib/browser";
 import { PICTURE_EDITOR_FRAME_MAX, pictureEditorFrameRects } from "../lib/picture-editor";
@@ -46,6 +47,25 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               placeholder="What are you posting?"
               class="w-full resize-y border-0 bg-transparent p-0 font-sans text-sm text-[#121417] outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             ></textarea>
+            @if (previews().length) {
+              <div class="mt-3 grid gap-2 sm:grid-cols-2">
+                @for (card of previews(); track card.id) {
+                  <div class="rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] p-3 dark:border-zinc-700 dark:bg-zinc-800">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="inline-flex items-center gap-1.5 text-[12px] font-semibold dark:text-zinc-100">
+                        <img [src]="'/assets/logos/' + card.network + '.svg'" alt="" width="14" height="14" class="size-3.5 object-contain" />
+                        {{ card.handle }}
+                      </p>
+                      <span class="font-mono text-[10px]" [class.text-red-600]="card.over" [class.text-zinc-400]="!card.over">{{ card.used }}/{{ card.limit }}</span>
+                    </div>
+                    @if (imageAttachments()[0]; as img) {
+                      <img [src]="img.url" alt="" class="mt-2 h-24 w-full rounded-lg object-cover" />
+                    }
+                    <p class="mt-2 line-clamp-5 whitespace-pre-wrap text-[13px] dark:text-zinc-100">{{ card.text || 'Empty caption' }}</p>
+                  </div>
+                }
+              </div>
+            }
             @if (aiBusy() === 'video' || attachments().length) {
               <div class="mt-3 space-y-3 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
                 @if (aiBusy() === 'video') {
@@ -98,42 +118,10 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                 <dk-choice value="weekly" [selected]="repeatRule==='weekly'" (pick)="repeatRule=$event">Weekly</dk-choice>
               </div>
             </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
               <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat until
                 <div class="mt-1.5" [class.pointer-events-none]="repeatRule==='none'" [class.opacity-40]="repeatRule==='none'">
                   <dk-date [(ngModel)]="repeatUntil" placeholder="End date" />
-                </div>
-              </label>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Signature
-                <div class="mt-1.5">
-                  <dk-select [(ngModel)]="signatureId">
-                    <option value="">Account default</option>
-                    @for (s of signatures(); track s.id) {
-                      <option [value]="s.id">{{ s.name }}{{ s.isDefault ? ' (default)' : '' }}</option>
-                    }
-                  </dk-select>
-                </div>
-              </label>
-            </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Posting set
-                <div class="mt-1.5">
-                  <dk-select [(ngModel)]="postingSetId" (ngModelChange)="applySet($event)">
-                    <option value="">Manual channels</option>
-                    @for (s of sets(); track s.id) {
-                      <option [value]="s.id">{{ s.name }}</option>
-                    }
-                  </dk-select>
-                </div>
-              </label>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Target group
-                <div class="mt-1.5">
-                  <dk-select [(ngModel)]="groupId" (ngModelChange)="applyGroup($event)">
-                    <option value="">Manual channels</option>
-                    @for (g of groups(); track g.id) {
-                      <option [value]="g.id">{{ g.name }} ({{ g.accountIds.length }})</option>
-                    }
-                  </dk-select>
                 </div>
               </label>
             </div>
@@ -230,12 +218,64 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                   </div>
                 }
               }
+              @for (a of selectedAccounts(); track a.id) {
+                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Caption for {{ a.handle }}
+                  <textarea [ngModel]="variants[a.id] || ''" (ngModelChange)="setVariant(a.id, $event)" rows="2" placeholder="Same as the draft" class="mt-1 w-full rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"></textarea>
+                </label>
+              }
               @if (!accounts().length) {
                 <p class="rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] p-4 text-center text-xs text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
                   Connect channels in <a routerLink="/app/accounts" class="font-medium text-cta underline">Accounts</a>.
                 </p>
               }
             </div>
+          </section>
+
+          <section class="space-y-3 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Signature, set, feed, plug</h2>
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Signature
+              <div class="mt-1.5">
+                <dk-select [(ngModel)]="signatureId">
+                  <option value="">Account default</option>
+                  @for (s of signatures(); track s.id) {
+                    <option [value]="s.id">{{ s.name }}{{ s.isDefault ? ' (default)' : '' }}</option>
+                  }
+                </dk-select>
+              </div>
+            </label>
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Posting set
+              <div class="mt-1.5">
+                <dk-select [(ngModel)]="postingSetId" (ngModelChange)="applySet($event)">
+                  <option value="">Manual channels</option>
+                  @for (s of sets(); track s.id) {
+                    <option [value]="s.id">{{ s.name }}</option>
+                  }
+                </dk-select>
+              </div>
+            </label>
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Target group
+              <div class="mt-1.5">
+                <dk-select [(ngModel)]="groupId" (ngModelChange)="applyGroup($event)">
+                  <option value="">Manual channels</option>
+                  @for (g of groups(); track g.id) {
+                    <option [value]="g.id">{{ g.name }} ({{ g.accountIds.length }})</option>
+                  }
+                </dk-select>
+              </div>
+            </label>
+            <form class="flex gap-2" (ngSubmit)="addFeed()">
+              <input [(ngModel)]="feedUrl" name="feedUrl" placeholder="RSS feed URL" class="h-9 min-w-0 flex-1 rounded-lg border border-[#e8e8e3] bg-[#fcfcf9] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+              <button type="submit" class="h-9 shrink-0 rounded-full border border-[#e8e8e3] px-3 text-[11px] font-semibold dark:border-zinc-600">Add feed</button>
+            </form>
+            @for (feed of feeds(); track feed.id) {
+              <p class="truncate text-[11px] text-[#63676c] dark:text-zinc-400">{{ feed.url }}</p>
+            }
+            @for (plug of plugs(); track plug.id) {
+              <div class="flex items-center justify-between gap-2 text-[12px]">
+                <span class="truncate dark:text-zinc-100">{{ plug.name }}</span>
+                <button type="button" (click)="runPlug(plug.id)" class="shrink-0 font-semibold text-cta">Run</button>
+              </div>
+            }
           </section>
 
           <section class="space-y-3 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
@@ -270,6 +310,12 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
 })
 export class ComposerPage implements OnInit {
   private readonly notices = inject(Notices);
+  private readonly route = inject(ActivatedRoute);
+  editingId = "";
+  variants: Record<string, string> = {};
+  feedUrl = "";
+  feeds = signal<{ id: string; url: string }[]>([]);
+  plugs = signal<{ id: string; name: string }[]>([]);
   @ViewChild("canvas") canvasRef?: ElementRef<HTMLCanvasElement>;
   readonly fieldMt =
     "mt-1.5 h-11 w-full rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] px-3.5 text-sm text-[#121417] outline-none transition-colors focus:border-cta focus:ring-1 focus:ring-cta disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100";
@@ -339,7 +385,7 @@ export class ComposerPage implements OnInit {
       this.workspaceId = me.workspace.id;
       lsSet("dk-ws", me.workspace.id);
       this.usage.set(me.usage);
-      const [ac, sigs, sets, groups] = await Promise.all([
+      const [ac, sigs, sets, groups, feeds, plugs] = await Promise.all([
         api<{ accounts: { id: string; network: string; handle: string }[] }>(`/v1/accounts?workspaceId=${me.workspace.id}`),
         api<{ signatures: { id: string; name: string; body: string; isDefault: boolean }[] }>(
           `/v1/org/signatures?workspaceId=${me.workspace.id}`,
@@ -348,14 +394,21 @@ export class ComposerPage implements OnInit {
           `/v1/org/sets?workspaceId=${me.workspace.id}`,
         ),
         api<{ groups: { id: string; name: string; accountIds: string[] }[] }>(`/v1/org/groups?workspaceId=${me.workspace.id}`),
+        api<{ feeds: { id: string; url: string }[] }>(`/v1/org/rss?workspaceId=${me.workspace.id}`),
+        api<{ plugs: { id: string; name: string }[] }>(`/v1/org/plugs?workspaceId=${me.workspace.id}`),
       ]);
       this.accounts.set(ac.accounts);
       this.signatures.set(sigs.signatures);
       this.sets.set(sets.sets);
       this.groups.set(groups.groups);
+      this.feeds.set(feeds.feeds || []);
+      this.plugs.set(plugs.plugs || []);
       const def = sigs.signatures.find((s) => s.isDefault);
       if (def) this.signatureId = def.id;
       if (ac.accounts[0]) this.selected.set([ac.accounts[0].id]);
+      await this.loadEditing(this.route.snapshot.queryParamMap.get("post"));
+      const mediaId = this.route.snapshot.queryParamMap.get("media");
+      if (mediaId) this.pushAttachment({ id: mediaId, url: `${apiBase()}/v1/media/${mediaId}/file?workspaceId=${this.workspaceId}`, kind: "image" });
     } catch {
       this.fail(new Error("Sign in to compose posts."));
     }
@@ -364,6 +417,67 @@ export class ComposerPage implements OnInit {
   setAspect(v: string) {
     this.aspectPreset = v as typeof this.aspectPreset;
     this.redraw();
+  }
+
+  selectedAccounts() {
+    return this.accounts().filter((a) => this.selected().includes(a.id));
+  }
+
+  setVariant(id: string, value: string) {
+    this.variants = { ...this.variants, [id]: value };
+  }
+
+  previews() {
+    return this.selectedAccounts().map((account) => {
+      const text = this.variants[account.id]?.trim() || this.body;
+      const cap = CAPTION_LIMITS.find((n) => n.id === account.network);
+      const used = countCaptionChars(text);
+      return { ...account, text, used, limit: cap?.limit ?? 0, over: !!cap && used > cap.limit };
+    });
+  }
+
+  async addFeed() {
+    const url = this.feedUrl.trim();
+    const channelId = this.selected()[0];
+    if (!url || !channelId) return;
+    await api("/v1/org/rss", { method: "POST", json: { workspaceId: this.workspaceId, url, channelIds: [channelId], groupId: this.groupId || null } });
+    this.feedUrl = "";
+    const feeds = await api<{ feeds: { id: string; url: string }[] }>(`/v1/org/rss?workspaceId=${this.workspaceId}`);
+    this.feeds.set(feeds.feeds || []);
+  }
+
+  async runPlug(id: string) {
+    await api(`/v1/org/plugs/${id}/run?workspaceId=${this.workspaceId}`, { method: "POST" });
+    this.flash("Plug ran");
+  }
+
+  private async loadEditing(id: string | null) {
+    if (!id) return;
+    const data = await api<{ posts: { id: string; body: string; status: string; scheduledAt: string | number | null; mediaIds: string | null; variantsJson: string | null; channels?: { accountId?: string }[] }[] }>(
+      `/v1/posts?workspaceId=${this.workspaceId}`,
+    );
+    const post = data.posts.find((p) => p.id === id);
+    if (!post || (post.status !== "draft" && post.status !== "scheduled")) return;
+    this.editingId = post.id;
+    this.body = post.body;
+    this.selected.set((post.channels || []).map((c) => c.accountId).filter((x): x is string => !!x));
+    if (post.scheduledAt) {
+      const d = new Date(post.scheduledAt);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      this.when = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    try {
+      const parsed = post.variantsJson ? JSON.parse(post.variantsJson) : {};
+      if (parsed && typeof parsed === "object") this.variants = parsed;
+    } catch {
+      this.variants = {};
+    }
+    try {
+      const ids: string[] = post.mediaIds ? JSON.parse(post.mediaIds) : [];
+      for (const mediaId of ids) this.pushAttachment({ id: mediaId, url: `${apiBase()}/v1/media/${mediaId}/file?workspaceId=${this.workspaceId}`, kind: "image" });
+    } catch {
+      /* media ids are optional */
+    }
   }
 
   toggle(id: string) {
@@ -643,26 +757,29 @@ export class ComposerPage implements OnInit {
       return this.fail({ message: "Set an end date (repeat until) for repeated posts" });
     }
     try {
-      await api("/v1/posts", {
-        method: "POST",
-        json: {
-          workspaceId: this.workspaceId,
-          body: this.body,
-          destinations: this.selected(),
-          status: this.when ? "scheduled" : "draft",
-          scheduledAt: this.when ? new Date(this.when).getTime() : undefined,
-          delaySeconds: this.delaySeconds,
-          repeatRule: this.repeatRule,
-          repeatUntil: this.repeatUntil ? new Date(this.repeatUntil + "T23:59:59").getTime() : null,
-          signatureId: this.signatureId || null,
-          postingSetId: this.postingSetId || null,
-          commentBody: this.commentBody || null,
-          commentDelaySeconds: this.commentBody ? this.commentDelaySeconds : 0,
-          mediaIds: this.attachments().map((a) => a.id),
-        },
-      });
-      this.flash("Post saved");
-      this.body = "";
+      const payload = {
+        workspaceId: this.workspaceId,
+        body: this.body,
+        destinations: this.selected(),
+        status: this.when ? "scheduled" as const : "draft" as const,
+        scheduledAt: this.when ? new Date(this.when).getTime() : undefined,
+        delaySeconds: this.delaySeconds,
+        repeatRule: this.repeatRule,
+        repeatUntil: this.repeatUntil ? new Date(this.repeatUntil + "T23:59:59").getTime() : null,
+        signatureId: this.signatureId || null,
+        postingSetId: this.postingSetId || null,
+        commentBody: this.commentBody || null,
+        commentDelaySeconds: this.commentBody ? this.commentDelaySeconds : 0,
+        mediaIds: this.attachments().map((a) => a.id),
+        variants: Object.fromEntries(Object.entries(this.variants).filter(([, text]) => text.trim())),
+      };
+      if (this.editingId) {
+        await api(`/v1/posts/${this.editingId}`, { method: "PATCH", json: payload });
+      } else {
+        await api("/v1/posts", { method: "POST", json: payload });
+      }
+      this.flash(this.editingId ? "Post updated" : "Post saved");
+      if (!this.editingId) this.body = "";
     } catch (e: unknown) {
       this.fail(e);
     }

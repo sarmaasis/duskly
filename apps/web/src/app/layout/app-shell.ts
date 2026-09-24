@@ -13,6 +13,7 @@ type AlertPost = { id: string; body: string; status: string; issues?: PostIssue[
 const NAV = [
   { name: "Calendar", href: "/app", group: "Schedule", exact: true },
   { name: "Compose", href: "/app/compose", group: "Schedule", exact: false },
+  { name: "Library", href: "/app/library", group: "Schedule", exact: false },
   { name: "Smart agent", href: "/app/agent", group: "Schedule", exact: false },
   { name: "Accounts", href: "/app/accounts", group: "Account", exact: false },
   { name: "Team", href: "/app/team", group: "Account", exact: false },
@@ -71,6 +72,9 @@ const NAV = [
                           }
                           @case ('/app/compose') {
                             <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                          }
+                          @case ('/app/library') {
+                            <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
                           }
                           @case ('/app/agent') {
                             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
@@ -261,6 +265,7 @@ export class AppShell implements OnInit {
     { name: "More", href: "/app/settings", exact: false, more: true },
   ] as const;
   readonly moreNav = [
+    { name: "Library", href: "/app/library" },
     { name: "Smart agent", href: "/app/agent" },
     { name: "Analytics", href: "/app/analytics" },
     { name: "Team", href: "/app/team" },
@@ -332,6 +337,7 @@ export class AppShell implements OnInit {
     const titles: Record<string, string> = {
       "/app": "Calendar",
       "/app/compose": "Compose",
+      "/app/library": "Library",
       "/app/agent": "Smart agent",
       "/app/accounts": "Accounts",
       "/app/team": "Team",

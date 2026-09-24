@@ -5,6 +5,7 @@ import { SignupPage } from "./auth/signup.page";
 import { OnboardingPage } from "./auth/onboarding.page";
 import { CalendarPage } from "./calendar/calendar.page";
 import { ComposerPage } from "./composer/composer.page";
+import { MediaPage } from "./media/media.page";
 import { AccountsPage } from "./accounts/accounts.page";
 import { PricingPage } from "./pages/pricing.page";
 import { TeamPage } from "./team/team.page";
@@ -67,6 +68,7 @@ export const routes: Routes = [
     children: [
       { path: "", component: CalendarPage },
       { path: "compose", component: ComposerPage },
+      { path: "library", component: MediaPage },
       { path: "accounts", component: AccountsPage },
       { path: "team", component: TeamPage },
       { path: "agent", component: AgentPage },

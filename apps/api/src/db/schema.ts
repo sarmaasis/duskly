@@ -111,6 +111,7 @@ export const posts = sqliteTable(
     postingSetId: text("posting_set_id"),
     commentBody: text("comment_body"),
     commentDelaySeconds: integer("comment_delay_seconds").notNull().default(0),
+    variantsJson: text("variants_json"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

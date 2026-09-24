@@ -31,6 +31,7 @@ export const createPost = z.object({
   postingSetId: z.string().optional().nullable(),
   commentBody: z.string().max(2000).optional().nullable(),
   commentDelaySeconds: z.number().int().min(0).max(86400).optional(),
+  variants: z.record(z.string(), z.string().max(5000)).optional(),
 });
 
 export const postRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
@@ -100,7 +101,7 @@ postRoutes.get("/", async (c) => {
     .orderBy(desc(posts.scheduledAt));
   const ids = rows.map((row) => row.id);
   const issuesByPost = new Map<string, { network: string; handle: string; status: string; error: string | null }[]>();
-  const channelsByPost = new Map<string, { network: string; handle: string; status: string }[]>();
+  const channelsByPost = new Map<string, { accountId: string; network: string; handle: string; status: string }[]>();
   const mediaIdsByPost = new Map<string, string[]>();
   const mediaIdSet = new Set<string>();
   for (const row of rows) {
@@ -120,6 +121,7 @@ postRoutes.get("/", async (c) => {
         postId: postDestination.postId,
         status: postDestination.status,
         error: postDestination.error,
+        accountId: socialAccount.id,
         network: socialAccount.network,
         handle: socialAccount.handle,
       })
@@ -128,7 +130,7 @@ postRoutes.get("/", async (c) => {
       .where(inArray(postDestination.postId, ids));
     for (const dest of dests) {
       const channels = channelsByPost.get(dest.postId) ?? [];
-      channels.push({ network: dest.network, handle: dest.handle, status: dest.status });
+      channels.push({ accountId: dest.accountId, network: dest.network, handle: dest.handle, status: dest.status });
       channelsByPost.set(dest.postId, channels);
       if (dest.status !== "queued" && dest.status !== "failed") continue;
       const list = issuesByPost.get(dest.postId) ?? [];
@@ -240,6 +242,7 @@ postRoutes.post("/", async (c) => {
       postingSetId: body.postingSetId ?? null,
       commentBody: body.commentBody ?? null,
       commentDelaySeconds: body.commentDelaySeconds ?? 0,
+      variantsJson: body.variants && Object.keys(body.variants).length ? JSON.stringify(body.variants) : null,
       createdAt: new Date(now),
       updatedAt: new Date(now),
     });
@@ -302,5 +305,55 @@ postRoutes.post("/:id/queue-now", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   await db.update(posts).set({ status: "queued", updatedAt: new Date() }).where(eq(posts.id, id));
   await c.env.PUBLISH.send({ postId: id });
+  return c.json({ ok: true });
+});
+
+const patchPost = z.object({
+  body: z.string().min(1).max(5000).optional(),
+  scheduledAt: z.number().nullable().optional(),
+  destinations: z.array(z.string()).optional(),
+  variants: z.record(z.string(), z.string().max(5000)).optional(),
+  mediaIds: z.array(z.string()).max(20).optional(),
+  status: z.enum(["draft", "scheduled"]).optional(),
+});
+
+postRoutes.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = patchPost.parse(await c.req.json());
+  const db = drizzle(c.env.DB);
+  const [post] = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
+  if (!post) return c.json({ error: "not_found" }, 404);
+  const ws = await assertWorkspaceAccess(c.env, post.workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  if (post.status !== "draft" && post.status !== "scheduled") {
+    return c.json({ error: "locked", message: "Only a draft or scheduled post can be edited." }, 409);
+  }
+  if (body.destinations) {
+    const invalid = await validateWorkspaceRefs(c.env, post.workspaceId, body.destinations, []);
+    if (invalid) return c.json(invalid, 400);
+  }
+  const nextStatus = body.status ?? (body.scheduledAt ? "scheduled" : post.status);
+  await db
+    .update(posts)
+    .set({
+      body: body.body ?? post.body,
+      status: nextStatus,
+      scheduledAt: body.scheduledAt === undefined ? post.scheduledAt : body.scheduledAt == null ? null : new Date(body.scheduledAt),
+      variantsJson: body.variants ? JSON.stringify(body.variants) : post.variantsJson,
+      mediaIds: body.mediaIds ? JSON.stringify(body.mediaIds) : post.mediaIds,
+      updatedAt: new Date(),
+    })
+    .where(eq(posts.id, id));
+  if (body.destinations) {
+    await db.delete(postDestination).where(eq(postDestination.postId, id));
+    for (const socialAccountId of [...new Set(body.destinations)]) {
+      await db.insert(postDestination).values({
+        id: crypto.randomUUID(),
+        postId: id,
+        socialAccountId,
+        status: "pending",
+      });
+    }
+  }
   return c.json({ ok: true });
 });

@@ -1,9 +1,9 @@
-import { Component, signal, OnInit } from "@angular/core";
-import { RouterLink } from "@angular/router";
+import { Component, inject, signal, OnInit } from "@angular/core";
+import { Router, RouterLink } from "@angular/router";
 import { api } from "../lib/api";
 import { lsGet, lsSet } from "../lib/browser";
 
-type Channel = { network: string; handle: string; status: string };
+type Channel = { accountId?: string; network: string; handle: string; status: string };
 type Preview = { url: string; kind: string };
 type Post = {
   id: string;
@@ -31,11 +31,23 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
         </div>
         <div class="flex items-center gap-2">
           <div class="inline-flex rounded-full border border-[#e8e8e3] bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900" role="tablist" aria-label="Calendar view">
-            <button type="button" role="tab" (click)="view.set('month')" [attr.aria-selected]="view()==='month'" class="h-8 rounded-full px-3 text-xs font-semibold" [class.bg-[#09090b]]="view()==='month'" [class.text-white]="view()==='month'" [class.text-[#71717a]]="view()!=='month'">Month</button>
-            <button type="button" role="tab" (click)="view.set('agenda')" [attr.aria-selected]="view()==='agenda'" class="h-8 rounded-full px-3 text-xs font-semibold" [class.bg-[#09090b]]="view()==='agenda'" [class.text-white]="view()==='agenda'" [class.text-[#71717a]]="view()!=='agenda'">Agenda</button>
+            @for (tab of tabs; track tab.id) {
+              <button type="button" role="tab" (click)="setView(tab.id)" [attr.aria-selected]="view()===tab.id" class="h-8 rounded-full px-3 text-xs font-semibold" [class.bg-[#09090b]]="view()===tab.id" [class.text-white]="view()===tab.id" [class.text-[#71717a]]="view()!==tab.id">{{ tab.label }}</button>
+            }
           </div>
           <a routerLink="/app/compose" class="inline-flex h-9 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white hover:bg-cta-hover">New post</a>
         </div>
+      </div>
+
+      <div class="mb-4 flex flex-wrap gap-2">
+        <select class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900" [value]="filterNetwork()" (change)="filterNetwork.set($any($event.target).value); rebuild()">
+          <option value="">All channels</option>
+          @for (n of networks(); track n) { <option [value]="n">{{ n }}</option> }
+        </select>
+        <select class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900" [value]="filterStatus()" (change)="filterStatus.set($any($event.target).value); rebuild()">
+          <option value="">All statuses</option>
+          @for (s of statuses; track s) { <option [value]="s">{{ s }}</option> }
+        </select>
       </div>
 
       @if (error()) {
@@ -48,7 +60,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
             <div class="h-28 animate-pulse bg-[#f7f7f4] dark:bg-zinc-900"></div>
           }
         </div>
-      } @else if (view() === 'month') {
+      } @else if (view() === 'month' || view() === 'week') {
         <div class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white dark:border-zinc-700 dark:bg-zinc-900">
           <div class="grid grid-cols-7 border-b border-[#e8e8e3] bg-[#f7f7f4] dark:border-zinc-700 dark:bg-zinc-800">
             @for (d of dow; track d) {
@@ -57,25 +69,20 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
           </div>
           <div class="grid grid-cols-7">
             @for (cell of monthCells(); track cell.key) {
-              <button type="button" (click)="openDay(cell)" class="flex min-h-32 flex-col border-b border-r border-[#e8e8e3] p-1.5 text-left hover:bg-[#fcfcf9] dark:border-zinc-800 dark:hover:bg-zinc-800/40" [class.bg-[#f7f7f4]/70]="!cell.inMonth" [class.dark:bg-zinc-950]="!cell.inMonth" [class.cursor-pointer]="cell.posts.length">
+              <button type="button" (click)="openDay(cell)" (dragover)="$event.preventDefault()" (drop)="dropOn($event, cell)" class="flex min-h-32 flex-col border-b border-r border-[#e8e8e3] p-1.5 text-left hover:bg-[#fcfcf9] dark:border-zinc-800 dark:hover:bg-zinc-800/40" [class.bg-[#f7f7f4]/70]="!cell.inMonth" [class.dark:bg-zinc-950]="!cell.inMonth" [class.cursor-pointer]="cell.posts.length">
                 <span class="mb-1 inline-flex size-6 items-center justify-center rounded-full text-[11px] font-semibold" [class.bg-cta]="cell.today" [class.text-white]="cell.today" [class.text-[#a1a1aa]]="!cell.inMonth && !cell.today" [class.dark:text-zinc-200]="cell.inMonth && !cell.today">{{ cell.day }}</span>
-                @if (cell.posts[0]; as p) {
-                  <span class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md bg-[#f7f7f4] dark:bg-zinc-800">
-                    @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
+                @for (p of cell.posts; track p.id) {
+                  <span draggable="true" (dragstart)="dragPost($event, p)" (click)="$event.stopPropagation(); edit(p)" class="flex min-h-0 cursor-grab flex-col overflow-hidden rounded-md bg-[#f7f7f4] active:cursor-grabbing dark:bg-zinc-800">
+                    @if ($first && p.preview && p.preview.url && p.preview.kind !== 'video') {
                       <img [src]="p.preview.url" alt="" class="h-14 w-full object-cover" />
-                    } @else if (p.preview) {
-                      <span class="flex h-10 items-center justify-center text-[9px] font-semibold text-zinc-600 dark:text-zinc-200">VID</span>
                     }
                     <span class="flex items-center gap-1 px-1 py-1">
-                      @for (ch of (p.channels || []).slice(0, 3); track ch.network + ch.handle) {
+                      @for (ch of (p.channels || []).slice(0, 2); track ch.network + ch.handle) {
                         <img [src]="'/assets/logos/' + ch.network + '.svg'" alt="" width="12" height="12" class="size-3 shrink-0 object-contain" />
                       }
                       <span class="min-w-0 truncate text-[10px] font-medium text-[#121417] dark:text-zinc-100">{{ p.body }}</span>
                     </span>
                   </span>
-                  @if (cell.posts.length > 1) {
-                    <span class="mt-1 text-[10px] font-semibold text-cta">+{{ cell.posts.length - 1 }} more</span>
-                  }
                 }
               </button>
             }
@@ -84,11 +91,11 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
       } @else {
         <div class="space-y-6">
           @for (group of agenda(); track group.key) {
-            <section>
+            <section (dragover)="$event.preventDefault()" (drop)="dropOnKey($event, group.key)">
               <h2 class="mb-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-[#a1a1aa]">{{ group.label }}</h2>
               <div class="space-y-2">
                 @for (p of group.posts; track p.id) {
-                  <article class="flex gap-3 rounded-xl border border-[#e8e8e3] bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                  <article draggable="true" (dragstart)="dragPost($event, p)" class="flex cursor-grab gap-3 rounded-xl border border-[#e8e8e3] bg-white p-3 active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900">
                     @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
                       <img [src]="p.preview!.url" alt="" class="size-16 shrink-0 rounded-lg object-cover" />
                     } @else {
@@ -109,6 +116,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                         <span class="text-[11px] text-[#a1a1aa]">{{ formatTime(p.scheduledAt) }}</span>
                         @if (canQueue(p)) {
                           <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta hover:underline">Send now</button>
+                          <button type="button" (click)="edit(p)" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Edit</button>
                         }
                       </div>
                     </div>
@@ -142,7 +150,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
         </header>
         <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
           @for (p of dayOpen()!.posts; track p.id) {
-            <article class="rounded-lg border border-[#e8e8e3] p-2 dark:border-zinc-800">
+            <article draggable="true" (dragstart)="dragPost($event, p)" class="cursor-grab rounded-lg border border-[#e8e8e3] p-2 active:cursor-grabbing dark:border-zinc-800">
               @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
                 <img [src]="p.preview!.url" alt="" class="mb-2 h-36 w-full rounded-md object-cover" />
               } @else if (p.preview) {
@@ -156,6 +164,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                 }
                 @if (canQueue(p)) {
                   <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta">Send now</button>
+                  <button type="button" (click)="edit(p)" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Edit</button>
                 }
               </div>
               @for (issue of p.issues || []; track issue.network + issue.handle) {
@@ -169,7 +178,17 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
   `,
 })
 export class CalendarPage implements OnInit {
-  view = signal<"month" | "agenda">("month");
+  private readonly router = inject(Router);
+  view = signal<"month" | "week" | "agenda">("month");
+  tabs = [
+    { id: "month" as const, label: "Month" },
+    { id: "week" as const, label: "Week" },
+    { id: "agenda" as const, label: "Agenda" },
+  ];
+  filterNetwork = signal("");
+  filterStatus = signal("");
+  statuses = ["draft", "scheduled", "queued", "published", "failed"];
+  private dragId = "";
   posts = signal<Post[]>([]);
   error = signal("");
   loading = signal(true);
@@ -200,14 +219,72 @@ export class CalendarPage implements OnInit {
   }
 
   monthLabel() {
-    return this.cursor().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (this.view() !== "week") return this.cursor().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    const start = startOfWeek(this.cursor());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} - ${end.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
   }
 
   shiftMonth(delta: number) {
     const c = this.cursor();
-    this.cursor.set(new Date(c.getFullYear(), c.getMonth() + delta, 1));
-    this.buildMonth(this.posts());
+    this.cursor.set(this.view() === "week" ? new Date(c.getFullYear(), c.getMonth(), c.getDate() + delta * 7) : new Date(c.getFullYear(), c.getMonth() + delta, 1));
+    this.rebuild();
     this.dayOpen.set(null);
+  }
+
+  setView(next: "month" | "week" | "agenda") {
+    this.view.set(next);
+    if (next === "week") this.cursor.set(startOfWeek(new Date()));
+    if (next === "month") this.cursor.set(startOfMonth(new Date()));
+    this.rebuild();
+  }
+
+  networks() {
+    return [...new Set(this.posts().flatMap((p) => (p.channels || []).map((c) => c.network)))];
+  }
+
+  shown() {
+    return this.posts().filter((post) => {
+      if (this.filterStatus() && post.status !== this.filterStatus()) return false;
+      if (this.filterNetwork() && !(post.channels || []).some((c) => c.network === this.filterNetwork())) return false;
+      return true;
+    });
+  }
+
+  rebuild() {
+    this.buildMonth(this.shown());
+  }
+
+  edit(post: Post) {
+    void this.router.navigate(["/app/compose"], { queryParams: { post: post.id } });
+  }
+
+  dragPost(event: DragEvent, post: Post) {
+    if (!this.canQueue(post)) {
+      event.preventDefault();
+      return;
+    }
+    this.dragId = post.id;
+    event.dataTransfer?.setData("text/plain", post.id);
+  }
+
+  dropOnKey(event: DragEvent, key: string) {
+    if (key === "unscheduled") return;
+    void this.dropOn(event, { key, day: 0, inMonth: true, today: false, posts: [] });
+  }
+
+  async dropOn(event: DragEvent, cell: Cell) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = event.dataTransfer?.getData("text/plain") || this.dragId;
+    const post = this.posts().find((p) => p.id === id);
+    if (!post || !this.canQueue(post)) return;
+    const when = post.scheduledAt ? new Date(post.scheduledAt) : new Date();
+    const day = new Date(cell.key);
+    day.setHours(when.getHours(), when.getMinutes(), 0, 0);
+    await api(`/v1/posts/${post.id}`, { method: "PATCH", json: { scheduledAt: day.getTime(), status: "scheduled" } });
+    if (this.workspaceId) await this.load(this.workspaceId);
   }
 
   goToday() {
@@ -247,10 +324,10 @@ export class CalendarPage implements OnInit {
   agenda() {
     const cursor = this.cursor();
     const groups = new Map<string, { key: string; label: string; posts: Post[] }>();
-    for (const post of this.posts()) {
+    for (const post of this.shown()) {
       const when = post.scheduledAt ? new Date(post.scheduledAt) : null;
       if (when && (when.getFullYear() !== cursor.getFullYear() || when.getMonth() !== cursor.getMonth())) continue;
-      const key = when ? when.toDateString() : "unscheduled";
+      const key = when ? new Date(when.getFullYear(), when.getMonth(), when.getDate()).toISOString() : "unscheduled";
       const label = when
         ? when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })
         : "Unscheduled";
@@ -272,7 +349,7 @@ export class CalendarPage implements OnInit {
     try {
       const data = await api<{ posts: Post[] }>(`/v1/posts?workspaceId=${workspaceId}`);
       this.posts.set(data.posts || []);
-      this.buildMonth(data.posts || []);
+      this.rebuild();
     } catch (err) {
       const status = (err as { status?: number }).status;
       this.error.set(status === 401 ? "Sign in to load your calendar." : "Could not load posts. Is the API running?");
@@ -283,6 +360,18 @@ export class CalendarPage implements OnInit {
   }
 
   buildMonth(list: Post[]) {
+    if (this.view() === "week") {
+      const start = startOfWeek(this.cursor());
+      const today = new Date().toDateString();
+      const cells: Cell[] = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        cells.push({ key: d.toISOString(), day: d.getDate(), inMonth: true, today: d.toDateString() === today, posts: postsOn(list, d) });
+      }
+      this.monthCells.set(cells);
+      return;
+    }
     const cursor = this.cursor();
     const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
     const end = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
@@ -320,6 +409,12 @@ export class CalendarPage implements OnInit {
 
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function startOfWeek(d: Date) {
+  const next = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  next.setDate(next.getDate() - next.getDay());
+  return next;
 }
 
 function postsOn(list: Post[], day: Date) {

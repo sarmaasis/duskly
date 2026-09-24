@@ -99,6 +99,15 @@ accountRoutes.get("/", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
   const rows = await db.select().from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId));
+  const problems = await db
+    .select({ accountId: postDestination.socialAccountId, error: postDestination.error })
+    .from(postDestination)
+    .innerJoin(posts, eq(postDestination.postId, posts.id))
+    .where(and(eq(posts.workspaceId, workspaceId), inArray(postDestination.status, ["failed", "queued"])));
+  const lastError = new Map<string, string>();
+  for (const problem of problems) {
+    if (problem.error && !lastError.has(problem.accountId)) lastError.set(problem.accountId, problem.error);
+  }
   const accounts = await Promise.all(rows.map(async (row) => {
     let handle = row.handle;
     let tokenCipher = await encryptSecret(c.env, await decryptSecret(c.env, row.tokenCipher));
@@ -106,9 +115,12 @@ accountRoutes.get("/", async (c) => {
     let channelId: string | null = null;
     let channelName: string | null = null;
     let pendingPages: Array<{ id: string; name: string }> = [];
+    let tokenExpiresAt: number | null = null;
     if (row.credentialsJson) {
       try {
         const creds = await decryptCredentials(c.env, row.credentialsJson);
+        const exp = Number(creds?.expiresAt);
+        if (Number.isFinite(exp) && exp > 0) tokenExpiresAt = exp;
         if (!creds) throw new Error("missing credentials");
         channelId = creds.channelId || null;
         channelName = creds.channelName || null;
@@ -170,6 +182,9 @@ accountRoutes.get("/", async (c) => {
       groupId: row.groupId,
       status: row.status,
       createdAt: row.createdAt,
+      tokenExpiresAt,
+      tokenExpired: tokenExpiresAt != null && tokenExpiresAt <= Date.now(),
+      lastError: lastError.get(row.id) || null,
       slackChannelId: row.network === "slack" ? channelId : undefined,
       slackChannelName: row.network === "slack" ? channelName : undefined,
       needsSlackChannel: row.network === "slack" && !channelId,
@@ -214,13 +229,21 @@ accountRoutes.post("/", async (c) => {
         publicationId: z.string().optional(),
         subreddit: z.string().optional(),
         groupId: z.string().nullable().optional(),
+        replaceId: z.string().optional(),
       })
       .parse(await c.req.json());
     const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
     if (!ws) return c.json({ error: "forbidden" }, 403);
-    await assertChannelLimit(c.env, body.workspaceId, 1);
-    const id = crypto.randomUUID();
     const db = drizzle(c.env.DB);
+    const [replacing] = body.replaceId
+      ? await db
+          .select({ id: socialAccount.id })
+          .from(socialAccount)
+          .where(and(eq(socialAccount.id, body.replaceId), eq(socialAccount.workspaceId, body.workspaceId), eq(socialAccount.network, body.network)))
+          .limit(1)
+      : [];
+    if (body.replaceId && !replacing) return c.json({ error: "replace_not_found" }, 404);
+    if (!replacing) await assertChannelLimit(c.env, body.workspaceId, 1);
 
     const creds: Record<string, string> = {};
     if (body.appPassword) {
@@ -242,16 +265,27 @@ accountRoutes.post("/", async (c) => {
       "pending";
     const active = secret !== "pending";
 
+    const tokenCipher = await encryptSecret(c.env, secret);
+    const credentialsJson = await encryptCredentials(c.env, creds);
+    const status = active ? "active" : "needs_credentials";
+    if (replacing) {
+      await db
+        .update(socialAccount)
+        .set({ handle: body.handle, externalId: body.handle, tokenCipher, credentialsJson, groupId: body.groupId ?? null, status })
+        .where(eq(socialAccount.id, replacing.id));
+      return c.json({ id: replacing.id });
+    }
+    const id = crypto.randomUUID();
     await db.insert(socialAccount).values({
       id,
       workspaceId: body.workspaceId,
       network: body.network,
       handle: body.handle,
       externalId: body.handle,
-      tokenCipher: await encryptSecret(c.env, secret),
-      credentialsJson: await encryptCredentials(c.env, creds),
+      tokenCipher,
+      credentialsJson,
       groupId: body.groupId ?? null,
-      status: active ? "active" : "needs_credentials",
+      status,
       createdAt: new Date(),
     });
     return c.json({ id }, 201);
@@ -901,10 +935,19 @@ orgRoutes.get("/analytics", async (c) => {
      INNER JOIN posts p ON p.id = pd.post_id
      INNER JOIN social_account sa ON sa.id = pd.social_account_id
      WHERE p.workspace_id = ?
+       AND date(COALESCE(p.published_at, p.scheduled_at, p.created_at) / 1000, 'unixepoch', ?) >= ?
+       AND date(COALESCE(p.published_at, p.scheduled_at, p.created_at) / 1000, 'unixepoch', ?) <= ?
      GROUP BY sa.network, sa.handle, pd.status, day
      ORDER BY day DESC`,
   )
-    .bind(analyticsDayShift(c.req.query("tz")), workspaceId)
+    .bind(
+      analyticsDayShift(c.req.query("tz")),
+      workspaceId,
+      analyticsDayShift(c.req.query("tz")),
+      c.req.query("from") || "1970-01-01",
+      analyticsDayShift(c.req.query("tz")),
+      c.req.query("to") || "2999-12-31",
+    )
     .all<{ network: string; handle: string; status: string; day: string; c: number }>();
 
   const totalsRow = await c.env.DB.prepare(

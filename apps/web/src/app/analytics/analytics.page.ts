@@ -1,4 +1,5 @@
 import { Component, signal, OnInit } from "@angular/core";
+import { FormsModule } from "@angular/forms";
 import { api } from "../lib/api";
 
 type ChannelStat = { network: string; handle: string; published: number; queued: number; failed: number; pending: number };
@@ -24,7 +25,7 @@ const LABELS: Record<string, string> = {
 
 @Component({
   standalone: true,
-  imports: [],
+  imports: [FormsModule],
   template: `
     <div class="mx-auto max-w-5xl">
       <div class="mb-6">
@@ -32,6 +33,17 @@ const LABELS: Record<string, string> = {
         <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Analytics</h1>
         <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">What went out, what is still waiting, and which channel it was for.</p>
       </div>
+
+      <form class="mb-4 flex flex-wrap items-end gap-2" (ngSubmit)="load()">
+        <label class="text-[11px] font-medium text-[#71717a]">From
+          <input type="date" name="from" [value]="from" (input)="from = $any($event.target).value" class="mt-1 block h-9 rounded-lg border border-[#e8e8e3] bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
+        </label>
+        <label class="text-[11px] font-medium text-[#71717a]">To
+          <input type="date" name="to" [value]="to" (input)="to = $any($event.target).value" class="mt-1 block h-9 rounded-lg border border-[#e8e8e3] bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
+        </label>
+        <button type="submit" class="h-9 rounded-full bg-cta px-3 text-xs font-semibold text-white">Apply</button>
+      </form>
+      <p class="mb-4 text-[12px] text-[#71717a]">Counts are publish outcomes. Likes, comments, and reach stay off until a network returns them for this app.</p>
 
       @if (error()) {
         <p class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100" role="alert">{{ error() }}</p>
@@ -132,17 +144,31 @@ export class AnalyticsPage implements OnInit {
   days = signal<{ day: string; count: number; pct: number }[]>([]);
   recent = signal<Recent[]>([]);
   error = signal("");
+  from = "";
+  to = "";
+  private workspaceId = "";
 
   async ngOnInit() {
+    await this.load();
+  }
+
+  async load() {
     try {
-      const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
+      this.error.set("");
+      if (!this.workspaceId) {
+        const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
+        this.workspaceId = me.workspace.id;
+      }
       const tz = new Date().getTimezoneOffset();
+      const q = new URLSearchParams({ workspaceId: this.workspaceId, tz: String(tz) });
+      if (this.from) q.set("from", this.from);
+      if (this.to) q.set("to", this.to);
       const data = await api<{
         totals: { posts: number; published: number; byStatus: Record<string, number> };
         byDay: Record<string, number>;
         channels: ChannelStat[];
         recent: Recent[];
-      }>(`/v1/org/analytics?workspaceId=${me.workspace.id}&tz=${tz}`);
+      }>(`/v1/org/analytics?${q}`);
       this.totals.set(data.totals);
       this.channels.set(data.channels || []);
       this.days.set(this.dayBars(data.byDay || {}));

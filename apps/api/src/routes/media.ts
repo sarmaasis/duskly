@@ -6,7 +6,7 @@ import { media } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { makePosterSvg } from "../lib/media-gen";
-import { verifyPublicMediaSig } from "../lib/media-signed-url";
+import { signPublicMediaUrl, verifyPublicMediaSig } from "../lib/media-signed-url";
 
 export const mediaRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -30,10 +30,13 @@ mediaRoutes.get("/", async (c) => {
   const db = drizzle(c.env.DB);
   const rows = await db.select().from(media).where(eq(media.workspaceId, workspaceId));
   return c.json({
-    media: rows.map((m) => ({
-      ...m,
-      url: `/v1/media/${m.id}/file?workspaceId=${workspaceId}`,
-    })),
+    media: await Promise.all(
+      rows.map(async (m) => ({
+        ...m,
+        url: `/v1/media/${m.id}/file?workspaceId=${workspaceId}`,
+        previewUrl: await signPublicMediaUrl(c.env, m.id),
+      })),
+    ),
   });
 });
 

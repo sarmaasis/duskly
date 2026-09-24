@@ -17,6 +17,9 @@ type AccountRow = {
   needsSlackChannel?: boolean;
   needsPage?: boolean;
   pendingPages?: { id: string; name: string }[];
+  tokenExpiresAt?: number | null;
+  tokenExpired?: boolean;
+  lastError?: string | null;
 };
 type Company = { id: string; name: string; accountIds: string[] };
 type SlackChannel = { id: string; name: string; isPrivate: boolean };
@@ -58,7 +61,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
               {{ usage()?.used?.['channels'] ?? accounts().length }}/{{ usage()?.limits?.channels ?? "—" }}
             </p>
           </div>
-          <button type="button" (click)="adding.set(!adding())" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-hover">
+          <button type="button" (click)="adding.set(!adding()); if (!adding()) replaceId = ''" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-hover">
             {{ adding() ? 'Close' : 'Add channel' }}
           </button>
         </div>
@@ -186,7 +189,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
             }
           </div>
           <button type="submit" class="inline-flex h-10 items-center justify-center rounded-full bg-cta px-5 text-sm font-semibold text-white hover:bg-cta-hover">
-            Connect {{ labelOf(network) }}
+            {{ replaceId ? 'Replace' : 'Connect' }} {{ labelOf(network) }}
           </button>
         } @else {
           @if (network === 'mastodon') {
@@ -204,7 +207,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
               <img src="/assets/logos/slack.svg" alt="" width="16" height="16" class="size-4 object-contain brightness-0 invert" aria-hidden="true" />
               Add to Slack
             } @else {
-              Connect with {{ labelOf(network) }} OAuth
+              {{ replaceId ? 'Replace' : 'Connect' }} with {{ labelOf(network) }} OAuth
             }
           </button>
           @if (network === 'slack') {
@@ -258,7 +261,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
                   <p class="truncate text-sm font-semibold dark:text-zinc-100">{{ a.handle }}</p>
                   <p class="text-[12px] text-[#63676c] dark:text-zinc-400">{{ labelOf(a.network) }}</p>
                 </div>
-                <span class="rounded-full bg-white px-2 py-0.5 font-mono text-[10px] uppercase text-[#71717a] dark:bg-zinc-800 dark:text-zinc-300">{{ a.status }}</span>
+                <span class="rounded-full bg-white px-2 py-0.5 font-mono text-[10px] uppercase text-[#71717a] dark:bg-zinc-800 dark:text-zinc-300">{{ a.tokenExpired ? 'expired' : a.status }}</span>
               </div>
               @if (companies().length) {
                 <select
@@ -293,6 +296,15 @@ const FALLBACK_META: Record<string, NetMeta> = {
                     <option [value]="p.id">{{ p.name }}</option>
                   }
                 </dk-select>
+              }
+              @if (a.tokenExpiresAt) {
+                <p class="text-[11px] text-[#71717a]">Token until {{ tokenWhen(a.tokenExpiresAt) }}</p>
+              }
+              @if (a.lastError) {
+                <p class="line-clamp-2 text-[12px] text-amber-800 dark:text-amber-200">{{ a.lastError }}</p>
+              }
+              @if (a.tokenExpired || a.status !== 'active') {
+                <button type="button" (click)="reconnect(a)" class="self-start text-xs font-semibold text-cta">Reconnect</button>
               }
               <button type="button" (click)="remove(a.id)" class="self-start text-xs font-semibold text-red-600">Remove</button>
             </article>
@@ -553,6 +565,9 @@ export class AccountsPage implements OnInit {
         needsSlackChannel: !!a.needsSlackChannel,
         needsPage: !!a.needsPage,
         pendingPages: a.pendingPages || [],
+        tokenExpiresAt: a.tokenExpiresAt ?? null,
+        tokenExpired: !!a.tokenExpired,
+        lastError: a.lastError ?? null,
       })),
     );
     this.networks.set(data.networks?.length ? data.networks : Object.keys(FALLBACK_META));
@@ -567,6 +582,21 @@ export class AccountsPage implements OnInit {
     if (me?.usage) this.usage.set(me.usage);
   }
 
+  tokenWhen(ms: number) {
+    return new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+
+  replaceId = "";
+
+  reconnect(account: AccountRow) {
+    this.replaceId = account.id;
+    this.network = account.network;
+    this.handle = account.handle;
+    this.adding.set(true);
+    if (this.isToken()) return;
+    this.oauthConnect();
+  }
+
   oauthConnect() {
     if (!this.oauthReady()[this.network]) {
       this.msg.set(
@@ -577,6 +607,7 @@ export class AccountsPage implements OnInit {
       return;
     }
     const q = new URLSearchParams({ workspaceId: this.workspaceId });
+    if (this.replaceId) q.set("replaceId", this.replaceId);
     if (this.network === "mastodon") q.set("instance", this.mastodonInstance);
     if (this.network === "reddit" && this.subreddit.trim()) q.set("subreddit", this.subreddit.trim());
     if (this.connectCompanyId) q.set("groupId", this.connectCompanyId);
@@ -675,8 +706,10 @@ export class AccountsPage implements OnInit {
           publicationId: this.publicationId || undefined,
           subreddit: this.subreddit || undefined,
           groupId: this.connectCompanyId || null,
+          replaceId: this.replaceId || undefined,
         },
       });
+      this.replaceId = "";
       this.handle = "";
       this.appPassword = "";
       this.apiKey = "";

@@ -292,8 +292,15 @@ async function publishPost(env: Env, postId: string) {
       continue;
     }
     if (imageUrl && !creds.imageUrl) creds = { ...creds, imageUrl };
+    let variants: Record<string, string> = {};
+    try {
+      const parsed = post.variantsJson ? JSON.parse(post.variantsJson) : {};
+      if (parsed && typeof parsed === "object") variants = parsed;
+    } catch {
+      variants = {};
+    }
     const result = await adapter.publish({
-      body: post.body,
+      body: variants[d.socialAccountId]?.trim() || post.body,
       handle,
       token,
       credentials: creds,

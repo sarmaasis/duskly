@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
+import { and, eq } from "drizzle-orm";
 import { socialAccount } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
@@ -153,6 +154,7 @@ oauthRoutes.get("/:network/start", async (c) => {
       mastodonClientId,
       mastodonClientSecret,
       subreddit: normalizeSubreddit(c.req.query("subreddit")),
+      replaceId: c.req.query("replaceId") || null,
       redirectUri,
       instagramLogin: network === "instagram" && useInstagramBusinessLogin(c.env),
     }),
@@ -215,6 +217,7 @@ async function completeOAuthCallback(
     subreddit?: string;
     redirectUri?: string;
     instagramLogin?: boolean;
+    replaceId?: string | null;
   };
   try {
     stored = JSON.parse(raw) as typeof stored;
@@ -223,8 +226,17 @@ async function completeOAuthCallback(
   }
   if (stored.network !== network) return fail(oauthFailQs(network, "error", "mismatch"));
 
+  if (stored.replaceId) {
+    const db = drizzle(c.env.DB);
+    const [row] = await db
+      .select({ id: socialAccount.id })
+      .from(socialAccount)
+      .where(and(eq(socialAccount.id, stored.replaceId), eq(socialAccount.workspaceId, stored.workspaceId), eq(socialAccount.network, network)))
+      .limit(1);
+    if (!row) stored.replaceId = null;
+  }
   try {
-    await assertChannelLimit(c.env, stored.workspaceId, 1);
+    if (!stored.replaceId) await assertChannelLimit(c.env, stored.workspaceId, 1);
   } catch (e) {
     if (planErrorResponse(e)) return fail(oauthFailQs(network, "limit", "channel_limit"));
     return fail(oauthFailQs(network, "error", "limit"));
@@ -530,21 +542,40 @@ async function completeOAuthCallback(
     return fail(oauthFailQs(network, "token_failed", "exchange"));
   }
 
-  const id = crypto.randomUUID();
+  const db = drizzle(c.env.DB);
+  const externalId = network === "instagram" && credentials.igUserId ? credentials.igUserId : handle;
+  let id = stored.replaceId || "";
   try {
-    const db = drizzle(c.env.DB);
-    await db.insert(socialAccount).values({
-      id,
-      workspaceId: stored.workspaceId,
-      network,
-      handle,
-      externalId: network === "instagram" && credentials.igUserId ? credentials.igUserId : handle,
-      tokenCipher: await encryptSecret(c.env, accessToken),
-      credentialsJson: await encryptCredentials(c.env, credentials),
-      groupId: stored.groupId || null,
-      status,
-      createdAt: new Date(),
-    });
+    const tokenCipher = await encryptSecret(c.env, accessToken);
+    const credentialsJson = await encryptCredentials(c.env, credentials);
+    const [existing] = id
+      ? await db
+          .select({ id: socialAccount.id })
+          .from(socialAccount)
+          .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, stored.workspaceId), eq(socialAccount.network, network)))
+          .limit(1)
+      : [];
+    if (existing) {
+      await db
+        .update(socialAccount)
+        .set({ handle, externalId, tokenCipher, credentialsJson, status, groupId: stored.groupId || null })
+        .where(eq(socialAccount.id, existing.id));
+      id = existing.id;
+    } else {
+      id = crypto.randomUUID();
+      await db.insert(socialAccount).values({
+        id,
+        workspaceId: stored.workspaceId,
+        network,
+        handle,
+        externalId,
+        tokenCipher,
+        credentialsJson,
+        groupId: stored.groupId || null,
+        status,
+        createdAt: new Date(),
+      });
+    }
   } catch (e) {
     if (isTokenEncryptError(e)) {
       return fail(oauthFailQs(network, "error", "encrypt", encryptFailureDetail(e)));
