@@ -544,12 +544,17 @@ async function instagramGraph(
   version: string,
   path: string,
   token: string,
+  bearerAuth: boolean,
   method: "GET" | "POST",
   fields: Record<string, string>,
 ): Promise<{ ok: boolean; status: number; data: IgGraphData; detail: string }> {
   const headers: Record<string, string> = {};
   const params = new URLSearchParams(fields);
-  params.set("access_token", token);
+  if (bearerAuth) {
+    headers.authorization = `Bearer ${token}`;
+  } else {
+    params.set("access_token", token);
+  }
   let url = `${host}/${version}/${path}`;
   let body: string | undefined;
   if (method === "GET") {
@@ -575,9 +580,10 @@ async function waitInstagramContainer(
   version: string,
   containerId: string,
   token: string,
+  bearerAuth: boolean,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   for (let i = 0; i < 5; i++) {
-    const status = await instagramGraph(host, version, containerId, token, "GET", {
+    const status = await instagramGraph(host, version, containerId, token, bearerAuth, "GET", {
       fields: "status_code",
     });
     const code = status.data.status_code;
@@ -680,14 +686,14 @@ async function metaGraphPublish(
         return missingCreds("Instagram Graph API requires an image URL for feed posts — queued until media is attached");
       }
       const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
-      const graphVersion = instagramLogin ? "v25.0" : "v21.0";
+      const graphVersion = instagramLogin ? "v26.0" : "v21.0";
       const igPost = (path: string, fields: Record<string, string>) =>
-        instagramGraph(graphHost, graphVersion, path, token, "POST", fields);
+        instagramGraph(graphHost, graphVersion, path, token, instagramLogin, "POST", fields);
       const created = await igPost(`${igUserId}/media`, { image_url: imageUrl, caption: input.body });
       if (!created.ok || !created.data.id) {
         return missingCreds(`Instagram media create failed (${created.status}): ${created.detail}`);
       }
-      const ready = await waitInstagramContainer(graphHost, graphVersion, created.data.id, token);
+      const ready = await waitInstagramContainer(graphHost, graphVersion, created.data.id, token, instagramLogin);
       if (!ready.ok) return missingCreds(ready.reason);
       const published = await igPost(`${igUserId}/media_publish`, { creation_id: created.data.id });
       if (!published.ok || !published.data.id) {

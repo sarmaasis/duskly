@@ -283,18 +283,20 @@ async function publishPost(env: Env, postId: string) {
     if (mediaIds.length) {
       const mediaRows = await db.select().from(media).where(inArray(media.id, mediaIds));
       const first = firstPublishMedia(mediaIds, mediaRows);
+      const firstImage = firstPublishMedia(mediaIds, mediaRows.filter(isImageMedia));
       if (first && isVideoMedia(first)) {
         const obj = await env.MEDIA.get(first.r2Key);
         if (obj) {
           videoBytes = await obj.arrayBuffer();
           videoContentType = first.contentType;
         }
-      } else if (first && isImageMedia(first)) {
-        imageUrl = await signPublicMediaUrl(env, first.id);
-        const obj = await env.MEDIA.get(first.r2Key);
+      }
+      if (firstImage) {
+        imageUrl = await signPublicMediaUrl(env, firstImage.id);
+        const obj = await env.MEDIA.get(firstImage.r2Key);
         if (obj) {
           imageBytes = await obj.arrayBuffer();
-          imageContentType = first.contentType;
+          imageContentType = firstImage.contentType;
         }
       }
     }

@@ -37,9 +37,16 @@ export function facebookConnectHandle(network: "instagram" | "facebook", pages: 
 /** Stored on Instagram Login credentials so publish uses graph.instagram.com, not a Page token. */
 export const INSTAGRAM_LOGIN_AUTH = "instagram_login";
 
-/** Instagram API with Instagram Login (graph.instagram.com). Playground uses v25.0; Facebook Graph stays v21.0. */
-export const INSTAGRAM_GRAPH_VERSION = "v25.0";
+/** Instagram API with Instagram Login (graph.instagram.com). Facebook Graph stays v21.0 for Page-backed flows. */
+export const INSTAGRAM_GRAPH_VERSION = "v26.0";
 const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
+const INSTAGRAM_BUSINESS_SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
+  "instagram_business_content_publish",
+  "instagram_business_manage_insights",
+].join(",");
 
 export function isInstagramLoginCreds(creds?: Record<string, string> | null): boolean {
   return creds?.authKind === INSTAGRAM_LOGIN_AUTH;
@@ -116,10 +123,11 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
   if (network === "instagram" && instagramLoginConfigured(env)) {
     const { appId } = instagramAppCreds(env);
     const params = new URLSearchParams({
+      force_reauth: "true",
       client_id: appId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "instagram_business_basic,instagram_business_content_publish",
+      scope: INSTAGRAM_BUSINESS_SCOPES,
       state,
     });
     return `https://www.instagram.com/oauth/authorize?${params}`;
@@ -438,7 +446,7 @@ export type InstagramLongLivedResult =
 
 /**
  * GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token
- * Unversioned. /v25.0/access_token is not this endpoint and returns Graph 100 method type get.
+ * Unversioned. /v26.0/access_token is not this endpoint and returns Graph 100 method type get.
  * https://developers.facebook.com/docs/instagram-platform/reference/access_token/
  * A method-type 100 must not fail connect — keep the short-lived token.
  */
@@ -491,14 +499,14 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
     const res = await fetch(
       `${INSTAGRAM_GRAPH_BASE}/me?${new URLSearchParams({
         fields,
-        access_token: accessToken,
       })}`,
+      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     const data = parseFacebookTokenPayload(await res.text());
     return { res, data };
   };
   try {
-    let { res, data } = await readProfile("id,user_id,username,name");
+    let { res, data } = await readProfile("id,user_id,username");
     if (!res.ok || data.error) {
       const reason = graphOauthReason(data);
       if (reason === "not_professional") {
@@ -538,9 +546,9 @@ export async function fetchInstagramLoginUsername(accessToken: string, userId?: 
   try {
     const res = await fetch(
       `${INSTAGRAM_GRAPH_BASE}/${id}?${new URLSearchParams({
-        fields: "id,user_id,username,name",
-        access_token: accessToken,
+        fields: "id,user_id,username",
       })}`,
+      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     const data = parseFacebookTokenPayload(await res.text());
     if (!res.ok || data.error) return undefined;

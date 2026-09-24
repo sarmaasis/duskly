@@ -401,6 +401,10 @@ export class ComposerPage implements OnInit {
     return this.attachments().filter((m) => m.kind === "image");
   }
 
+  private instagramSelected() {
+    return this.accounts().some((a) => a.network === "instagram" && this.selected().includes(a.id));
+  }
+
   pushAttachment(item: { id: string; url: string; kind: "image" | "video" }) {
     if (!item.id) return;
     this.attachments.update((list) => (list.some((a) => a.id === item.id) ? list : [...list, item]));
@@ -638,6 +642,9 @@ export class ComposerPage implements OnInit {
 
   async schedule() {
     if (!this.selected().length && !this.postingSetId) return this.fail({ message: "Pick at least one channel or a posting set" });
+    if (this.instagramSelected() && !this.imageAttachments().length) {
+      return this.fail({ message: "Instagram feed posts need an attached image." });
+    }
     if (this.repeatRule !== "none" && !this.repeatUntil) {
       return this.fail({ message: "Set an end date (repeat until) for repeated posts" });
     }

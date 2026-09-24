@@ -63,10 +63,13 @@ describe("repeat series", () => {
   it("composer schedules mediaIds and the worker signs a public URL then passes image bytes", () => {
     const composer = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../web/src/app/composer/composer.page.ts"), "utf8");
     expect(composer).toContain("mediaIds: this.attachments().map((a) => a.id)");
+    expect(composer).toContain("instagramSelected() && !this.imageAttachments().length");
     const posts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../routes/posts.ts"), "utf8");
     expect(posts).toContain("mediaIds: body.mediaIds?.length ? JSON.stringify(body.mediaIds) : null");
+    expect(posts).toContain("instagram_image_required");
     const publisher = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../index.ts"), "utf8");
     expect(publisher).toContain("signPublicMediaUrl");
+    expect(publisher).toContain("firstImage");
     expect(publisher).toContain("imageBytes");
     expect(publisher).toContain("JSON.parse(post.mediaIds)");
   });

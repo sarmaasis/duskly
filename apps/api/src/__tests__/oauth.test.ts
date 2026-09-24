@@ -102,7 +102,10 @@ describe("OAuth authorize URLs", () => {
     const q = new URL(url).searchParams;
     expect(q.get("client_id")).toBe("ig-app-id");
     expect(q.get("response_type")).toBe("code");
-    expect(q.get("scope")).toBe("instagram_business_basic,instagram_business_content_publish");
+    expect(q.get("force_reauth")).toBe("true");
+    expect(q.get("scope")).toBe(
+      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights",
+    );
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/instagram/callback");
     expect(q.get("state")).toBe("st");
   });
@@ -992,7 +995,7 @@ function isFacebookOauthAccessToken(url: string) {
 }
 
 function isInstagramLoginMe(url: string) {
-  return url.includes("https://graph.instagram.com/v25.0/me") && url.includes("user_id");
+  return url.includes("https://graph.instagram.com/v26.0/me") && url.includes("user_id");
 }
 
 describe("Instagram Login OAuth callback", () => {
@@ -1049,7 +1052,8 @@ describe("Instagram Login OAuth callback", () => {
     expect(await KV.get("meta-user:9999")).toBeNull();
     const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
     expect(meCall).toBeTruthy();
-    expect(String(meCall![0])).toContain("access_token=ig-long");
+    expect(String(meCall![0])).not.toContain("access_token=");
+    expect((meCall![1] as { headers?: Record<string, string> } | undefined)?.headers?.authorization).toBe("Bearer ig-long");
     expect(
       fetch.mock.calls.some(
         ([u, init]) => isFacebookOauthAccessToken(String(u)) && (init?.method || "GET").toUpperCase() === "GET",
@@ -1131,7 +1135,8 @@ describe("Instagram Login OAuth callback", () => {
           });
         }
         if (isInstagramLoginMe(u)) {
-          expect(u).toContain("access_token=ig-short");
+          expect(u).not.toContain("access_token=");
+          expect(init?.headers?.authorization).toBe("Bearer ig-short");
           return graphRes(true, { user_id: "1784", username: "dusklycafe" });
         }
         return graphRes(false, {});
@@ -1236,7 +1241,7 @@ describe("Instagram Login OAuth callback", () => {
     expect(src).toContain("instagramLogin: network === \"instagram\" && instagramLoginConfigured(c.env)");
     const providers = readFileSync(join(here, "../lib/oauth-providers.ts"), "utf8");
     expect(providers).toContain('fetch("https://api.instagram.com/oauth/access_token"');
-    expect(providers).toContain('INSTAGRAM_GRAPH_VERSION = "v25.0"');
+    expect(providers).toContain('INSTAGRAM_GRAPH_VERSION = "v26.0"');
     expect(providers).toContain("https://graph.instagram.com/access_token?");
     expect(providers).toContain('grant_type: "ig_exchange_token"');
     expect(providers).toMatch(/INSTAGRAM_GRAPH_BASE\}\/me\?/);

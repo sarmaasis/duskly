@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
   media,
   posts,
@@ -14,6 +14,7 @@ import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { planErrorResponse } from "../lib/entitlements";
 import { expandRepeatTimes } from "../lib/schedule";
+import { isImageMedia } from "../lib/networks";
 
 export const createPost = z.object({
   workspaceId: z.string(),
@@ -55,6 +56,36 @@ async function validateWorkspaceRefs(env: Env, workspaceId: string, destinations
   return null;
 }
 
+async function validateNetworkMediaRules(
+  env: Env,
+  workspaceId: string,
+  destinations: string[],
+  mediaIds: string[] = [],
+) {
+  const db = drizzle(env.DB);
+  const destinationRows = destinations.length
+    ? await db
+        .select({ network: socialAccount.network })
+        .from(socialAccount)
+        .where(and(eq(socialAccount.workspaceId, workspaceId), inArray(socialAccount.id, destinations)))
+    : [];
+  if (!destinationRows.some((d) => d.network === "instagram")) return null;
+  if (!mediaIds.length) {
+    return {
+      error: "instagram_image_required",
+      message: "Instagram feed posts require an attached image.",
+    };
+  }
+  const mediaRows = await db.select().from(media).where(and(eq(media.workspaceId, workspaceId), inArray(media.id, mediaIds)));
+  if (!mediaRows.some(isImageMedia)) {
+    return {
+      error: "instagram_image_required",
+      message: "Instagram feed posts require an attached image. Video-only Instagram posts are not wired yet.",
+    };
+  }
+  return null;
+}
+
 postRoutes.get("/", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
@@ -92,6 +123,8 @@ postRoutes.post("/", async (c) => {
     if (!destinations.length) return c.json({ error: "destinations_required" }, 400);
     const invalid = await validateWorkspaceRefs(c.env, body.workspaceId, destinations, body.mediaIds);
     if (invalid) return c.json(invalid, 400);
+    const mediaRule = await validateNetworkMediaRules(c.env, body.workspaceId, destinations, body.mediaIds);
+    if (mediaRule) return c.json(mediaRule, 400);
 
     let appliedSignatureId = body.signatureId ?? null;
     if (body.signatureId) {
