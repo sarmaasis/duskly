@@ -357,22 +357,45 @@ export async function exchangeLongLivedFacebookToken(env: Env, shortLived: strin
   }
 }
 
-function instagramAccessTokenFromPayload(tok: Record<string, unknown>): string {
-  if (typeof tok.access_token === "string" && tok.access_token) return tok.access_token;
+function instagramObjectRow(tok: Record<string, unknown>): Record<string, unknown> {
   const data = tok.data;
-  if (Array.isArray(data) && data[0] && typeof data[0] === "object") {
-    const first = data[0] as { access_token?: unknown };
-    if (typeof first.access_token === "string") return first.access_token;
-  }
-  return "";
+  if (Array.isArray(data) && data[0] && typeof data[0] === "object") return data[0] as Record<string, unknown>;
+  return tok;
 }
 
-/** POST https://api.instagram.com/oauth/access_token — Instagram Login short-lived user token. */
+function instagramAccessTokenFromPayload(tok: Record<string, unknown>): string {
+  const row = instagramObjectRow(tok);
+  return typeof row.access_token === "string" && row.access_token ? row.access_token : "";
+}
+
+function instagramExpiresInFromPayload(tok: Record<string, unknown>): number | undefined {
+  const raw = instagramObjectRow(tok).expires_in ?? tok.expires_in;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Official short-lived Instagram Login tokens last 1 hour. Longer expires_in means skip ig_exchange_token. */
+const INSTAGRAM_SHORT_LIVED_MAX_SEC = 3600;
+
+function instagramTokenAlreadyLongLived(expiresIn?: number): boolean {
+  return typeof expiresIn === "number" && expiresIn > INSTAGRAM_SHORT_LIVED_MAX_SEC;
+}
+
+function isUnsupportedGraphMethodType(tok: Record<string, unknown>): boolean {
+  const { message, code } = graphErrorFields(tok);
+  return code === "100" && /unsupported request.*method type/i.test(message);
+}
+
+export type InstagramUserTokenResult =
+  | { ok: true; accessToken: string; expiresIn?: number }
+  | { ok: false; reason: string; detail?: string };
+
+/** POST https://api.instagram.com/oauth/access_token — Instagram Login code exchange. Docs: data[0].access_token. */
 export async function exchangeInstagramUserToken(
   env: Env,
   code: string,
   redirectUri: string,
-): Promise<FacebookTokenResult> {
+): Promise<InstagramUserTokenResult> {
   const { appId, appSecret } = instagramAppCreds(env);
   if (!appId || !appSecret) return { ok: false, reason: "missing_secret" };
   try {
@@ -392,7 +415,8 @@ export async function exchangeInstagramUserToken(
     if (!tokenRes.ok || !access || tok.error) {
       return { ok: false, reason: graphOauthReason(tok), detail: graphOauthDetail(tok) || undefined };
     }
-    return { ok: true, accessToken: access };
+    const expiresIn = instagramExpiresInFromPayload(tok);
+    return { ok: true, accessToken: access, ...(expiresIn ? { expiresIn } : {}) };
   } catch {
     return { ok: false, reason: "exchange" };
   }
@@ -402,12 +426,21 @@ export type InstagramLongLivedResult =
   | { ok: true; accessToken: string; expiresIn?: number }
   | { ok: false; reason: string; detail?: string };
 
-/** GET https://graph.instagram.com/access_token — Instagram Login long-lived exchange. POST returns Graph error 100 "Unsupported request - method type: post". */
+/**
+ * GET https://graph.instagram.com/access_token?grant_type=ig_exchange_token
+ * https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login/
+ * Unversioned GET/POST both return Graph 100 "Unsupported request - method type" for some IG Login tokens;
+ * skip when the code exchange already returned a long-lived expires_in, otherwise keep the first token.
+ */
 export async function exchangeLongLivedInstagramToken(
   env: Env,
   shortLived: string,
+  shortLivedExpiresIn?: number,
 ): Promise<InstagramLongLivedResult> {
   if (!shortLived) return { ok: false, reason: "exchange" };
+  if (instagramTokenAlreadyLongLived(shortLivedExpiresIn)) {
+    return { ok: true, accessToken: shortLived, expiresIn: shortLivedExpiresIn };
+  }
   const { appSecret } = instagramAppCreds(env);
   if (!appSecret) return { ok: false, reason: "missing_secret" };
   try {
@@ -422,10 +455,16 @@ export async function exchangeLongLivedInstagramToken(
     const tok = parseFacebookTokenPayload(await res.text());
     const next = instagramAccessTokenFromPayload(tok);
     if (!res.ok || !next || tok.error) {
+      if (isUnsupportedGraphMethodType(tok)) {
+        return {
+          ok: true,
+          accessToken: shortLived,
+          ...(shortLivedExpiresIn ? { expiresIn: shortLivedExpiresIn } : {}),
+        };
+      }
       return { ok: false, reason: graphOauthReason(tok), detail: graphOauthDetail(tok) || undefined };
     }
-    const expiresRaw = tok.expires_in;
-    const expiresIn = typeof expiresRaw === "number" && expiresRaw > 0 ? expiresRaw : undefined;
+    const expiresIn = instagramExpiresInFromPayload(tok);
     return { ok: true, accessToken: next, ...(expiresIn ? { expiresIn } : {}) };
   } catch {
     return { ok: false, reason: "exchange" };

@@ -335,7 +335,11 @@ async function completeOAuthCallback(
       if (!exchanged.ok) {
         return fail(oauthFailQs(network, "token_failed", exchanged.reason, exchanged.detail));
       }
-      const longLived = await exchangeLongLivedInstagramToken(c.env, exchanged.accessToken);
+      const longLived = await exchangeLongLivedInstagramToken(
+        c.env,
+        exchanged.accessToken,
+        exchanged.expiresIn,
+      );
       if (!longLived.ok) {
         return fail(oauthFailQs(network, "token_failed", longLived.reason, longLived.detail));
       }
