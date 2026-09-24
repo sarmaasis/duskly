@@ -82,6 +82,19 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/x/callback");
   });
 
+  it("LinkedIn asks for OIDC identity, email, and member posting scopes", () => {
+    const url = buildAuthorizeUrl({
+      ...base,
+      network: "linkedin",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/linkedin/callback",
+    });
+    expect(url.startsWith("https://www.linkedin.com/oauth/v2/authorization?")).toBe(true);
+    const q = new URL(url).searchParams;
+    expect(q.get("client_id")).toBe("li-id");
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin/callback");
+    expect(q.get("scope")).toBe("openid profile email w_member_social");
+  });
+
   it("Instagram adds pages_read_engagement", () => {
     const url = buildAuthorizeUrl({
       ...base,
@@ -471,6 +484,10 @@ describe("tracked legal + callback docs", () => {
     expect(privacy).toContain("https://api.duskly.site/v1/media/:id/public?exp");
     expect(privacy).toContain("https://api.duskly.site/v1/meta/data-deletion");
     expect(privacy).toContain("https://duskly.site/data-deletion");
+    expect(privacy).toContain("LinkedIn");
+    expect(privacy).toContain("w_member_social");
+    expect(privacy).toContain("w_organization_social");
+    expect(privacy).toContain("https://www.linkedin.com/legal/privacy-policy");
   });
 });
 

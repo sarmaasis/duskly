@@ -419,6 +419,28 @@ describe("caption+image scheduled publish must attach the photo", () => {
     expect(publishUrl.searchParams.get("creation_id")).toBe("container");
   });
 
+  it("Threads permission errors explain tester/app-review setup", async () => {
+    const fetch = spyFetch();
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      text: async () =>
+        JSON.stringify({
+          error: {
+            message:
+              "This action requires the threads_basic permission. You must submit for app review, or your user must be in the list of Threads testers.",
+          },
+        }),
+    });
+    const result = await adapters.threads.publish({
+      ...pending,
+      token: "TH_TOKEN",
+      credentials: { accessToken: "TH_TOKEN", threadsUserId: "99" },
+    });
+    expect(result).toMatchObject({ queued: true });
+    expect(String("reason" in result ? result.reason : "")).toMatch(/Threads Tester/i);
+  });
+
   it("X uploads the image and attaches media_ids on the tweet", async () => {
     const fetch = spyFetch();
     fetch

@@ -116,7 +116,10 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
       response_type: "code",
       client_id: env.LINKEDIN_CLIENT_ID!,
       redirect_uri: redirectUri,
-      scope: network === "linkedin-page" ? "openid profile w_member_social w_organization_social" : "openid profile w_member_social",
+      scope:
+        network === "linkedin-page"
+          ? "openid profile email w_member_social w_organization_social"
+          : "openid profile email w_member_social",
       state,
     });
     return `https://www.linkedin.com/oauth/v2/authorization?${params}`;
@@ -726,10 +729,17 @@ export async function exchangeThreadsUserToken(
       access_token: accessToken,
     })}`,
   );
-  const meJson = (await me.json()) as { id?: string; username?: string };
+  const meJson = (await me.json()) as { id?: string; username?: string; error?: { message?: string } };
+  if (!me.ok || meJson.error || !meJson.id) {
+    const message = meJson.error?.message || "";
+    if (/threads_basic|tester|app review|missing permissions|does not exist/i.test(message)) {
+      throw new Error("threads_basic_required");
+    }
+    throw new Error("threads_profile_failed");
+  }
   return {
     accessToken,
-    userId: String(meJson.id || tok.user_id || ""),
+    userId: String(meJson.id),
     handle: meJson.username ? `@${meJson.username}` : "threads-user",
     expiresIn: tok.expires_in,
   };

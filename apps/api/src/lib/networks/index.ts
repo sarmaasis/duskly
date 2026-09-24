@@ -722,6 +722,12 @@ function instagramPostAccessDenied(detail: string): boolean {
   return /unsupported request\s*-\s*method type:\s*post/i.test(detail);
 }
 
+function threadsPostAccessDenied(detail: string): boolean {
+  return /threads_basic|tester|app review|missing permissions|object with id .*does not exist|does not support this operation/i.test(
+    detail,
+  );
+}
+
 async function instagramGraph(
   host: string,
   version: string,
@@ -970,6 +976,11 @@ async function metaGraphPublish(
     );
     if (!create.ok) {
       const err = await create.text();
+      if (threadsPostAccessDenied(err)) {
+        return missingCreds(
+          "Threads token cannot publish yet — add this Threads account as a Threads Tester and accept the invite, or complete App Review for threads_basic and threads_content_publish. Then reconnect Threads.",
+        );
+      }
       return missingCreds(`Threads create failed (${create.status}): ${err.slice(0, 200)}`);
     }
     const created = (await create.json()) as { id?: string; error?: { message?: string } };

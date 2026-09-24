@@ -363,7 +363,23 @@ async function completeOAuthCallback(
         tok,
       );
     } else if (network === "threads") {
-      const th = await exchangeThreadsUserToken(c.env, code, redirectUri);
+      let th: Awaited<ReturnType<typeof exchangeThreadsUserToken>>;
+      try {
+        th = await exchangeThreadsUserToken(c.env, code, redirectUri);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : "exchange";
+        if (reason === "threads_basic_required") {
+          return fail(
+            oauthFailQs(
+              network,
+              "token_failed",
+              "threads_basic",
+              "Add this account as a Threads Tester and accept the invite, or complete App Review for threads_basic and threads_content_publish. Then reconnect Threads.",
+            ),
+          );
+        }
+        return fail(oauthFailQs(network, "token_failed", reason));
+      }
       accessToken = th.accessToken;
       handle = th.handle;
       credentials = applyTokenResponse(

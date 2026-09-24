@@ -430,6 +430,7 @@ export class AccountsPage implements OnInit {
 
   oauthFailureMessage(oauth: string, network: string | null, reason: string | null, detail: string | null) {
     const instagram = network === "instagram";
+    const threads = network === "threads";
     const facebook = !network || network === "facebook" || network === "instagram";
     if (reason === "not_professional") {
       return "Instagram requires a professional (Business or Creator) account — personal accounts cannot be connected.";
@@ -442,14 +443,19 @@ export class AccountsPage implements OnInit {
         : "OAuth failed — credentials or consent rejected";
     }
     if (reason === "redirect_uri") {
+      if (threads) return "Threads rejected the token exchange — add the Threads callback URL in the Threads API settings.";
       return instagram
         ? "Instagram rejected the token exchange — add the callback under Instagram → API setup with Instagram login → OAuth redirect URIs."
         : "Facebook rejected the token exchange — the redirect URI must match the authorize URL exactly.";
     }
     if (reason === "bad_secret" || reason === "missing_secret") {
+      if (threads) return "Threads rejected the app secret. Check THREADS_APP_ID and THREADS_APP_SECRET on the API.";
       return instagram
         ? "Instagram rejected the app secret. Check INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET on the API."
         : "Facebook rejected the app secret. Check META_APP_ID and META_APP_SECRET on the API.";
+    }
+    if (reason === "threads_basic") {
+      return detail || "Threads requires tester access or App Review approval. Add the account as a Threads Tester, accept the invite, then reconnect Threads.";
     }
     if (reason === "code_used") return "Facebook authorization code was already used. Connect again from Accounts.";
     if (reason === "code_expired" || reason === "bad_code") {
@@ -482,18 +488,21 @@ export class AccountsPage implements OnInit {
     }
     if (reason && /^graph_\d+$/.test(reason)) {
       const code = reason.slice("graph_".length);
-      const label = instagram ? "Instagram" : "Facebook";
+      const label = instagram ? "Instagram" : threads ? "Threads" : "Facebook";
       return detail
         ? `${label} OAuth failed — Graph error ${code}: ${detail}`
         : `${label} OAuth failed — Graph error ${code}.`;
     }
     if (detail) {
-      return instagram ? `Instagram OAuth failed — ${detail}` : `Facebook OAuth failed — ${detail}`;
+      return instagram ? `Instagram OAuth failed — ${detail}` : threads ? `Threads OAuth failed — ${detail}` : `Facebook OAuth failed — ${detail}`;
     }
     if (reason && reason !== "token_failed" && reason !== "exchange" && reason !== "error") {
-      return instagram ? `Instagram OAuth failed — ${reason}.` : `Facebook OAuth failed — ${reason}.`;
+      return instagram ? `Instagram OAuth failed — ${reason}.` : threads ? `Threads OAuth failed — ${reason}.` : `Facebook OAuth failed — ${reason}.`;
     }
     if (oauth === "token_failed" || reason === "token_failed" || reason === "exchange") {
+      if (threads) {
+        return "Threads token exchange failed. Check THREADS_APP_ID / THREADS_APP_SECRET and the Threads OAuth redirect URI.";
+      }
       return instagram
         ? "Instagram token exchange failed. Check INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET and the Instagram Login OAuth redirect URI."
         : "Facebook token exchange failed. Check the Meta app id/secret and Valid OAuth Redirect URI.";
