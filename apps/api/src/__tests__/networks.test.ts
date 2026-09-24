@@ -206,13 +206,15 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(result).toMatchObject({ remoteId: "igmedia" });
     const createUrl = new URL(String(fetch.mock.calls[0][0]));
     expect(`${createUrl.origin}${createUrl.pathname}`).toBe("https://graph.instagram.com/v25.0/1784/media");
-    expect(createUrl.searchParams.get("image_url")).toBe("https://cdn.example/p.jpg");
-    expect(createUrl.searchParams.get("access_token")).toBe("IG_USER_TOKEN");
+    expect(createUrl.search).toBe("");
+    const createBody = new URLSearchParams(String((fetch.mock.calls[0][1] as { body?: string }).body));
+    expect(createBody.get("image_url")).toBe("https://cdn.example/p.jpg");
+    expect(createBody.get("access_token")).toBe("IG_USER_TOKEN");
     const publishUrl = new URL(String(fetch.mock.calls[2][0]));
     expect(`${publishUrl.origin}${publishUrl.pathname}`).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
-    expect(publishUrl.searchParams.get("creation_id")).toBe("container");
-    const createInit = fetch.mock.calls[0][1] as { body?: string };
-    expect(createInit.body).toBeUndefined();
+    expect(publishUrl.search).toBe("");
+    const publishBody = new URLSearchParams(String((fetch.mock.calls[2][1] as { body?: string }).body));
+    expect(publishBody.get("creation_id")).toBe("container");
   });
 
   it("Instagram Login publish failures stay queued (no fake success)", async () => {
@@ -399,11 +401,13 @@ describe("caption+image scheduled publish must attach the photo", () => {
       credentials: { accessToken: "TH_TOKEN", threadsUserId: "99", imageUrl },
     });
     expect(result).toMatchObject({ remoteId: "th1" });
-    const createBody = JSON.parse(String(fetch.mock.calls[0][1].body));
-    expect(createBody.media_type).toBe("IMAGE");
-    expect(createBody.image_url).toBe(imageUrl);
-    expect(createBody.text).toBe("hello");
-    expect(createBody.media_type).not.toBe("TEXT");
+    const createBody = new URLSearchParams(String(fetch.mock.calls[0][1].body));
+    expect(createBody.get("media_type")).toBe("IMAGE");
+    expect(createBody.get("image_url")).toBe(imageUrl);
+    expect(createBody.get("text")).toBe("hello");
+    expect(createBody.get("media_type")).not.toBe("TEXT");
+    const publishBody = new URLSearchParams(String(fetch.mock.calls[1][1].body));
+    expect(publishBody.get("creation_id")).toBe("container");
   });
 
   it("X uploads the image and attaches media_ids on the tweet", async () => {

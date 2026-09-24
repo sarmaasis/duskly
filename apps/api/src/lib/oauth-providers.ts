@@ -487,14 +487,25 @@ export type InstagramLoginProfileResult =
 
 export async function fetchInstagramLoginProfile(accessToken: string): Promise<InstagramLoginProfileResult> {
   if (!accessToken) return { ok: false, reason: "profile" };
-  try {
+  const readProfile = async (fields: string) => {
     const res = await fetch(
       `${INSTAGRAM_GRAPH_BASE}/me?${new URLSearchParams({
-        fields: "user_id,username,name",
+        fields,
         access_token: accessToken,
       })}`,
     );
     const data = parseFacebookTokenPayload(await res.text());
+    return { res, data };
+  };
+  try {
+    let { res, data } = await readProfile("id,user_id,username,name");
+    if (!res.ok || data.error) {
+      const reason = graphOauthReason(data);
+      if (reason === "not_professional") {
+        return { ok: false, reason, detail: graphOauthDetail(data) || undefined };
+      }
+      ({ res, data } = await readProfile("id,username"));
+    }
     if (!res.ok || data.error) {
       const reason = graphOauthReason(data);
       return {
@@ -527,7 +538,7 @@ export async function fetchInstagramLoginUsername(accessToken: string, userId?: 
   try {
     const res = await fetch(
       `${INSTAGRAM_GRAPH_BASE}/${id}?${new URLSearchParams({
-        fields: "username,name",
+        fields: "id,user_id,username,name",
         access_token: accessToken,
       })}`,
     );

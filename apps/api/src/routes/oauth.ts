@@ -346,7 +346,7 @@ async function completeOAuthCallback(
       }
       const profile = await fetchInstagramLoginProfile(longLived.accessToken);
       const profileUserId = profile.ok ? profile.userId : "";
-      const userId = profileUserId || exchanged.userId || "";
+      const userId = exchanged.userId || profileUserId || "";
       if (!userId) {
         return fail(oauthFailQs(network, "error", profile.ok ? "profile" : profile.reason, profile.ok ? undefined : profile.detail));
       }

@@ -1000,16 +1000,17 @@ describe("Instagram Login OAuth callback", () => {
   });
 
   it("connects a professional account without a Facebook Page after long-lived token and /me", async () => {
+    const KV = memoryKv({ [`oauth:${FB_STATE}`]: fbStored("instagram") });
     const fetch = vi.fn(async (url: string, init?: { method?: string; body?: URLSearchParams | string }) => {
       const u = String(url);
       const body = init?.body != null ? String(init.body) : "";
       if (isInstagramCodeExchange(u)) return graphRes(true, { access_token: "ig-short", user_id: "1784" });
       if (isInstagramLongLived(u, body)) return graphRes(true, { access_token: "ig-long", expires_in: 5184000 });
-      if (isInstagramLoginMe(u)) return graphRes(true, { user_id: "1784", username: "dusklycafe" });
+      if (isInstagramLoginMe(u)) return graphRes(true, { id: "app-scoped-id", user_id: "9999", username: "dusklycafe" });
       return graphRes(false, { url: u, body });
     });
     vi.stubGlobal("fetch", fetch);
-    const res = await instagramCallback(instagramLoginEnv({ DB: mockD1() }));
+    const res = await instagramCallback(instagramLoginEnv({ DB: mockD1(), KV }));
     expectAppRedirect(res, "ok");
     const loc = res.headers.get("location") || "";
     expect(loc).toContain("network=instagram");
@@ -1027,6 +1028,8 @@ describe("Instagram Login OAuth callback", () => {
     expect(longUrl.searchParams.get("grant_type")).toBe("ig_exchange_token");
     expect(longUrl.searchParams.get("client_secret")).toBe("ig-app-secret");
     expect(longUrl.searchParams.get("access_token")).toBe("ig-short");
+    expect(await KV.get("meta-user:1784")).toBe("ws1");
+    expect(await KV.get("meta-user:9999")).toBeNull();
     const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
     expect(meCall).toBeTruthy();
     expect(String(meCall![0])).toContain("access_token=ig-long");

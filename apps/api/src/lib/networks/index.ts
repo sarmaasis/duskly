@@ -544,7 +544,6 @@ async function instagramGraph(
   version: string,
   path: string,
   token: string,
-  instagramLogin: boolean,
   method: "GET" | "POST",
   fields: Record<string, string>,
 ): Promise<{ ok: boolean; status: number; data: IgGraphData; detail: string }> {
@@ -553,8 +552,7 @@ async function instagramGraph(
   params.set("access_token", token);
   let url = `${host}/${version}/${path}`;
   let body: string | undefined;
-  if (method === "GET" || instagramLogin) {
-    // Instagram Login /media is a query-string POST. A JSON body is Graph error 100: method type post.
+  if (method === "GET") {
     url = `${url}?${params}`;
   } else {
     headers["content-type"] = "application/x-www-form-urlencoded";
@@ -577,10 +575,9 @@ async function waitInstagramContainer(
   version: string,
   containerId: string,
   token: string,
-  instagramLogin: boolean,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   for (let i = 0; i < 5; i++) {
-    const status = await instagramGraph(host, version, containerId, token, instagramLogin, "GET", {
+    const status = await instagramGraph(host, version, containerId, token, "GET", {
       fields: "status_code",
     });
     const code = status.data.status_code;
@@ -685,12 +682,12 @@ async function metaGraphPublish(
       const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
       const graphVersion = instagramLogin ? "v25.0" : "v21.0";
       const igPost = (path: string, fields: Record<string, string>) =>
-        instagramGraph(graphHost, graphVersion, path, token, instagramLogin, "POST", fields);
+        instagramGraph(graphHost, graphVersion, path, token, "POST", fields);
       const created = await igPost(`${igUserId}/media`, { image_url: imageUrl, caption: input.body });
       if (!created.ok || !created.data.id) {
         return missingCreds(`Instagram media create failed (${created.status}): ${created.detail}`);
       }
-      const ready = await waitInstagramContainer(graphHost, graphVersion, created.data.id, token, instagramLogin);
+      const ready = await waitInstagramContainer(graphHost, graphVersion, created.data.id, token);
       if (!ready.ok) return missingCreds(ready.reason);
       const published = await igPost(`${igUserId}/media_publish`, { creation_id: created.data.id });
       if (!published.ok || !published.data.id) {
@@ -705,14 +702,15 @@ async function metaGraphPublish(
     if (input.imageBytes && !imageUrl) {
       return missingCreds("Threads image posts need a public image URL — queued so the photo is not dropped");
     }
+    const createBody = new URLSearchParams(
+      imageUrl
+        ? { media_type: "IMAGE", image_url: imageUrl, text: input.body, access_token: token }
+        : { media_type: "TEXT", text: input.body, access_token: token },
+    );
     const create = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(
-        imageUrl
-          ? { media_type: "IMAGE", image_url: imageUrl, text: input.body, access_token: token }
-          : { media_type: "TEXT", text: input.body, access_token: token },
-      ),
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: createBody.toString(),
     });
     if (!create.ok) {
       const err = await create.text();
@@ -721,8 +719,8 @@ async function metaGraphPublish(
     const created = (await create.json()) as { id?: string };
     const pub = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads_publish`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ creation_id: created.id, access_token: token }),
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ creation_id: created.id || "", access_token: token }).toString(),
     });
     if (!pub.ok) {
       const err = await pub.text();
