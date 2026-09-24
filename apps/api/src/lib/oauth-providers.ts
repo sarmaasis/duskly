@@ -166,6 +166,18 @@ export function safeOauthReason(raw: string | undefined | null, max = 80): strin
   return s.replace(/[^\w .:,()\-/]/g, "").slice(0, max).trim();
 }
 
+/** Graph error_message for the accounts banner. Never include tokens, auth codes, or secrets. */
+export function safeOauthDetail(raw: string | undefined | null, max = 160): string {
+  let s = (raw || "").replace(/\+/g, " ").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  s = s.replace(/EAA[A-Za-z0-9]{8,}/g, "");
+  s = s.replace(/access_token[=:][^\s&]+/gi, "");
+  s = s.replace(/client_secret[=:][^\s&]+/gi, "");
+  s = s.replace(/\bcode=[A-Za-z0-9_-]{8,}/gi, "");
+  if (/EAA[A-Za-z0-9]{8,}|client_secret|app_secret|code_verifier|bearer\s+[a-z0-9]/i.test(s)) return "";
+  return s.replace(/[^\w .:,()\-/'#]/g, "").slice(0, max).trim();
+}
+
 export function classifyGraphOauthMessage(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("redirect_uri")) return "redirect_uri";
@@ -178,22 +190,30 @@ export function classifyGraphOauthMessage(message: string): string {
   return "";
 }
 
-export function graphOauthReason(tok: Record<string, unknown>): string {
+function graphErrorFields(tok: Record<string, unknown>): { message: string; code: string } {
   const err = tok.error;
-  const message =
-    typeof err === "string"
-      ? err
-      : err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string"
-        ? (err as { message: string }).message
-        : "";
-  const code =
-    err && typeof err === "object" && (err as { code?: unknown }).code != null
-      ? String((err as { code: unknown }).code)
-      : "";
+  const fromObj =
+    err && typeof err === "object"
+      ? {
+          message: typeof (err as { message?: unknown }).message === "string" ? (err as { message: string }).message : "",
+          code: (err as { code?: unknown }).code != null ? String((err as { code: unknown }).code) : "",
+        }
+      : { message: typeof err === "string" ? err : "", code: "" };
+  const topMessage = typeof tok.error_message === "string" ? tok.error_message : "";
+  const topCode = tok.error_code != null ? String(tok.error_code) : "";
+  return { message: fromObj.message || topMessage, code: fromObj.code || topCode };
+}
+
+export function graphOauthReason(tok: Record<string, unknown>): string {
+  const { message, code } = graphErrorFields(tok);
   return classifyGraphOauthMessage(message) || (code ? `graph_${code}` : "") || safeOauthReason(message) || "token_failed";
 }
 
-/** Facebook token endpoint is JSON; older Graph replies were form-encoded. */
+export function graphOauthDetail(tok: Record<string, unknown>): string {
+  return safeOauthDetail(graphErrorFields(tok).message);
+}
+
+/** Facebook token endpoint is JSON; older Graph replies were form-encoded (including errors). */
 export function parseFacebookTokenPayload(text: string): Record<string, unknown> {
   const raw = (text || "").trim();
   if (!raw) return {};
@@ -205,27 +225,77 @@ export function parseFacebookTokenPayload(text: string): Record<string, unknown>
   }
   const params = new URLSearchParams(raw.includes("=") ? raw : "");
   const access = params.get("access_token");
-  if (!access) return {};
-  const expires = params.get("expires_in") || params.get("expires");
-  return {
-    access_token: access,
-    token_type: params.get("token_type") || "bearer",
-    ...(expires ? { expires_in: Number(expires) } : {}),
-  };
+  if (access) {
+    const expires = params.get("expires_in") || params.get("expires");
+    return {
+      access_token: access,
+      token_type: params.get("token_type") || "bearer",
+      ...(expires ? { expires_in: Number(expires) } : {}),
+    };
+  }
+  const err = params.get("error") || params.get("error_reason");
+  const errMsg = params.get("error_message") || params.get("error_description");
+  const errCode = params.get("error_code");
+  if (err || errMsg) {
+    return {
+      error: {
+        message: errMsg || err || "",
+        type: err || "OAuthException",
+        ...(errCode ? { code: Number(errCode) || errCode } : {}),
+      },
+    };
+  }
+  return {};
+}
+
+export type FacebookTokenResult =
+  | { ok: true; accessToken: string }
+  | { ok: false; reason: string; detail?: string };
+
+/** Graph v21 accepts POST application/x-www-form-urlencoded (GET also works; POST keeps the secret out of the URL). */
+export async function exchangeFacebookUserToken(
+  env: Env,
+  code: string,
+  redirectUri: string,
+): Promise<FacebookTokenResult> {
+  const { appId, appSecret } = metaAppCreds(env);
+  if (!appId || !appSecret) return { ok: false, reason: "missing_secret" };
+  try {
+    const tokenRes = await fetch("https://graph.facebook.com/v21.0/oauth/access_token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        redirect_uri: redirectUri,
+        code,
+      }),
+    });
+    const tok = parseFacebookTokenPayload(await tokenRes.text());
+    const access = typeof tok.access_token === "string" ? tok.access_token : "";
+    if (!tokenRes.ok || !access || tok.error) {
+      return { ok: false, reason: graphOauthReason(tok), detail: graphOauthDetail(tok) || undefined };
+    }
+    return { ok: true, accessToken: access };
+  } catch {
+    return { ok: false, reason: "exchange" };
+  }
 }
 
 export async function exchangeLongLivedFacebookToken(env: Env, shortLived: string): Promise<string> {
   if (!shortLived) return shortLived;
   const { appId, appSecret } = metaAppCreds(env);
   try {
-    const res = await fetch(
-      `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
+    const res = await fetch("https://graph.facebook.com/v21.0/oauth/access_token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
         grant_type: "fb_exchange_token",
         client_id: appId,
         client_secret: appSecret,
         fb_exchange_token: shortLived,
-      })}`,
-    );
+      }),
+    });
     const tok = parseFacebookTokenPayload(await res.text());
     const next = typeof tok.access_token === "string" ? tok.access_token : "";
     return next || shortLived;
@@ -234,8 +304,13 @@ export async function exchangeLongLivedFacebookToken(env: Env, shortLived: strin
   }
 }
 
-export async function listFacebookPages(userToken: string, requireIg: boolean): Promise<FacebookPage[]> {
-  if (!userToken) return [];
+export type FacebookPagesResult = {
+  pages: FacebookPage[];
+  error?: { code?: string; message?: string };
+};
+
+export async function listFacebookPages(userToken: string, requireIg: boolean): Promise<FacebookPagesResult> {
+  if (!userToken) return { pages: [] };
   try {
     const res = await fetch(
       `https://graph.facebook.com/v21.0/me/accounts?${new URLSearchParams({
@@ -252,7 +327,16 @@ export async function listFacebookPages(userToken: string, requireIg: boolean): 
         instagram_business_account?: { id?: string };
       }>;
     };
-    if (!res.ok || data.error) return [];
+    if (!res.ok || data.error) {
+      const { message, code } = graphErrorFields(data);
+      return {
+        pages: [],
+        error: {
+          ...(code ? { code } : {}),
+          ...(safeOauthDetail(message) ? { message: safeOauthDetail(message) } : {}),
+        },
+      };
+    }
     const pages: FacebookPage[] = [];
     for (const p of data.data || []) {
       if (!p.id || !p.access_token) continue;
@@ -260,9 +344,9 @@ export async function listFacebookPages(userToken: string, requireIg: boolean): 
       if (requireIg && !igUserId) continue;
       pages.push({ id: p.id, name: p.name || p.id, accessToken: p.access_token, igUserId });
     }
-    return pages;
+    return { pages };
   } catch {
-    return [];
+    return { pages: [], error: { message: "pages" } };
   }
 }
 

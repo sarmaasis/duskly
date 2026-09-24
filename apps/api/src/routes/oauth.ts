@@ -9,17 +9,16 @@ import { encryptCredentials, encryptSecret } from "../lib/secrets";
 import {
   buildAuthorizeUrl,
   credsFromTokenJson,
+  exchangeFacebookUserToken,
   exchangeLongLivedFacebookToken,
   exchangeThreadsUserToken,
-  graphOauthReason,
   listFacebookPages,
-  metaAppCreds,
   oauthConfigured,
   facebookUserId,
   normalizeSubreddit,
-  parseFacebookTokenPayload,
   registerMastodonApp,
   REDDIT_UA,
+  safeOauthDetail,
   safeOauthReason,
 } from "../lib/oauth-providers";
 import { applyTokenResponse } from "../lib/oauth-tokens";
@@ -59,17 +58,21 @@ async function pkcePair() {
 
 function webRedirect(env: Env, qs: string) {
   const origin = (env.WEB_ORIGIN || "https://duskly.site").replace(/\/$/, "");
-  return `${origin}/app/accounts?${qs}`;
+  // Trailing empty hash replaces Facebook's preserved `#_=_` so Angular does not
+  // treat the fragment as a route and drop the accounts query string.
+  return `${origin}/app/accounts?${qs}#`;
 }
 
 function oauthCallbackUri(env: Env, network: string) {
   return `${apiPublicOrigin(env)}/v1/accounts/oauth/${network}/callback`;
 }
 
-function oauthFailQs(network: string, oauth: string, reason?: string) {
+function oauthFailQs(network: string, oauth: string, reason?: string, detail?: string) {
   const q = new URLSearchParams({ oauth, network });
   const safe = safeOauthReason(reason);
   if (safe) q.set("reason", safe);
+  const safeDetail = safeOauthDetail(detail);
+  if (safeDetail) q.set("detail", safeDetail);
   return q.toString();
 }
 
@@ -165,7 +168,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
   try {
     return await completeOAuthCallback(c, network, fail);
   } catch {
-    return fail("oauth=error");
+    return fail(oauthFailQs(network, "error", "callback"));
   }
 });
 
@@ -185,11 +188,11 @@ async function completeOAuthCallback(
   let raw: string | null = null;
   try {
     raw = await c.env.KV.get(`oauth:${state}`);
-    await c.env.KV.delete(`oauth:${state}`);
+    if (raw) await c.env.KV.delete(`oauth:${state}`);
   } catch {
-    return fail("oauth=error");
+    return fail(oauthFailQs(network, "error", "kv"));
   }
-  if (!raw) return fail("oauth=expired");
+  if (!raw) return fail(oauthFailQs(network, "expired"));
 
   let stored: {
     workspaceId: string;
@@ -206,15 +209,15 @@ async function completeOAuthCallback(
   try {
     stored = JSON.parse(raw) as typeof stored;
   } catch {
-    return fail("oauth=error");
+    return fail(oauthFailQs(network, "error", "bad_state"));
   }
-  if (stored.network !== network) return fail("oauth=mismatch");
+  if (stored.network !== network) return fail(oauthFailQs(network, "error", "mismatch"));
 
   try {
     await assertChannelLimit(c.env, stored.workspaceId, 1);
   } catch (e) {
     if (planErrorResponse(e)) return fail(oauthFailQs(network, "limit", "channel_limit"));
-    return fail(oauthFailQs(network, "error"));
+    return fail(oauthFailQs(network, "error", "limit"));
   }
 
   const redirectUri = stored.redirectUri || oauthCallbackUri(c.env, network);
@@ -241,7 +244,7 @@ async function completeOAuthCallback(
         },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
       const tok = (await tokenRes.json()) as {
         access_token: string;
         refresh_token?: string;
@@ -267,7 +270,7 @@ async function completeOAuthCallback(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
       const tok = (await tokenRes.json()) as {
         access_token: string;
         refresh_token?: string;
@@ -297,7 +300,7 @@ async function completeOAuthCallback(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
       const tok = (await tokenRes.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
       accessToken = tok.access_token;
       const me = await fetch(`${instance}/api/v1/accounts/verify_credentials`, {
@@ -319,35 +322,26 @@ async function completeOAuthCallback(
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
     } else if (network === "instagram" || network === "facebook") {
-      const { appId, appSecret } = metaAppCreds(c.env);
-      if (!appId || !appSecret) {
-        return fail(oauthFailQs(network, "token_failed", "missing_secret"));
+      const exchanged = await exchangeFacebookUserToken(c.env, code, redirectUri);
+      if (!exchanged.ok) {
+        return fail(oauthFailQs(network, "token_failed", exchanged.reason, exchanged.detail));
       }
-      let tok: Record<string, unknown> = {};
-      let tokenResOk = false;
-      try {
-        const tokenRes = await fetch(
-          `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
-            client_id: appId,
-            client_secret: appSecret,
-            redirect_uri: redirectUri,
-            code,
-          })}`,
-        );
-        tokenResOk = tokenRes.ok;
-        tok = parseFacebookTokenPayload(await tokenRes.text());
-      } catch {
-        return fail(oauthFailQs(network, "token_failed", "exchange"));
-      }
-      const access = typeof tok.access_token === "string" ? tok.access_token : "";
-      if (!tokenResOk || !access || tok.error) {
-        return fail(oauthFailQs(network, "token_failed", graphOauthReason(tok)));
-      }
-      const longLived = await exchangeLongLivedFacebookToken(c.env, access);
+      const longLived = await exchangeLongLivedFacebookToken(c.env, exchanged.accessToken);
       const metaUserId = await facebookUserId(longLived);
-      const pages = await listFacebookPages(longLived, network === "instagram");
+      const listed = await listFacebookPages(longLived, network === "instagram");
+      if (listed.error) {
+        return fail(
+          oauthFailQs(
+            network,
+            "error",
+            listed.error.code ? `graph_${listed.error.code}` : "pages",
+            listed.error.message,
+          ),
+        );
+      }
+      const pages = listed.pages;
       if (!pages.length) {
-        return fail(`oauth=no_page&network=${network}`);
+        return fail(oauthFailQs(network, "no_page", "no_page"));
       }
       if (pages.length === 1) {
         const page = pages[0];
@@ -391,7 +385,7 @@ async function completeOAuthCallback(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
       const tok = (await tokenRes.json()) as {
         access_token: string;
         refresh_token?: string;
@@ -416,7 +410,7 @@ async function completeOAuthCallback(
         },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
       const tok = (await tokenRes.json()) as {
         access_token: string;
         refresh_token?: string;
@@ -441,7 +435,7 @@ async function completeOAuthCallback(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
       const tok = (await tokenRes.json()) as {
         ok?: boolean;
         error?: string;
@@ -450,7 +444,7 @@ async function completeOAuthCallback(
         bot_user_id?: string;
       };
       if (!tok.ok || !tok.access_token) {
-        return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+        return fail(oauthFailQs(network, "token_failed", tok.error || "exchange"));
       }
       accessToken = tok.access_token;
       handle = tok.team?.name ? `slack · ${tok.team.name}` : "slack-workspace";
@@ -461,10 +455,10 @@ async function completeOAuthCallback(
         botUserId: tok.bot_user_id || "",
       };
     } else {
-      return c.redirect(webRedirect(c.env, "oauth=unsupported"));
+      return fail(oauthFailQs(network, "error", "unsupported"));
     }
   } catch {
-    return fail("oauth=token_failed");
+    return fail(oauthFailQs(network, "token_failed", "exchange"));
   }
 
   const id = crypto.randomUUID();
@@ -482,8 +476,10 @@ async function completeOAuthCallback(
       status,
       createdAt: new Date(),
     });
-  } catch {
-    return fail("oauth=error");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    const reason = /TOKEN_ENCRYPTION_KEY/i.test(msg) ? "encrypt" : "persist";
+    return fail(oauthFailQs(network, "error", reason));
   }
 
   const extra =

@@ -371,7 +371,30 @@ export class AccountsPage implements OnInit {
     });
   });
 
-  constructor(private route: ActivatedRoute) {}
+  constructor(private route: ActivatedRoute) {
+    if (typeof window !== "undefined") {
+      this.capturedOauthQuery = new URLSearchParams(window.location.search);
+      if (window.location.hash === "#_=_") {
+        window.history.replaceState(
+          window.history.state,
+          document.title,
+          `${window.location.pathname}${window.location.search}`,
+        );
+      }
+    }
+  }
+
+  private capturedOauthQuery: URLSearchParams | null = null;
+
+  oauthQuery(name: string): string | null {
+    const fromWindow = this.capturedOauthQuery?.get(name) || null;
+    if (fromWindow) return fromWindow;
+    if (typeof window !== "undefined") {
+      const live = new URLSearchParams(window.location.search).get(name);
+      if (live) return live;
+    }
+    return this.route.snapshot.queryParamMap.get(name);
+  }
 
   logoSrc(n: string) {
     return `/assets/logos/${n}.svg`;
@@ -396,14 +419,13 @@ export class AccountsPage implements OnInit {
     return "Handle / display name";
   }
 
-  oauthFailureMessage(oauth: string, network: string | null, reason: string | null) {
-    const meta = network === "facebook" || network === "instagram";
+  oauthFailureMessage(oauth: string, network: string | null, reason: string | null, detail: string | null) {
+    const facebook = !network || network === "facebook" || network === "instagram";
     if (reason === "access_denied" || reason === "user_denied") {
-      return meta
+      return facebook
         ? "Facebook login was cancelled or permissions were denied."
         : "OAuth failed — credentials or consent rejected";
     }
-    if (!meta) return "OAuth failed — credentials or consent rejected";
     if (reason === "redirect_uri") {
       return "Facebook rejected the token exchange — the redirect URI must match the authorize URL exactly.";
     }
@@ -414,17 +436,38 @@ export class AccountsPage implements OnInit {
     if (reason === "code_expired" || reason === "bad_code") {
       return "Facebook authorization code was invalid or expired. Connect again from Accounts.";
     }
-    if (reason === "pages") return "Facebook login succeeded but Pages could not be loaded.";
-    if (reason === "channel_limit") return "OAuth failed — this plan has no free channel slots.";
-    if (reason && /^graph_\d+$/.test(reason)) {
-      return `Facebook OAuth failed — Graph error ${reason.slice("graph_".length)}.`;
+    if (reason === "no_page") {
+      return network === "instagram"
+        ? "No Facebook Page with a linked Instagram professional account was found."
+        : "No Facebook Pages were found on that account.";
     }
+    if (reason === "pages") {
+      return detail
+        ? `Facebook login succeeded but Pages could not be loaded. ${detail}`
+        : "Facebook login succeeded but Pages could not be loaded.";
+    }
+    if (reason === "channel_limit") return "OAuth failed — this plan has no free channel slots.";
+    if (reason === "encrypt") {
+      return "Facebook connected, but Duskly could not encrypt the token. Set TOKEN_ENCRYPTION_KEY on the API.";
+    }
+    if (reason === "persist") return "Facebook connected, but Duskly could not save the Page. Try again.";
+    if (reason === "kv" || reason === "bad_state" || reason === "callback") {
+      return "OAuth state is invalid — try Facebook connect again.";
+    }
+    if (reason && /^graph_\d+$/.test(reason)) {
+      const code = reason.slice("graph_".length);
+      return detail
+        ? `Facebook OAuth failed — Graph error ${code}: ${detail}`
+        : `Facebook OAuth failed — Graph error ${code}.`;
+    }
+    if (detail) return `Facebook OAuth failed — ${detail}`;
     if (reason && reason !== "token_failed" && reason !== "exchange" && reason !== "error") {
       return `Facebook OAuth failed — ${reason}.`;
     }
-    return oauth === "token_failed"
-      ? "Facebook token exchange failed. Check the Meta app id/secret and Valid OAuth Redirect URI."
-      : "OAuth failed — credentials or consent rejected";
+    if (oauth === "token_failed" || reason === "token_failed" || reason === "exchange") {
+      return "Facebook token exchange failed. Check the Meta app id/secret and Valid OAuth Redirect URI.";
+    }
+    return "OAuth failed — credentials or consent rejected";
   }
 
   pickNetwork(n: string) {
@@ -436,8 +479,10 @@ export class AccountsPage implements OnInit {
       const me = await api<{ workspace: { id: string }; usage: PlanSnapshot }>("/v1/workspaces/me");
       this.workspaceId = me.workspace.id;
       this.usage.set(me.usage);
-      const oauth = this.route.snapshot.queryParamMap.get("oauth");
-      const oauthNetwork = this.route.snapshot.queryParamMap.get("network");
+      const oauth = this.oauthQuery("oauth");
+      const oauthNetwork = this.oauthQuery("network");
+      const reason = this.oauthQuery("reason");
+      const detail = this.oauthQuery("detail");
       if (oauth === "ok") {
         this.msg.set(
           oauthNetwork === "slack"
@@ -446,7 +491,7 @@ export class AccountsPage implements OnInit {
               ? `${oauthNetwork === "instagram" ? "Instagram" : "Facebook"} connected — pick a Page if you have more than one.`
               : "OAuth connected",
         );
-      } else if (oauth === "no_page") {
+      } else if (oauth === "no_page" || reason === "no_page") {
         this.msg.set(
           oauthNetwork === "instagram"
             ? "No Facebook Page with a linked Instagram professional account was found."
@@ -454,7 +499,7 @@ export class AccountsPage implements OnInit {
         );
       } else if (oauth === "limit") this.msg.set("OAuth failed — this plan has no free channel slots.");
       else if (oauth === "error" || oauth === "token_failed") {
-        this.msg.set(this.oauthFailureMessage(oauth, oauthNetwork, this.route.snapshot.queryParamMap.get("reason")));
+        this.msg.set(this.oauthFailureMessage(oauth, oauthNetwork, reason, detail));
       } else if (oauth === "expired") this.msg.set("OAuth state expired — try again");
       await this.reload();
       try {
@@ -463,7 +508,7 @@ export class AccountsPage implements OnInit {
       } catch {
         /* ignore */
       }
-      const accountId = this.route.snapshot.queryParamMap.get("accountId");
+      const accountId = this.oauthQuery("accountId");
       if (oauth === "ok" && oauthNetwork === "slack" && accountId) {
         await this.loadSlackChannels(accountId);
       }

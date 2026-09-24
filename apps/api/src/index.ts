@@ -70,7 +70,7 @@ app.use("/v1/*", async (c, next) => {
     return;
   }
   // Meta signed data-deletion callback is public (reviewers and Facebook hit it unauthenticated).
-  if (c.req.path === "/v1/meta/data-deletion") {
+  if (c.req.path === "/v1/meta/data-deletion" || c.req.path === "/v1/meta-deletion") {
     await next();
     return;
   }
@@ -115,6 +115,7 @@ app.route("/v1/ai", aiRoutes);
 app.route("/v1/workspaces", workspaceRoutes);
 app.route("/v1/accounts/oauth", oauthRoutes);
 app.route("/v1/meta/data-deletion", metaDeletionRoutes);
+app.route("/v1/meta-deletion", metaDeletionRoutes);
 app.route("/v1/accounts", accountRoutes);
 app.route("/v1/team", teamRoutes);
 app.route("/v1/org", orgRoutes);
