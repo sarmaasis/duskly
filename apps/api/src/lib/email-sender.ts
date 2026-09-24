@@ -1,6 +1,27 @@
 /** Cloudflare Email Sending `from` / `to` address object (Workers binding). */
 export type EmailAddress = { email: string; name?: string };
 
+export type EmailSendPayload = {
+  to: string | EmailAddress;
+  from: string | EmailAddress;
+  subject: string;
+  html?: string;
+  text?: string;
+};
+
+/** Workers `EMAIL` binding — pass the object, never a detached `send`. */
+export type EmailBinding = {
+  send(msg: EmailSendPayload): Promise<{ messageId: string }>;
+};
+
+/**
+ * Call `email.send` with the binding as `this`.
+ * Extracting `const { send } = email` causes TypeError: Illegal invocation on Workers.
+ */
+export function sendViaEmailBinding(email: EmailBinding, payload: EmailSendPayload) {
+  return email.send(payload);
+}
+
 const BARE_EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
 /**

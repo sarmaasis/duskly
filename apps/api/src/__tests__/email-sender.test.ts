@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { emailSendErrorFields, parseEmailSender } from "../lib/email-sender";
+import { emailSendErrorFields, parseEmailSender, sendViaEmailBinding } from "../lib/email-sender";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -42,10 +42,34 @@ describe("emailSendErrorFields", () => {
   });
 });
 
+describe("sendViaEmailBinding", () => {
+  it("calls send on the binding so this stays the EMAIL object", async () => {
+    const payload = {
+      to: "user@example.com",
+      from: { email: "noreply@duskly.site", name: "Duskly" },
+      subject: "code",
+      text: "123456",
+    };
+    let thisArg: unknown;
+    const binding = {
+      send(this: unknown, msg: typeof payload) {
+        thisArg = this;
+        expect(msg).toEqual(payload);
+        return Promise.resolve({ messageId: "mid-1" });
+      },
+    };
+    await expect(sendViaEmailBinding(binding, payload)).resolves.toEqual({ messageId: "mid-1" });
+    expect(thisArg).toBe(binding);
+  });
+});
+
 describe("auth EMAIL.send payload", () => {
   it("uses parsed { email, name } from and logs error name/message, not the Error object", () => {
     const src = readFileSync(join(here, "../auth.ts"), "utf8");
     expect(src).toContain("from: parseEmailSender(env.EMAIL_FROM)");
+    expect(src).toContain("sendViaEmailBinding(mailer,");
+    expect(src).not.toMatch(/const send = env\.EMAIL\?\.send/);
+    expect(src).not.toMatch(/await send\(/);
     expect(src).toContain('console.error("[auth] EMAIL.send failed", name, message, code)');
     expect(src).not.toMatch(/console\.error\("\[auth\] EMAIL\.send failed", err\)/);
     expect(src).toContain("if (!localAuth) throw err");

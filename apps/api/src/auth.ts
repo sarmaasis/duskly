@@ -3,7 +3,7 @@ import { emailOTP } from "better-auth/plugins";
 import { withCloudflare } from "better-auth-cloudflare";
 import { drizzle } from "drizzle-orm/d1";
 import { schema } from "./db/schema";
-import { emailSendErrorFields, parseEmailSender } from "./lib/email-sender";
+import { emailSendErrorFields, parseEmailSender, sendViaEmailBinding } from "./lib/email-sender";
 import type { Env } from "./env";
 
 type SecondaryStorage = {
@@ -19,11 +19,11 @@ function isLocalAuthHost(env: Env) {
 }
 
 async function deliverOtp(env: Env, email: string, otp: string, type: string) {
-  const send = env.EMAIL?.send;
+  const mailer = env.EMAIL;
   const localAuth = isLocalAuthHost(env);
-  if (typeof send === "function") {
+  if (mailer && typeof mailer.send === "function") {
     try {
-      await send({
+      await sendViaEmailBinding(mailer, {
         to: email,
         from: parseEmailSender(env.EMAIL_FROM),
         subject: `Your Duskly code: ${otp}`,

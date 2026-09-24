@@ -19,7 +19,7 @@ import {
   user,
 } from "../db/schema";
 import type { Env } from "../env";
-import { parseEmailSender } from "../lib/email-sender";
+import { parseEmailSender, sendViaEmailBinding } from "../lib/email-sender";
 import { assertWorkspaceAccess, ensureDefaultWorkspace, sha256Hex } from "../lib/workspace";
 import {
   assertChannelLimit,
@@ -441,7 +441,7 @@ teamRoutes.post("/invite", async (c) => {
       createdAt: new Date(),
     });
     const acceptUrl = `${c.env.WEB_ORIGIN}/invite/${id}`;
-    await c.env.EMAIL.send({
+    await sendViaEmailBinding(c.env.EMAIL, {
       to: body.email.toLowerCase(),
       from: parseEmailSender(c.env.EMAIL_FROM),
       subject: `Join ${ws.name} on Duskly`,
