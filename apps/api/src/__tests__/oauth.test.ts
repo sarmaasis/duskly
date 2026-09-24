@@ -1069,8 +1069,8 @@ describe("Instagram Login OAuth callback", () => {
     expect(longUrl.searchParams.get("client_id")).toBe("ig-app-id");
     expect(longUrl.searchParams.get("client_secret")).toBe("ig-app-secret");
     expect(longUrl.searchParams.get("access_token")).toBe("ig-short");
-    expect(await KV.get("meta-user:1784")).toBe("ws1");
-    expect(await KV.get("meta-user:9999")).toBeNull();
+    expect(await KV.get("meta-user:9999")).toBe("ws1");
+    expect(await KV.get("meta-user:1784")).toBeNull();
     const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
     expect(meCall).toBeTruthy();
     expect(new URL(String(meCall![0])).searchParams.get("access_token")).toBe("ig-long");
