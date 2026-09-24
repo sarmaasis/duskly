@@ -247,6 +247,14 @@ export const workspaceInvite = sqliteTable(
   (t) => [index("workspace_invite_email").on(t.email, t.status)],
 );
 
+export const shortLink = sqliteTable("short_link", {
+  code: text("code").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  url: text("url").notNull(),
+  postId: text("post_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const schema = {
   user,
   session,
@@ -268,4 +276,5 @@ export const schema = {
   rssFeed,
   agentRun,
   workspaceInvite,
+  shortLink,
 };

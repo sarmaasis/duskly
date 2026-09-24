@@ -1,0 +1,22 @@
+{
+  "name": "Duskly schedule a post",
+  "flow": [
+    {
+      "id": 1,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": {},
+      "mapper": {
+        "url": "https://api.duskly.site/v1/posts",
+        "method": "post",
+        "headers": [
+          { "name": "Authorization", "value": "Bearer dk_YOUR_TOKEN" },
+          { "name": "Content-Type", "value": "application/json" }
+        ],
+        "bodyType": "raw",
+        "body": "{\n  \"workspaceId\": \"YOUR_WORKSPACE_ID\",\n  \"body\": \"Hello from Make\",\n  \"status\": \"scheduled\",\n  \"scheduledAt\": 1735689600000,\n  \"destinations\": [\"ACCT_ID\"]\n}"
+      },
+      "metadata": { "designer": { "x": 0, "y": 0 } }
+    }
+  ]
+}

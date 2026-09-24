@@ -21,7 +21,7 @@ import { SchedulerLock } from "./do/scheduler-lock";
 import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
 import { and, eq, inArray, lte } from "drizzle-orm";
-import { posts, postDestination, socialAccount, rssFeed, workspace, media, apiToken } from "./db/schema";
+import { posts, postDestination, socialAccount, rssFeed, workspace, media, apiToken, shortLink } from "./db/schema";
 import { adapters, firstPublishMedia, isImageMedia, isVideoMedia, type Network } from "./lib/networks";
 import { signPublicMediaUrl } from "./lib/media-signed-url";
 import { dispatchWebhooks } from "./lib/webhooks-out";
@@ -93,6 +93,10 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
+  if (c.req.method === "GET" && c.req.path.match(/^\/v1\/go\/[^/]+$/)) {
+    await next();
+    return;
+  }
   if (c.req.method === "GET" && c.req.path.match(/^\/v1\/team\/invite\/[^/]+$/)) {
     await next();
     return;
@@ -137,6 +141,12 @@ app.use("/v1/*", async (c, next) => {
 });
 
 app.route("/v1/posts", postRoutes);
+app.get("/v1/go/:code", async (c) => {
+  const db = drizzle(c.env.DB);
+  const [row] = await db.select().from(shortLink).where(eq(shortLink.code, c.req.param("code"))).limit(1);
+  if (!row) return c.json({ error: "not_found" }, 404);
+  return c.redirect(row.url, 302);
+});
 app.route("/v1/inbox", inboxRoutes);
 app.route("/v1/billing", billingRoutes);
 app.route("/v1/media", mediaRoutes);
@@ -260,6 +270,7 @@ async function publishPost(env: Env, postId: string) {
   let firstImageId = "";
   let videoUrl = "";
   let coverUrl = "";
+  let imageUrls: string[] = [];
   let mediaIds: string[] = [];
   try {
     mediaIds = post.mediaIds ? (JSON.parse(post.mediaIds) as string[]) : [];
@@ -283,6 +294,8 @@ async function publishPost(env: Env, postId: string) {
           imageBytes = await obj.arrayBuffer();
           imageContentType = firstImage.contentType;
         }
+        const images = mediaIds.map((id) => mediaRows.find((row) => row.id === id)).filter((row): row is NonNullable<typeof row> => !!row && isImageMedia(row));
+        imageUrls = await Promise.all(images.map((row) => signPublicMediaUrl(env, row.id)));
       }
     }
   } catch {
@@ -295,7 +308,15 @@ async function publishPost(env: Env, postId: string) {
     thread?: string[];
     postType?: string;
     coverId?: string;
+    tags?: string[];
     alts?: Record<string, string>;
+    collaborators?: string[];
+    trialReel?: boolean;
+    reelAudio?: string;
+    replySettings?: string;
+    communityId?: string;
+    linkedinCarousel?: boolean;
+    madeForKids?: boolean;
   } = {};
   try {
     extras = post.extrasJson ? JSON.parse(post.extrasJson) : {};
@@ -350,6 +371,14 @@ async function publishPost(env: Env, postId: string) {
     if (extras.poll) creds = { ...creds, pollJson: JSON.stringify(extras.poll) };
     if (extras.thread?.length) creds = { ...creds, threadJson: JSON.stringify(extras.thread) };
     if (extras.postType) creds = { ...creds, postType: extras.postType };
+    if (extras.collaborators?.length) creds = { ...creds, collaborators: extras.collaborators.join(",") };
+    if (extras.trialReel) creds = { ...creds, trialReel: "1" };
+    if (extras.reelAudio) creds = { ...creds, reelAudio: extras.reelAudio };
+    if (extras.replySettings && extras.replySettings !== "everyone") creds = { ...creds, replySettings: extras.replySettings };
+    if (extras.communityId) creds = { ...creds, communityId: extras.communityId };
+    if (extras.linkedinCarousel && imageUrls.length > 1) creds = { ...creds, imageUrls: JSON.stringify(imageUrls) };
+    if (extras.madeForKids) creds = { ...creds, madeForKids: "1" };
+    if (extras.tags?.length) creds = { ...creds, tags: extras.tags.join(",") };
     const alt = extras.alts?.[firstImageId];
     if (alt) creds = { ...creds, altText: alt };
     if (coverUrl) creds = { ...creds, coverUrl };

@@ -44,6 +44,18 @@ import { RouterLink } from "@angular/router";
             <p class="font-mono text-[12px] font-semibold text-[#09090b]">list_posts</p>
             <p class="mt-1">List recent posts (optional limit, default 20, max 50).</p>
           </li>
+          <li>
+            <p class="font-mono text-[12px] font-semibold text-[#09090b]">channel_rules</p>
+            <p class="mt-1">Posting rules for Instagram, Facebook Stories, X, LinkedIn, YouTube, repeat series, and short links.</p>
+          </li>
+          <li>
+            <p class="font-mono text-[12px] font-semibold text-[#09090b]">generate_image</p>
+            <p class="mt-1">Make a picture from a prompt and save it in the media library. Arg: prompt.</p>
+          </li>
+          <li>
+            <p class="font-mono text-[12px] font-semibold text-[#09090b]">generate_video</p>
+            <p class="mt-1">Make a short clip from a prompt and save it in the media library. Args: prompt, optional durationSec (6 or 8).</p>
+          </li>
         </ul>
 
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">Cursor config</h2>

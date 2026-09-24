@@ -69,7 +69,7 @@ export function instagramAppCreds(env: Env): { appId: string; appSecret: string 
 
 export function oauthConfigured(env: Env, network: Network): boolean {
   if (network === "x") return !!(env.X_CLIENT_ID && env.X_CLIENT_SECRET);
-  if (network === "linkedin") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
+  if (network === "linkedin" || network === "linkedin-page") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
   if (network === "mastodon") return true;
   if (network === "instagram") {
     return instagramLoginConfigured(env) || facebookLoginConfigured(env);
@@ -97,12 +97,12 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     });
     return `https://x.com/i/oauth2/authorize?${params}`;
   }
-  if (network === "linkedin") {
+  if (network === "linkedin" || network === "linkedin-page") {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: env.LINKEDIN_CLIENT_ID!,
       redirect_uri: redirectUri,
-      scope: "openid profile w_member_social",
+      scope: network === "linkedin-page" ? "openid profile w_member_social w_organization_social" : "openid profile w_member_social",
       state,
     });
     return `https://www.linkedin.com/oauth/v2/authorization?${params}`;

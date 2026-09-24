@@ -163,12 +163,12 @@ export class DkSeg {
   standalone: true,
   providers: [{ provide: NG_VALUE_ACCESSOR, useExisting: forwardRef(() => DkDate), multi: true }],
   template: `
-    <div class="relative" #wrap>
+    <div class="relative" [class.z-40]="open" #wrap>
       <button
         type="button"
         class="flex h-10 w-full items-center justify-between rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-left text-sm normal-case outline-none transition-colors focus:border-[#121417] disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
         [disabled]="isDisabled"
-        (click)="open = !open"
+        (click)="toggle()"
       >
         <span [class.text-[#a1a1aa]]="!value">{{ value || placeholder }}</span>
         <svg class="size-4 shrink-0 text-[#71717a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
@@ -251,6 +251,11 @@ export class DkDate implements ControlValueAccessor {
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
   }
 
+  toggle() {
+    if (this.isDisabled) return;
+    this.open = !this.open;
+  }
+
   choose(iso: string) {
     this.value = iso;
     this.changed(iso);
@@ -286,6 +291,127 @@ export class DkDate implements ControlValueAccessor {
   }
   setDisabledState(d: boolean) {
     this.isDisabled = d;
+    if (d) this.open = false;
+  }
+}
+
+/** Clock dropdown (HH:mm). Same paper panel as the date picker, not the browser time chrome. */
+@Component({
+  selector: "dk-time",
+  standalone: true,
+  providers: [{ provide: NG_VALUE_ACCESSOR, useExisting: forwardRef(() => DkTime), multi: true }],
+  template: `
+    <div class="relative" [class.z-40]="open">
+      <button
+        type="button"
+        class="flex h-10 w-full items-center justify-between rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-left text-sm normal-case outline-none transition-colors focus:border-[#121417] disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+        [disabled]="isDisabled"
+        (click)="toggle()"
+        aria-label="Time"
+      >
+        <span>{{ label }}</span>
+        <svg class="size-4 shrink-0 text-[#71717a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" /><path d="M12 7v6l4 2" stroke-linecap="round" />
+        </svg>
+      </button>
+      @if (open) {
+        <div class="absolute right-0 z-30 mt-1 flex gap-1 rounded-xl border border-[#e8e8e3] bg-white p-2 shadow-[0_12px_32px_-16px_rgba(15,18,24,0.45)] dark:border-zinc-700 dark:bg-zinc-900">
+          <div class="max-h-48 w-12 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            @for (h of hours; track h) {
+              <button type="button" class="flex h-8 w-full items-center justify-center rounded-md text-[12px] font-semibold" [class.bg-cta]="h === hour12" [class.text-white]="h === hour12" [class.text-[#121417]]="h !== hour12" [class.hover:bg-[#f7f7f4]]="h !== hour12" [class.dark:text-zinc-100]="h !== hour12" [class.dark:hover:bg-zinc-800]="h !== hour12" [attr.data-time-on]="h === hour12 ? 'hour' : null" (click)="setHour(h)">{{ h }}</button>
+            }
+          </div>
+          <div class="max-h-48 w-12 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            @for (m of minutes; track m) {
+              <button type="button" class="flex h-8 w-full items-center justify-center rounded-md text-[12px] font-semibold" [class.bg-cta]="m === minute" [class.text-white]="m === minute" [class.text-[#121417]]="m !== minute" [class.hover:bg-[#f7f7f4]]="m !== minute" [class.dark:text-zinc-100]="m !== minute" [class.dark:hover:bg-zinc-800]="m !== minute" [attr.data-time-on]="m === minute ? 'minute' : null" (click)="setMinute(m)">{{ pad(m) }}</button>
+            }
+          </div>
+          <div class="flex w-12 flex-col gap-1">
+            <button type="button" class="h-8 rounded-md text-[11px] font-semibold" [class.bg-cta]="period === 'AM'" [class.text-white]="period === 'AM'" [class.text-[#121417]]="period !== 'AM'" [class.hover:bg-[#f7f7f4]]="period !== 'AM'" [class.dark:text-zinc-100]="period !== 'AM'" [class.dark:hover:bg-zinc-800]="period !== 'AM'" (click)="setPeriod('AM')">AM</button>
+            <button type="button" class="h-8 rounded-md text-[11px] font-semibold" [class.bg-cta]="period === 'PM'" [class.text-white]="period === 'PM'" [class.text-[#121417]]="period !== 'PM'" [class.hover:bg-[#f7f7f4]]="period !== 'PM'" [class.dark:text-zinc-100]="period !== 'PM'" [class.dark:hover:bg-zinc-800]="period !== 'PM'" (click)="setPeriod('PM')">PM</button>
+          </div>
+        </div>
+      }
+    </div>
+  `,
+})
+export class DkTime implements ControlValueAccessor {
+  value = "09:00";
+  open = false;
+  isDisabled = false;
+  hour12 = 9;
+  minute = 0;
+  period: "AM" | "PM" = "AM";
+  readonly hours = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  readonly minutes = Array.from({ length: 60 }, (_, i) => i);
+  private changed: (v: string) => void = () => undefined;
+  private touched: () => void = () => undefined;
+
+  get label() {
+    return `${this.hour12}:${this.pad(this.minute)} ${this.period}`;
+  }
+
+  pad(n: number) {
+    return String(n).padStart(2, "0");
+  }
+
+  toggle() {
+    this.open = !this.open;
+    if (!this.open) return;
+    setTimeout(() => {
+      document.querySelectorAll("[data-time-on]").forEach((el) => {
+        const parent = el.parentElement;
+        if (!parent || !(el instanceof HTMLElement)) return;
+        parent.scrollTop = el.offsetTop - parent.clientHeight / 2 + el.offsetHeight / 2;
+      });
+    });
+  }
+
+  setHour(h: number) {
+    this.hour12 = h;
+    this.emit();
+  }
+
+  setMinute(m: number) {
+    this.minute = m;
+    this.emit();
+  }
+
+  setPeriod(p: "AM" | "PM") {
+    this.period = p;
+    this.emit();
+  }
+
+  private emit() {
+    const h24 = this.period === "PM" ? (this.hour12 % 12) + 12 : this.hour12 % 12;
+    this.value = `${this.pad(h24)}:${this.pad(this.minute)}`;
+    this.changed(this.value);
+    this.touched();
+  }
+
+  @HostListener("document:click", ["$event"])
+  onDoc(ev: MouseEvent) {
+    if (!(ev.target as HTMLElement)?.closest("dk-time")) this.open = false;
+  }
+
+  writeValue(v: string | null) {
+    const [hs, ms] = (v || "09:00").split(":");
+    const hour = Number(hs);
+    const minute = Number(ms);
+    const h = Number.isFinite(hour) ? hour : 9;
+    this.minute = Number.isFinite(minute) ? minute : 0;
+    this.period = h >= 12 ? "PM" : "AM";
+    this.hour12 = h % 12 || 12;
+    this.value = `${this.pad(h)}:${this.pad(this.minute)}`;
+  }
+  registerOnChange(fn: (v: string) => void) {
+    this.changed = fn;
+  }
+  registerOnTouched(fn: () => void) {
+    this.touched = fn;
+  }
+  setDisabledState(d: boolean) {
+    this.isDisabled = d;
   }
 }
 
@@ -293,17 +419,12 @@ export class DkDate implements ControlValueAccessor {
 @Component({
   selector: "dk-datetime",
   standalone: true,
-  imports: [FormsModule, DkDate],
+  imports: [FormsModule, DkDate, DkTime],
   providers: [{ provide: NG_VALUE_ACCESSOR, useExisting: forwardRef(() => DkDateTime), multi: true }],
   template: `
-    <div class="grid gap-2 sm:grid-cols-[1fr_7rem]">
+    <div class="grid gap-2 sm:grid-cols-[1fr_8.5rem]">
       <dk-date [(ngModel)]="datePart" (ngModelChange)="sync()" [placeholder]="placeholder" />
-      <input
-        type="time"
-        class="h-10 w-full appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm outline-none focus:border-[#121417] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
-        [(ngModel)]="timePart"
-        (ngModelChange)="sync()"
-      />
+      <dk-time [(ngModel)]="timePart" (ngModelChange)="sync()" />
     </div>
   `,
 })

@@ -34,6 +34,7 @@ import { RouterLink } from "@angular/router";
         </ol>
         <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
           Or skip the id on MCP: those tools inherit the token’s workspace and do not take a workspace id.
+          MCP can also read posting rules and generate an image or a short video into the media library.
         </p>
         <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
           Plan limits match the UI: channel caps and AI quotas apply on Duskly Cloud the same way they do for a signed-in user.

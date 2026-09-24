@@ -7,6 +7,7 @@ import {
   commentQueueDelay,
   expandRepeatTimes,
   mergeRssChannelIds,
+  rewriteShortLinks,
   pickMetrics,
   rssHasPublishTarget,
   scheduleStatus,
@@ -59,6 +60,19 @@ describe("repeat series", () => {
     expect(expandRepeatTimes(start, "weekly", until)).toHaveLength(3);
   });
 
+  it("steps a custom interval and reuses one short-link code per URL", () => {
+    const start = Date.parse("2026-09-01T10:00:00Z");
+    const until = Date.parse("2026-12-01T10:00:00Z");
+    const times = expandRepeatTimes(start, "interval", until, 52, 30);
+    expect(times[0]).toBe(Date.parse("2026-10-01T10:00:00Z"));
+    expect(times).toHaveLength(3);
+    const once = rewriteShortLinks("See https://duskly.site/launch and https://duskly.site/launch", "https://api.duskly.site");
+    expect(once.pairs).toHaveLength(1);
+    expect(once.pairs[0].url).toBe("https://duskly.site/launch");
+    const link = `https://api.duskly.site/v1/go/${once.pairs[0].code}`;
+    expect(once.body).toBe(`See ${link} and ${link}`);
+  });
+
   it("caps at 52 occurrences so a far-away until cannot explode", () => {
     const start = Date.now();
     const until = start + 200 * 86_400_000;
@@ -77,6 +91,7 @@ describe("repeat series", () => {
     });
     expect(parsed.repeatRule).toBe("daily");
     expect(parsed.commentDelaySeconds).toBe(30);
+    expect(createPost.parse({ workspaceId: "ws", body: "hi", destinations: ["ch1"], repeatRule: "interval", repeatEveryDays: 30 }).repeatEveryDays).toBe(30);
     expect(() => createPost.parse({ workspaceId: "ws", body: "hi", destinations: ["ch1"], repeatRule: "yearly" })).toThrow();
   });
 

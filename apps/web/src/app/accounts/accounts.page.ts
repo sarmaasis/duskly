@@ -28,6 +28,7 @@ type SlackChannel = { id: string; name: string; isPrivate: boolean };
 
 const FALLBACK_META: Record<string, NetMeta> = {
   linkedin: { label: "LinkedIn", group: "social", connect: "oauth" },
+  "linkedin-page": { label: "LinkedIn Page", group: "social", connect: "oauth" },
   x: { label: "X", group: "social", connect: "oauth" },
   instagram: { label: "Instagram", group: "social", connect: "oauth" },
   threads: { label: "Threads", group: "social", connect: "oauth" },
@@ -293,7 +294,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
                 </select>
               } @else if (a.needsPage) {
                 <dk-select [ngModel]="''" (ngModelChange)="pickPage(a.id, $event)" [name]="'page-' + a.id">
-                  <option value="">{{ a.network === 'instagram' ? 'Pick an Instagram account…' : 'Pick a Page…' }}</option>
+                  <option value="">{{ a.network === 'instagram' ? 'Pick an Instagram account…' : a.network === 'linkedin-page' ? 'Pick a LinkedIn Page…' : 'Pick a Page…' }}</option>
                   @for (p of a.pendingPages || []; track p.id) {
                     <option [value]="p.id">{{ p.name }}</option>
                   }

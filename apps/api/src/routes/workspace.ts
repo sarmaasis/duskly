@@ -247,8 +247,8 @@ accountRoutes.get("/", async (c) => {
       slackChannelId: row.network === "slack" ? channelId : undefined,
       slackChannelName: row.network === "slack" ? channelName : undefined,
       needsSlackChannel: row.network === "slack" && !channelId,
-      needsPage: (row.network === "instagram" || row.network === "facebook") && row.status === "needs_page",
-      pendingPages: (row.network === "instagram" || row.network === "facebook") && row.status === "needs_page" ? pendingPages : undefined,
+      needsPage: (row.network === "instagram" || row.network === "facebook" || row.network === "linkedin-page") && row.status === "needs_page",
+      pendingPages: (row.network === "instagram" || row.network === "facebook" || row.network === "linkedin-page") && row.status === "needs_page" ? pendingPages : undefined,
     };
   }));
   return c.json({
@@ -431,8 +431,8 @@ accountRoutes.patch("/:id", async (c) => {
     patch.status = "active";
   }
 
-  if (body.pageId) {
-    if (row.network !== "instagram" && row.network !== "facebook") {
+    if (body.pageId) {
+    if (row.network !== "instagram" && row.network !== "facebook" && row.network !== "linkedin-page") {
       return c.json({ error: "not_page_network" }, 400);
     }
     let creds: Record<string, string> = {};
@@ -460,6 +460,7 @@ accountRoutes.patch("/:id", async (c) => {
     if (row.network === "instagram" && !picked.igUserId) {
       return c.json({ error: "no_instagram_account", message: "That Page has no Instagram professional account" }, 400);
     }
+    if (row.network === "linkedin-page") creds.authorUrn = picked.id;
     const handle =
       row.network === "instagram"
         ? instagramAccountLabel(picked) || picked.igUserId || "instagram-account"

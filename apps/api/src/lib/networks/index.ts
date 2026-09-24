@@ -2,6 +2,7 @@ import { REDDIT_UA } from "../oauth-tokens";
 
 export type Network =
   | "linkedin"
+  | "linkedin-page"
   | "x"
   | "instagram"
   | "threads"
@@ -113,6 +114,7 @@ export type NetworkGroup = "social" | "blogs" | "chat";
 
 export const NETWORK_META: Record<Network, { label: string; group: NetworkGroup; connect: "oauth" | "token" }> = {
   linkedin: { label: "LinkedIn", group: "social", connect: "oauth" },
+  "linkedin-page": { label: "LinkedIn Page", group: "social", connect: "oauth" },
   x: { label: "X", group: "social", connect: "oauth" },
   instagram: { label: "Instagram", group: "social", connect: "oauth" },
   threads: { label: "Threads", group: "social", connect: "oauth" },
@@ -132,6 +134,7 @@ export const NETWORK_META: Record<Network, { label: string; group: NetworkGroup;
 /** Social-first UI order. */
 export const NETWORKS: Network[] = [
   "linkedin",
+  "linkedin-page",
   "x",
   "instagram",
   "threads",
@@ -404,6 +407,9 @@ async function xPublish(input: PublishInput): Promise<PublishOk | PublishQueued>
       }
     }
     const payload: Record<string, unknown> = { text: input.body.slice(0, 280) };
+    const replySettings = input.credentials?.replySettings;
+    if (replySettings === "following" || replySettings === "mentionedUsers") payload.reply_settings = replySettings;
+    if (input.credentials?.communityId) payload.community_id = input.credentials.communityId;
     if (mediaId) payload.media = { media_ids: [mediaId] };
     else if (input.credentials?.pollJson) {
       try {
@@ -522,7 +528,46 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
     };
     if (imageUrn) {
       const alt = publishAlt(input);
-      postBody.content = { media: alt ? { id: imageUrn, altText: alt } : { id: imageUrn } };
+      let extraUrns: string[] = [];
+      if (input.credentials?.imageUrls) {
+        try {
+          const urls = JSON.parse(input.credentials.imageUrls) as string[];
+          for (const url of urls.slice(1, 9)) {
+            const extra = await resolvePublishImage({ ...input, credentials: { ...input.credentials, imageUrl: url } });
+            if (!extra) continue;
+            const more = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
+              method: "POST",
+              headers: {
+                authorization: `Bearer ${token}`,
+                "content-type": "application/json",
+                "linkedin-version": LINKEDIN_VERSION,
+                "x-restli-protocol-version": "2.0.0",
+              },
+              body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
+            });
+            if (!more.ok) continue;
+            const startedMore = (await more.json()) as { value?: { uploadUrl?: string; image?: string } };
+            if (!startedMore.value?.uploadUrl || !startedMore.value.image) continue;
+            const putMore = await fetch(startedMore.value.uploadUrl, {
+              method: "PUT",
+              headers: { "content-type": extra.contentType },
+              body: extra.bytes,
+            });
+            if (putMore.ok) extraUrns.push(startedMore.value.image);
+          }
+        } catch {
+          extraUrns = [];
+        }
+      }
+      if (extraUrns.length) {
+        postBody.content = {
+          multiImage: {
+            images: [imageUrn, ...extraUrns].map((id) => (alt && id === imageUrn ? { id, altText: alt } : { id })),
+          },
+        };
+      } else {
+        postBody.content = { media: alt ? { id: imageUrn, altText: alt } : { id: imageUrn } };
+      }
     }
     else if (input.credentials?.pollJson) {
       try {
@@ -785,6 +830,30 @@ async function metaGraphPublish(
   try {
     if (kind === "facebook") {
       const imageUrl = publishImageUrl(input);
+      if (input.credentials?.postType === "story" && imageUrl) {
+        const photo = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photos`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: imageUrl, published: false, access_token: token }),
+        });
+        if (!photo.ok) {
+          const err = await photo.text();
+          return missingCreds(`Facebook story photo failed (${photo.status}): ${err.slice(0, 200)}`);
+        }
+        const uploaded = (await photo.json()) as { id?: string };
+        if (!uploaded.id) return missingCreds("Facebook story photo returned no id — queued");
+        const story = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photo_stories`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ photo_id: uploaded.id, access_token: token }),
+        });
+        if (!story.ok) {
+          const err = await story.text();
+          return missingCreds(`Facebook story publish failed (${story.status}): ${err.slice(0, 200)}`);
+        }
+        const data = (await story.json()) as { post_id?: string; id?: string };
+        return { remoteId: data.post_id ?? data.id ?? crypto.randomUUID() };
+      }
       if (imageUrl) {
         const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photos`, {
           method: "POST",
@@ -855,6 +924,16 @@ async function metaGraphPublish(
               ? { media_type: "STORIES", video_url: videoUrl }
               : { media_type: "STORIES", image_url: imageUrl || "" }
             : { image_url: imageUrl || "", caption: input.body };
+      const names = (input.credentials?.collaborators || "")
+        .split(",")
+        .map((name) => name.trim().replace(/^@/, ""))
+        .filter(Boolean)
+        .slice(0, 3);
+      if (names.length && postType !== "story") igFields.collaborators = JSON.stringify(names);
+      if (postType === "reel" && input.credentials?.trialReel === "1") {
+        igFields.trial_params = JSON.stringify({ graduation_strategy: "MANUAL" });
+      }
+      if (postType === "reel" && input.credentials?.reelAudio) igFields.audio_id = input.credentials.reelAudio;
       const created = await igPost(`${igUserId}/media`, igFields);
       if (!created.ok || !created.data.id) {
         if (instagramLogin && instagramPostAccessDenied(created.detail)) {
@@ -978,8 +1057,12 @@ async function youtubeUploadVideo(
               ? `${input.body.slice(0, 90)} #Shorts`
               : input.body.slice(0, 100) || "Untitled",
           description: input.body,
+          ...(input.credentials?.tags ? { tags: input.credentials.tags.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 12) } : {}),
         },
-        status: { privacyStatus: "public" },
+        status: {
+          privacyStatus: "public",
+          selfDeclaredMadeForKids: input.credentials?.madeForKids === "1",
+        },
       }),
     },
   );
@@ -1408,6 +1491,7 @@ async function slackPublish(input: PublishInput): Promise<PublishOk | PublishQue
 
 export const adapters: Record<Network, NetworkAdapter> = {
   linkedin: { network: "linkedin", publish: linkedinPublish, comment: linkedinComment },
+  "linkedin-page": { network: "linkedin-page", publish: linkedinPublish, comment: linkedinComment },
   x: { network: "x", publish: xPublish, comment: xComment },
   instagram: {
     network: "instagram",

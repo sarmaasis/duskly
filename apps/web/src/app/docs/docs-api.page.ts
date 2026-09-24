@@ -93,6 +93,28 @@ import { RouterLink } from "@angular/router";
           <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> (copy from Settings) and name (session auth).
           Response includes the raw token once. The minted token can only act on that workspace.
         </p>
+
+        <h2 id="cli" class="mt-10 scroll-mt-24 font-display text-xl font-bold">CLI</h2>
+        <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
+          From a checkout of this repo, set <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">DUSKLY_TOKEN</code>
+          and <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">DUSKLY_WORKSPACE</code>, then run
+          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">pnpm duskly</code>.
+          Self-host sets <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">DUSKLY_API</code> to your API origin.
+          Commands: <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">channels</code>,
+          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">posts</code>,
+          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">schedule</code>,
+          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">pause</code>.
+        </p>
+
+        <h2 id="automations" class="mt-10 scroll-mt-24 font-display text-xl font-bold">n8n, Zapier, and Make</h2>
+        <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
+          These call the same REST routes as the CLI. Import the n8n workflow or the Make scenario, then replace the token, workspace id, and channel id.
+        </p>
+        <ul class="mt-4 space-y-2 text-[14px] leading-relaxed text-[#52525b]">
+          <li><a class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4" href="/assets/integrations/n8n-duskly.json" download>n8n workflow</a></li>
+          <li><a class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4" href="/assets/integrations/make-duskly.json" download>Make scenario</a></li>
+          <li><a class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4" href="/assets/integrations/zapier-duskly.json" download>Zapier request</a> — paste it into Webhooks by Zapier, Custom Request, POST.</li>
+        </ul>
       </article>
 
       <aside class="space-y-4 xl:sticky xl:top-20 xl:self-start">

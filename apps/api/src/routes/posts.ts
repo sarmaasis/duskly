@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and, desc, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, or } from "drizzle-orm";
 import { pageArgs, pageNext } from "../lib/page";
 import {
   media,
@@ -11,11 +11,13 @@ import {
   signature as signatureTable,
   postingSet,
   workspace,
+  shortLink,
 } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess, workspaceRole } from "../lib/workspace";
 import { planErrorResponse } from "../lib/entitlements";
-import { expandRepeatTimes, scheduleStatus } from "../lib/schedule";
+import { expandRepeatTimes, rewriteShortLinks, scheduleStatus } from "../lib/schedule";
+import { apiPublicOrigin } from "../lib/media-signed-url";
 import { isImageMedia } from "../lib/networks";
 import { signPublicMediaUrl } from "../lib/media-signed-url";
 
@@ -28,7 +30,8 @@ export const createPost = z.object({
   mediaIds: z.array(z.string()).max(20).optional(),
   signatureId: z.string().optional().nullable(),
   delaySeconds: z.number().int().min(0).max(86400).optional(),
-  repeatRule: z.enum(["none", "daily", "weekly"]).optional(),
+  repeatRule: z.enum(["none", "daily", "weekly", "interval"]).optional(),
+  repeatEveryDays: z.number().int().min(1).max(90).optional(),
   repeatUntil: z.number().optional().nullable(),
   postingSetId: z.string().optional().nullable(),
   commentBody: z.string().max(2000).optional().nullable(),
@@ -42,6 +45,14 @@ export const createPost = z.object({
       coverId: z.string().optional(),
       tags: z.array(z.string().max(40)).max(12).optional(),
       alts: z.record(z.string(), z.string().max(1000)).optional(),
+      collaborators: z.array(z.string().max(40)).max(3).optional(),
+      trialReel: z.boolean().optional(),
+      reelAudio: z.string().max(80).optional(),
+      replySettings: z.enum(["everyone", "following", "mentionedUsers"]).optional(),
+      communityId: z.string().max(40).optional(),
+      linkedinCarousel: z.boolean().optional(),
+      madeForKids: z.boolean().optional(),
+      shortLink: z.boolean().optional(),
     })
     .optional(),
 });
@@ -222,6 +233,18 @@ postRoutes.post("/", async (c) => {
 
     let destinations = body.destinations;
     let postBody = body.body;
+    if (body.extras?.shortLink) {
+      const rewritten = rewriteShortLinks(postBody, apiPublicOrigin(c.env));
+      postBody = rewritten.body;
+      for (const pair of rewritten.pairs) {
+        await db.insert(shortLink).values({
+          code: pair.code,
+          workspaceId: body.workspaceId,
+          url: pair.url,
+          createdAt: new Date(),
+        });
+      }
+    }
     if (body.postingSetId) {
       const [set] = await db
         .select()
@@ -304,7 +327,7 @@ postRoutes.post("/", async (c) => {
     }
 
     if (body.repeatRule && body.repeatRule !== "none" && scheduledAt && body.repeatUntil) {
-      for (const next of expandRepeatTimes(scheduledAt.getTime(), body.repeatRule, body.repeatUntil)) {
+      for (const next of expandRepeatTimes(scheduledAt.getTime(), body.repeatRule, body.repeatUntil, 52, body.repeatEveryDays || 1)) {
         const rid = crypto.randomUUID();
         await db.insert(posts).values({
           id: rid,
@@ -461,6 +484,25 @@ postRoutes.post("/import", async (c) => {
     ids.push(id);
   }
   return c.json({ ids }, 201);
+});
+
+postRoutes.post("/:id/pause", async (c) => {
+  const id = c.req.param("id");
+  const db = drizzle(c.env.DB);
+  const [post] = await db.select().from(posts).where(eq(posts.id, id)).limit(1);
+  if (!post) return c.json({ error: "not_found" }, 404);
+  const ws = await assertWorkspaceAccess(c.env, post.workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const root = post.parentPostId || post.id;
+  const series = await db
+    .select({ id: posts.id, status: posts.status })
+    .from(posts)
+    .where(or(eq(posts.id, root), eq(posts.parentPostId, root)));
+  const hold = series.filter((row) => row.status === "scheduled" || row.status === "pending_approval").map((row) => row.id);
+  if (hold.length) {
+    await db.update(posts).set({ status: "draft", updatedAt: new Date() }).where(inArray(posts.id, hold));
+  }
+  return c.json({ paused: hold.length });
 });
 
 postRoutes.post("/:id/decide", async (c) => {

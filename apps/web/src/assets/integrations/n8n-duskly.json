@@ -1,0 +1,41 @@
+{
+  "name": "Duskly schedule a post",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "duskly-manual",
+      "name": "When you click",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.duskly.site/v1/posts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer dk_YOUR_TOKEN" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"workspaceId\": \"YOUR_WORKSPACE_ID\",\n  \"body\": \"Hello from n8n\",\n  \"status\": \"scheduled\",\n  \"scheduledAt\": 1735689600000,\n  \"destinations\": [\"ACCT_ID\"]\n}"
+      },
+      "id": "duskly-schedule",
+      "name": "Schedule post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    }
+  ],
+  "connections": {
+    "When you click": {
+      "main": [[{ "node": "Schedule post", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

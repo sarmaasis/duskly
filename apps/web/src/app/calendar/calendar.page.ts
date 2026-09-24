@@ -12,6 +12,8 @@ type Post = {
   status: string;
   scheduledAt: string | Date | null;
   extrasJson?: string | null;
+  repeatRule?: string | null;
+  parentPostId?: string | null;
   preview?: Preview | null;
   channels?: Channel[];
   issues?: { network: string; handle: string; status: string; error: string | null }[];
@@ -124,6 +126,12 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                           </span>
                         }
                         <span class="text-[11px] text-[#a1a1aa]">{{ formatTime(p.scheduledAt) }}</span>
+                        @if (inSeries(p)) {
+                          <span class="text-[10px] font-semibold text-[#a1a1aa]">Series</span>
+                        }
+                        @if (canPause(p)) {
+                          <button type="button" (click)="pauseSeries(p.id)" class="text-[11px] font-semibold text-cta">Pause series</button>
+                        }
                         @if (canQueue(p)) {
                           <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta hover:underline">Send now</button>
                         }
@@ -172,6 +180,12 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
               <p class="text-[13px] leading-snug dark:text-zinc-100">{{ p.body }}</p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <span class="text-[10px] font-semibold text-[#a1a1aa]">{{ labelStatus(p.status) }} · {{ formatTime(p.scheduledAt) }}</span>
+                @if (inSeries(p)) {
+                  <span class="text-[10px] font-semibold text-[#a1a1aa]">Series</span>
+                }
+                @if (canPause(p)) {
+                  <button type="button" (click)="pauseSeries(p.id)" class="text-[11px] font-semibold text-cta">Pause series</button>
+                }
                 @for (ch of p.channels || []; track ch.network + ch.handle) {
                   <img [src]="'/assets/logos/' + ch.network + '.svg'" [alt]="ch.network" width="14" height="14" class="size-3.5 object-contain" />
                 }
@@ -462,6 +476,20 @@ export class CalendarPage implements OnInit {
 
   async queueNow(id: string) {
     await api(`/v1/posts/${id}/queue-now`, { method: "POST" });
+    if (this.workspaceId) await this.load(this.workspaceId);
+    this.dayOpen.set(null);
+  }
+
+  inSeries(post: Post) {
+    return (!!post.repeatRule && post.repeatRule !== "none") || !!post.parentPostId;
+  }
+
+  canPause(post: Post) {
+    return this.inSeries(post) && (post.status === "scheduled" || post.status === "pending_approval");
+  }
+
+  async pauseSeries(id: string) {
+    await api(`/v1/posts/${id}/pause`, { method: "POST" });
     if (this.workspaceId) await this.load(this.workspaceId);
     this.dayOpen.set(null);
   }

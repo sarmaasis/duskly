@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { desc, eq } from "drizzle-orm";
-import { posts, postDestination, socialAccount, workspace, apiToken } from "../db/schema";
+import { posts, postDestination, socialAccount, workspace, apiToken, media } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess, sha256Hex } from "../lib/workspace";
-import { planErrorResponse } from "../lib/entitlements";
+import { assertQuota, consumeQuota, planErrorResponse } from "../lib/entitlements";
+import { makePosterSvg } from "../lib/media-gen";
+import { aiImageModel, generateTextToVideo, snapVideoDuration } from "../lib/ai-models";
 
 type JsonRpcId = string | number | null;
 type JsonRpcReq = {
@@ -21,6 +23,35 @@ function ok(id: JsonRpcId | undefined, result: unknown) {
 function err(id: JsonRpcId | undefined, code: number, message: string) {
   return { jsonrpc: "2.0", id: id ?? null, error: { code, message } };
 }
+
+const CHANNEL_RULES = {
+  instagram: {
+    collaborators: "Up to 3 usernames. Stories ignore them.",
+    trialReel: "Reels only. The reel stays a trial until you graduate it on Instagram.",
+    reelAudio: "Paste an Instagram audio id on a reel. Duskly does not browse a music catalog.",
+    story: "Set postType to story.",
+    reel: "Set postType to reel and attach a video.",
+  },
+  facebook: { story: "Set postType to story and attach an image." },
+  x: {
+    replySettings: ["everyone", "following", "mentionedUsers"],
+    communityId: "Optional community id. Everyone is the default reply setting.",
+  },
+  linkedin: { carousel: "Turn on linkedinCarousel and attach 2 to 9 images." },
+  "linkedin-page": "Connect LinkedIn Page as its own channel. When you administer more than one Page, pick it after login.",
+  youtube: {
+    madeForKids: "madeForKids marks the upload as made for kids.",
+    tags: "Comma-separated tags, up to 12.",
+    thumbnail: "coverId is uploaded as the custom thumbnail.",
+  },
+  repeat: {
+    rules: ["none", "daily", "weekly", "interval"],
+    everyDays: "1 to 90 when the rule is interval.",
+    cap: 52,
+    pause: "POST /v1/posts/:id/pause returns later runs in that series to drafts. Each run stays on the calendar.",
+  },
+  shortLink: "extras.shortLink rewrites https links in the caption to /v1/go/:code.",
+};
 
 export const MCP_TOOLS = [
   {
@@ -64,6 +95,32 @@ export const MCP_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "channel_rules",
+    description: "Posting rules Duskly applies: Instagram collaborators, trial reels, and reel audio; Facebook stories; X replies and communities; LinkedIn carousels and Pages; YouTube kids, tags, and thumbnails; repeat intervals; short links.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "generate_image",
+    description: "Generate an image from a prompt and store it in the workspace media library.",
+    inputSchema: {
+      type: "object",
+      properties: { prompt: { type: "string", description: "What the picture should show" } },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "generate_video",
+    description: "Generate a short video from a prompt and store it in the workspace media library.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "What the clip should show" },
+        durationSec: { type: "number", description: "6 or 8 seconds" },
+      },
+      required: ["prompt"],
+    },
+  },
 ];
 
 async function authWorkspace(c: {
@@ -82,6 +139,13 @@ async function authWorkspace(c: {
   }
   await db.update(apiToken).set({ lastUsedAt: new Date() }).where(eq(apiToken.id, row.id));
   return { workspaceId: row.workspaceId, userId: `token:${row.workspaceId}` };
+}
+
+async function toolFailure(e: unknown) {
+  const pe = planErrorResponse(e);
+  if (!pe) return null;
+  const payload = await pe.json().catch(() => ({ error: "plan_error" }));
+  return { content: [{ type: "text", text: JSON.stringify(payload) }], isError: true as const };
 }
 
 async function callTool(
@@ -125,6 +189,91 @@ async function callTool(
       .orderBy(desc(posts.scheduledAt))
       .limit(limit);
     return { content: [{ type: "text", text: JSON.stringify({ posts: rows }, null, 2) }] };
+  }
+
+  if (name === "channel_rules") {
+    return { content: [{ type: "text", text: JSON.stringify(CHANNEL_RULES, null, 2) }] };
+  }
+
+  if (name === "generate_image") {
+    const prompt = String(args.prompt || "").trim().slice(0, 500);
+    if (!prompt) return { content: [{ type: "text", text: "prompt is required" }], isError: true };
+    try {
+      await consumeQuota(env, workspaceId, "aiImages", 1);
+      const model = aiImageModel(env);
+      let bytes: Uint8Array;
+      let contentType = "image/svg+xml";
+      try {
+        const result = (await env.AI.run(model as keyof AiModels, { prompt })) as { image?: string } | ReadableStream | ArrayBuffer;
+        if (result && typeof result === "object" && "image" in result && result.image) {
+          bytes = Uint8Array.from(atob(result.image), (ch) => ch.charCodeAt(0));
+          contentType = "image/png";
+        } else {
+          bytes = new TextEncoder().encode(makePosterSvg(prompt));
+        }
+      } catch {
+        bytes = new TextEncoder().encode(makePosterSvg(prompt));
+      }
+      const id = crypto.randomUUID();
+      const key = `${workspaceId}/${id}-ai.${contentType.includes("svg") ? "svg" : "png"}`;
+      await env.MEDIA.put(key, bytes, { httpMetadata: { contentType } });
+      await db.insert(media).values({
+        id,
+        workspaceId,
+        r2Key: key,
+        contentType,
+        bytes: bytes.byteLength,
+        kind: "image",
+        metaJson: JSON.stringify({ ai: true, prompt, model }),
+      });
+      return { content: [{ type: "text", text: JSON.stringify({ id, url: `/v1/media/${id}/file?workspaceId=${workspaceId}`, model }, null, 2) }] };
+    } catch (e) {
+      const quota = await toolFailure(e);
+      if (quota) return quota;
+      throw e;
+    }
+  }
+
+  if (name === "generate_video") {
+    const prompt = String(args.prompt || "").trim().slice(0, 2000);
+    if (!prompt) return { content: [{ type: "text", text: "prompt is required" }], isError: true };
+    const durationSec = snapVideoDuration(Number(args.durationSec) || 8);
+    try {
+      await assertQuota(env, workspaceId, "aiVideos", 1);
+      let generated: Awaited<ReturnType<typeof generateTextToVideo>>;
+      try {
+        generated = await generateTextToVideo(env, prompt, durationSec);
+      } catch (e) {
+        return {
+          content: [{ type: "text", text: e instanceof Error ? e.message : "Text-to-video failed. No quota was charged." }],
+          isError: true,
+        };
+      }
+      const id = crypto.randomUUID();
+      const ext = generated.contentType.includes("webm") ? "webm" : "mp4";
+      const key = `${workspaceId}/${id}-clip.${ext}`;
+      await env.MEDIA.put(key, generated.bytes, { httpMetadata: { contentType: generated.contentType } });
+      await db.insert(media).values({
+        id,
+        workspaceId,
+        r2Key: key,
+        contentType: generated.contentType,
+        bytes: generated.bytes.byteLength,
+        kind: "clip",
+        metaJson: JSON.stringify({ ai: true, model: generated.model, prompt, durationSec: generated.durationSec }),
+      });
+      await consumeQuota(env, workspaceId, "aiVideos", 1);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ id, url: `/v1/media/${id}/file?workspaceId=${workspaceId}`, model: generated.model, durationSec: generated.durationSec }, null, 2),
+        }],
+      };
+    } catch (e) {
+      const quota = await toolFailure(e);
+      if (quota) return quota;
+      throw e;
+    }
   }
 
   if (name === "schedule_post") {

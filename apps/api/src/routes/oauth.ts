@@ -38,6 +38,7 @@ export const oauthRoutes = new Hono<{ Bindings: Env; Variables: { userId: string
 const OAUTH_NETWORKS = new Set<Network>([
   "x",
   "linkedin",
+  "linkedin-page",
   "mastodon",
   "instagram",
   "threads",
@@ -279,7 +280,7 @@ async function completeOAuthCallback(
       const meJson = (await me.json()) as { data?: { username?: string; id?: string } };
       handle = meJson.data?.username ? `@${meJson.data.username}` : "x-user";
       credentials = applyTokenResponse({ userId: meJson.data?.id || "" }, tok);
-    } else if (network === "linkedin") {
+    } else if (network === "linkedin" || network === "linkedin-page") {
       const body = new URLSearchParams({
         grant_type: "authorization_code",
         code,
@@ -304,8 +305,35 @@ async function completeOAuthCallback(
       });
       const meJson = (await me.json()) as { sub?: string; name?: string; email?: string };
       const authorUrn = meJson.sub ? `urn:li:person:${meJson.sub}` : "";
-      handle = meJson.name || meJson.email || "linkedin-user";
-      credentials = applyTokenResponse({ authorUrn }, tok);
+      if (network === "linkedin-page") {
+        const listed = await fetch(
+          "https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
+          {
+            headers: {
+              authorization: `Bearer ${accessToken}`,
+              "linkedin-version": "202601",
+              "x-restli-protocol-version": "2.0.0",
+            },
+          },
+        );
+        const data = listed.ok ? ((await listed.json()) as { elements?: { organization?: string }[] }) : { elements: [] };
+        const pages = (data.elements || [])
+          .map((el) => el.organization || "")
+          .filter(Boolean)
+          .map((urn) => ({ id: urn, name: `Page ${urn.split(":").pop()}`, accessToken }));
+        if (!pages.length) return fail(oauthFailQs(network, "no_page", "no_page"));
+        if (pages.length === 1) {
+          handle = pages[0].name;
+          credentials = applyTokenResponse({ authorUrn: pages[0].id, pageName: pages[0].name }, tok);
+        } else {
+          status = "needs_page";
+          handle = "LinkedIn Page";
+          credentials = applyTokenResponse({ authorUrn, pendingPagesJson: JSON.stringify(pages) }, tok);
+        }
+      } else {
+        handle = meJson.name || meJson.email || "linkedin-user";
+        credentials = applyTokenResponse({ authorUrn }, tok);
+      }
     } else if (network === "mastodon") {
       const instance = stored.instance;
       const clientId = stored.mastodonClientId || c.env.MASTODON_CLIENT_ID!;

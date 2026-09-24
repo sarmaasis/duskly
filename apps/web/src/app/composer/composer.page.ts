@@ -6,12 +6,12 @@ import { CAPTION_LIMITS, countCaptionChars } from "../lib/caption-limits";
 import { nextSlotMs, occupiedSlotMs } from "../lib/slots";
 import { Notices } from "../lib/notices";
 import { lsSet } from "../lib/browser";
-import { PICTURE_EDITOR_FRAME_MAX, pictureEditorFrameRects } from "../lib/picture-editor";
+import { AspImageEditor, aspectOption } from "@ascentsparksoftware/angular-image-editor";
 import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
 
 @Component({
   standalone: true,
-  imports: [FormsModule, RouterLink, DkSelect, DkChoice, DkDate, DkDateTime, DkPill],
+  imports: [FormsModule, RouterLink, DkSelect, DkChoice, DkDate, DkDateTime, DkPill, AspImageEditor],
   template: `
     <div class="mx-auto w-full max-w-7xl">
       <div class="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -207,18 +207,23 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </label>
             <div>
               <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat</p>
-              <div class="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Repeat">
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-4" role="radiogroup" aria-label="Repeat">
                 <dk-choice value="none" [selected]="repeatRule==='none'" (pick)="repeatRule=$event">None</dk-choice>
                 <dk-choice value="daily" [selected]="repeatRule==='daily'" (pick)="repeatRule=$event">Daily</dk-choice>
                 <dk-choice value="weekly" [selected]="repeatRule==='weekly'" (pick)="repeatRule=$event">Weekly</dk-choice>
+                <dk-choice value="interval" [selected]="repeatRule==='interval'" (pick)="repeatRule=$event">Every</dk-choice>
               </div>
             </div>
-            <div>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat until
-                <div class="mt-1.5" [class.pointer-events-none]="repeatRule==='none'" [class.opacity-40]="repeatRule==='none'">
-                  <dk-date [(ngModel)]="repeatUntil" placeholder="End date" />
-                </div>
+            @if (repeatRule === 'interval') {
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Days between posts
+                <input type="number" [(ngModel)]="repeatEveryDays" min="1" max="90" name="repeatEvery" [class]="fieldMt" />
               </label>
+            }
+            <div>
+              <p class="text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat until</p>
+              <div class="mt-1.5">
+                <dk-date [(ngModel)]="repeatUntil" [disabled]="repeatRule==='none'" placeholder="End date" />
+              </div>
             </div>
             <div>
               <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">First comment</h2>
@@ -234,52 +239,28 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </div>
           </section>
 
-          <details class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
-            <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-zinc-400">Adjust a picture</summary>
-            <div class="mt-4 space-y-6">
-            <label class="relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#e8e8e3] bg-[#fcfcf9] p-8 text-center transition-colors hover:bg-[#f7f7f4] dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-800/80">
-              <span class="text-sm font-medium text-[#121417] dark:text-zinc-100">Choose an image</span>
-              <span class="mt-1 text-xs text-zinc-400 dark:text-zinc-400">PNG or JPEG</span>
-              <input type="file" accept="image/*" (change)="onFile($event)" class="absolute inset-0 cursor-pointer opacity-0" />
-            </label>
-            <div class="flex h-64 items-center justify-center rounded-xl border border-[#e8e8e3] bg-[#f7f7f4] p-2 dark:border-zinc-700 dark:bg-zinc-800">
-              <canvas #canvas width="640" height="480" class="max-h-full max-w-full h-auto w-auto rounded-md"></canvas>
-            </div>
-            <div>
-              <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Aspect</p>
-              <div class="grid grid-cols-2 gap-3 md:grid-cols-4" role="radiogroup" aria-label="Aspect">
-                <dk-choice value="original" [selected]="aspectPreset==='original'" (pick)="setAspect($event)">Original</dk-choice>
-                <dk-choice value="1:1" [selected]="aspectPreset==='1:1'" (pick)="setAspect($event)">1:1</dk-choice>
-                <dk-choice value="4:5" [selected]="aspectPreset==='4:5'" (pick)="setAspect($event)">4:5</dk-choice>
-                <dk-choice value="16:9" [selected]="aspectPreset==='16:9'" (pick)="setAspect($event)">16:9</dk-choice>
-              </div>
-            </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Format</p>
-                <div class="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Format">
-                  <dk-choice value="image/png" [selected]="exportFormat==='image/png'" (pick)="exportFormat=$any($event)">PNG</dk-choice>
-                  <dk-choice value="image/jpeg" [selected]="exportFormat==='image/jpeg'" (pick)="exportFormat=$any($event)">JPEG</dk-choice>
-                </div>
-              </div>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Overlay text
-                <input [(ngModel)]="overlay" (ngModelChange)="redraw()" [class]="fieldMt" />
+          <details #picturePanel class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-zinc-400">Design a picture</summary>
+            <div class="mt-4 space-y-4">
+              <label class="relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#e8e8e3] bg-[#fcfcf9] p-6 text-center transition-colors hover:bg-[#f7f7f4] dark:border-zinc-600 dark:bg-zinc-800">
+                <span class="text-sm font-medium text-[#121417] dark:text-zinc-100">Choose an image</span>
+                <span class="mt-1 text-xs text-zinc-400">Crop, text, shapes, and layers. Save adds it to the post.</span>
+                <input type="file" accept="image/*" (change)="onFile($event)" class="absolute inset-0 cursor-pointer opacity-0" />
               </label>
-            </div>
-            <div class="space-y-4 pt-2">
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Brightness {{ brightness }}
-                <input type="range" min="50" max="150" [(ngModel)]="brightness" (ngModelChange)="redraw()" class="mt-1.5 h-2 w-full cursor-pointer rounded-lg bg-zinc-200 accent-cta" />
-              </label>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Contrast {{ contrast }}
-                <input type="range" min="50" max="150" [(ngModel)]="contrast" (ngModelChange)="redraw()" class="mt-1.5 h-2 w-full cursor-pointer rounded-lg bg-zinc-200 accent-cta" />
-              </label>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Inset crop %
-                <input type="range" min="0" max="30" [(ngModel)]="cropPct" (ngModelChange)="redraw()" class="mt-1.5 h-2 w-full cursor-pointer rounded-lg bg-zinc-200 accent-cta" />
-              </label>
-            </div>
-            <div>
-              <button type="button" (click)="exportEdited()" class="rounded-xl bg-[#121417] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Export to media library</button>
-            </div>
+              @if (editorSrc(); as src) {
+                <asp-image-editor
+                  [src]="src"
+                  mode="full"
+                  height="36rem"
+                  accentColor="#ff5c33"
+                  [baseColor]="editorTheme() === 'dark' ? '#18181b' : '#fcfcf9'"
+                  [themeMode]="editorTheme()"
+                  [aspectPresets]="['free', 'original', '1:1', '4:3', '16:9']"
+                  [aspectRatios]="portraitRatio"
+                  (saved)="saveEdited($event)"
+                  (errorOccurred)="onEditorError($event)"
+                />
+              }
             </div>
           </details>
 
@@ -401,19 +382,60 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                     <option value="story">Instagram story</option>
                     <option value="reel">Instagram reel</option>
                   }
+                  @if (hasNetwork('facebook')) {
+                    <option value="story">Facebook story</option>
+                  }
                   @if (hasNetwork('youtube')) {
                     <option value="short">YouTube short</option>
                     <option value="video">YouTube video</option>
                   }
                 </select>
               </label>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Cover frame
+              @if (hasNetwork('instagram')) {
+                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Collaborators
+                  <input [(ngModel)]="collaborators" name="collaborators" placeholder="studio, partner" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+                </label>
+              }
+              @if (hasNetwork('instagram') && postType === 'reel') {
+                <label class="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <input type="checkbox" [(ngModel)]="trialReel" name="trialReel" /> Trial reel
+                </label>
+                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Reel audio id
+                  <input [(ngModel)]="reelAudio" name="reelAudio" placeholder="Instagram audio id" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+                </label>
+              }
+              @if (hasNetwork('x')) {
+                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Who can reply
+                  <select [(ngModel)]="replySettings" name="replySettings" class="mt-1 h-10 w-full rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-sm normal-case dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+                    <option value="everyone">Everyone</option>
+                    <option value="following">People you follow</option>
+                    <option value="mentionedUsers">People you mention</option>
+                  </select>
+                </label>
+                <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">X community id
+                  <input [(ngModel)]="communityId" name="communityId" placeholder="Optional" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+                </label>
+              }
+              @if (hasNetwork('linkedin') || hasNetwork('linkedin-page')) {
+                <label class="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <input type="checkbox" [(ngModel)]="linkedinCarousel" name="linkedinCarousel" /> Image carousel
+                </label>
+              }
+              @if (hasNetwork('youtube')) {
+                <label class="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  <input type="checkbox" [(ngModel)]="madeForKids" name="madeForKids" /> Made for kids
+                </label>
+              }
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ hasNetwork('youtube') ? 'Custom thumbnail' : 'Cover frame' }}
                 <select [(ngModel)]="coverId" name="coverId" class="mt-1 h-10 w-full rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-sm normal-case text-[#121417] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]">
                   <option value="">First image</option>
                   @for (m of imageAttachments(); track m.id) { <option [value]="m.id">Image {{ m.id.slice(0, 6) }}</option> }
                 </select>
               </label>
             }
+            <label class="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+              <input type="checkbox" [(ngModel)]="shortLink" name="shortLink" /> Shorten links in the caption
+            </label>
             <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Tags
               <input [(ngModel)]="tagsText" name="tagsText" placeholder="launch, client" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
             </label>
@@ -471,7 +493,7 @@ export class ComposerPage implements OnInit {
   feedUrl = "";
   feeds = signal<{ id: string; url: string }[]>([]);
   plugs = signal<{ id: string; name: string }[]>([]);
-  @ViewChild("canvas") canvasRef?: ElementRef<HTMLCanvasElement>;
+  @ViewChild("picturePanel") picturePanel?: ElementRef<HTMLDetailsElement>;
   readonly fieldMt =
     "mt-1.5 h-11 w-full rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] px-3.5 text-sm text-[#121417] outline-none transition-colors focus:border-cta focus:ring-1 focus:ring-cta disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100";
   readonly channelGroups = [
@@ -481,6 +503,7 @@ export class ComposerPage implements OnInit {
   ];
   private static readonly NET_META: Record<string, { label: string; group: "social" | "blogs" | "chat" }> = {
     linkedin: { label: "LinkedIn", group: "social" },
+    "linkedin-page": { label: "LinkedIn Page", group: "social" },
     x: { label: "X", group: "social" },
     instagram: { label: "Instagram", group: "social" },
     threads: { label: "Threads", group: "social" },
@@ -500,20 +523,15 @@ export class ComposerPage implements OnInit {
   when = "";
   delaySeconds = 0;
   repeatRule = "none";
+  repeatEveryDays = 30;
   repeatUntil = "";
   commentBody = "";
   commentDelaySeconds = 0;
-  overlay = "";
   signatureId = "";
   postingSetId = "";
   groupId = "";
-  exportFormat: "image/png" | "image/jpeg" = "image/png";
-  aspectPreset: "original" | "1:1" | "4:5" | "16:9" = "original";
-  brightness = 100;
-  contrast = 100;
-  cropPct = 0;
-  sourceMediaId = "";
-  private sourceImg: HTMLImageElement | null = null;
+  editorSrc = signal<Blob | null>(null);
+  readonly portraitRatio = [aspectOption(1080, 1350, "4:5")];
   attachments = signal<{ id: string; url: string; kind: "image" | "video" }[]>([]);
   aiBusy = signal<null | "copilot" | "image" | "video">(null);
   accounts = signal<{ id: string; network: string; handle: string; queueSlots?: string | null }[]>([]);
@@ -522,6 +540,14 @@ export class ComposerPage implements OnInit {
   pollOptionsText = "";
   threadText = "";
   postType = "post";
+  collaborators = "";
+  trialReel = false;
+  reelAudio = "";
+  replySettings = "everyone";
+  communityId = "";
+  linkedinCarousel = false;
+  madeForKids = false;
+  shortLink = false;
   coverId = "";
   tagsText = "";
   csvText = "";
@@ -586,9 +612,8 @@ export class ComposerPage implements OnInit {
     }
   }
 
-  setAspect(v: string) {
-    this.aspectPreset = v as typeof this.aspectPreset;
-    this.redraw();
+  editorTheme(): "light" | "dark" {
+    return typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light";
   }
 
   selectedAccounts() {
@@ -616,7 +641,7 @@ export class ComposerPage implements OnInit {
   }
 
   needsType() {
-    return this.hasNetwork("instagram") || this.hasNetwork("youtube");
+    return this.hasNetwork("instagram") || this.hasNetwork("youtube") || this.hasNetwork("facebook") || this.hasNetwork("x") || this.hasNetwork("linkedin") || this.hasNetwork("linkedin-page");
   }
 
   pollOptions() {
@@ -629,6 +654,14 @@ export class ComposerPage implements OnInit {
     const options = this.pollOptions();
     const alts = Object.fromEntries(Object.entries(this.alts).filter(([, text]) => text.trim()));
     return {
+      collaborators: this.collaborators.split(",").map((name) => name.trim().replace(/^@/, "")).filter(Boolean).slice(0, 3),
+      trialReel: this.trialReel || undefined,
+      reelAudio: this.reelAudio.trim() || undefined,
+      replySettings: this.replySettings === "everyone" ? undefined : this.replySettings,
+      communityId: this.communityId.trim() || undefined,
+      linkedinCarousel: this.linkedinCarousel || undefined,
+      madeForKids: this.madeForKids || undefined,
+      shortLink: this.shortLink || undefined,
       postType: this.postType === "post" ? undefined : this.postType,
       coverId: this.coverId || undefined,
       tags: tags.length ? tags : undefined,
@@ -761,6 +794,14 @@ export class ComposerPage implements OnInit {
         coverId?: string;
         tags?: string[];
         alts?: Record<string, string>;
+        collaborators?: string[];
+        trialReel?: boolean;
+        reelAudio?: string;
+        replySettings?: string;
+        communityId?: string;
+        linkedinCarousel?: boolean;
+        madeForKids?: boolean;
+        shortLink?: boolean;
       };
       this.pollQuestion = extras.poll?.question || "";
       this.pollOptionsText = (extras.poll?.options || []).join("\n");
@@ -769,6 +810,14 @@ export class ComposerPage implements OnInit {
       this.coverId = extras.coverId || "";
       this.tagsText = (extras.tags || []).join(", ");
       this.alts = extras.alts || {};
+      this.collaborators = (extras.collaborators || []).join(", ");
+      this.trialReel = !!extras.trialReel;
+      this.reelAudio = extras.reelAudio || "";
+      this.replySettings = extras.replySettings || "everyone";
+      this.communityId = extras.communityId || "";
+      this.linkedinCarousel = !!extras.linkedinCarousel;
+      this.madeForKids = !!extras.madeForKids;
+      this.shortLink = !!extras.shortLink;
     } catch {
       /* extras are optional */
     }
@@ -820,7 +869,6 @@ export class ComposerPage implements OnInit {
 
   removeAttachment(id: string) {
     this.attachments.update((list) => list.filter((a) => a.id !== id));
-    if (this.sourceMediaId === id) this.sourceMediaId = "";
   }
 
   async copilot() {
@@ -849,10 +897,10 @@ export class ComposerPage implements OnInit {
         method: "POST",
         json: { workspaceId: this.workspaceId, prompt: this.body || "Abstract paper desk poster" },
       });
-      this.sourceMediaId = r.id;
       const url = `${apiBase()}${r.url}`;
       this.pushAttachment({ id: r.id, url, kind: "image" });
-      await this.loadImageToCanvas(url);
+      const file = await fetch(url, { credentials: "include" });
+      if (file.ok) this.openEditor(await file.blob());
       this.flash("AI image stored");
       await this.refreshUsage();
     } catch (e: unknown) {
@@ -894,14 +942,7 @@ export class ComposerPage implements OnInit {
       return this.fail({ message: "Choose a PNG or JPEG image" });
     }
 
-    // Paint the editor immediately from the local file so choosing an image is never a no-op.
-    const localUrl = URL.createObjectURL(file);
-    try {
-      await this.loadImageToCanvas(localUrl);
-    } catch (e: unknown) {
-      URL.revokeObjectURL(localUrl);
-      return this.fail(e instanceof Error ? e : { message: "Could not read image" });
-    }
+    this.openEditor(file);
 
     if (!this.workspaceId) {
       return this.fail({ message: "Sign in to upload to the media library" });
@@ -921,7 +962,6 @@ export class ComposerPage implements OnInit {
       if (!res.ok) {
         return this.fail({ message: data.message || data.error || "Upload failed" });
       }
-      this.sourceMediaId = data.id || "";
       if (data.id && data.url) {
         this.pushAttachment({ id: data.id, url: `${apiBase()}${data.url}`, kind: "image" });
       }
@@ -976,75 +1016,31 @@ export class ComposerPage implements OnInit {
     if (added) this.flash(added === 1 ? "Media attached" : `${added} files attached`);
   }
 
-  private async loadImageToCanvas(url: string) {
-    const img = new Image();
-    // blob: URLs must not set crossOrigin; remote media URLs need it for canvas export.
-    if (!url.startsWith("blob:") && !url.startsWith("data:")) {
-      img.crossOrigin = "anonymous";
-    }
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("image load failed"));
-      img.src = url;
-    });
-    this.sourceImg = img;
-    this.aspectPreset = "original";
-    this.redraw();
+  private openEditor(blob: Blob) {
+    this.editorSrc.set(blob);
+    if (this.picturePanel) this.picturePanel.nativeElement.open = true;
   }
 
-  /** Source cover-rect + dest frame (same aspect → no stretch). */
-  private frameRects(img: HTMLImageElement) {
-    return pictureEditorFrameRects(img, this.aspectPreset, this.cropPct, PICTURE_EDITOR_FRAME_MAX);
+  onEditorError(err: { message?: string }) {
+    this.fail({ message: err.message || "The picture editor could not load that image" });
   }
 
-  redraw() {
-    const canvas = this.canvasRef?.nativeElement;
-    const img = this.sourceImg;
-    if (!canvas || !img) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const { sx, sy, sw, sh, dw, dh } = this.frameRects(img);
-    canvas.width = dw;
-    canvas.height = dh;
-    ctx.clearRect(0, 0, dw, dh);
-    ctx.filter = `brightness(${this.brightness}%) contrast(${this.contrast}%)`;
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh);
-    ctx.filter = "none";
-    if (this.overlay.trim()) {
-      const bar = Math.max(36, Math.round(dh * 0.1));
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.fillRect(0, dh - bar, dw, bar);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = `600 ${Math.max(14, Math.round(bar * 0.42))}px 'Plus Jakarta Sans', sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText(this.overlay.trim().slice(0, 80), dw / 2, dh - Math.round(bar * 0.35));
-    }
-  }
-
-  async exportEdited() {
-    const canvas = this.canvasRef?.nativeElement;
-    if (!canvas || !this.sourceImg) return this.fail({ message: "Load an image first" });
-    this.redraw();
-    const dataUrl = canvas.toDataURL(this.exportFormat, 0.92);
+  async saveEdited(blob: Blob) {
+    if (!this.workspaceId) return this.fail({ message: "Sign in to upload to the media library" });
+    const file = new File([blob], "duskly-edit.png", { type: blob.type || "image/png" });
     try {
-      const r = await api<{ id: string; url: string }>("/v1/media/edit", {
-        method: "POST",
-        json: {
-          workspaceId: this.workspaceId,
-          sourceMediaId: this.sourceMediaId || undefined,
-          overlayText: this.overlay,
-          imageBase64: dataUrl,
-          contentType: this.exportFormat,
-          brightness: this.brightness / 100,
-          contrast: this.contrast / 100,
-          crop: { x: this.cropPct, y: this.cropPct, w: 100 - 2 * this.cropPct, h: 100 - 2 * this.cropPct },
-        },
-      });
-      this.sourceMediaId = r.id;
-      this.pushAttachment({ id: r.id, url: `${apiBase()}${r.url}`, kind: "image" });
-      this.flash("Edited PNG/JPEG saved to media library");
+      const fd = new FormData();
+      fd.set("workspaceId", this.workspaceId);
+      fd.set("file", file);
+      const res = await fetch(`${apiBase()}/v1/media/upload`, { method: "POST", body: fd, credentials: "include" });
+      const data = (await res.json().catch(() => ({}))) as { id?: string; url?: string; error?: string; message?: string };
+      if (!res.ok || !data.id || !data.url) {
+        return this.fail({ message: data.message || data.error || "Could not save the edited picture" });
+      }
+      this.pushAttachment({ id: data.id, url: `${apiBase()}${data.url}`, kind: "image" });
+      this.flash("Edited picture added to the post");
     } catch (e: unknown) {
-      this.fail(e);
+      this.fail(e instanceof Error ? e : { message: "Could not save the edited picture" });
     }
   }
 
@@ -1065,6 +1061,7 @@ export class ComposerPage implements OnInit {
         scheduledAt: this.when ? new Date(this.when).getTime() : undefined,
         delaySeconds: this.delaySeconds,
         repeatRule: this.repeatRule,
+        repeatEveryDays: this.repeatRule === "interval" ? this.repeatEveryDays : undefined,
         repeatUntil: this.repeatUntil ? new Date(this.repeatUntil + "T23:59:59").getTime() : null,
         signatureId: this.signatureId || null,
         postingSetId: this.postingSetId || null,

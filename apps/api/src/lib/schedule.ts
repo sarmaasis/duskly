@@ -1,11 +1,13 @@
-/** Daily / weekly follow-ups after the first scheduled time. Caps at 52. */
+/** Daily, weekly, or every-N-days follow-ups after the first scheduled time. Caps at 52. */
 export function expandRepeatTimes(
   scheduledAtMs: number,
-  rule: "daily" | "weekly",
+  rule: "daily" | "weekly" | "interval",
   untilMs: number,
   max = 52,
+  everyDays = 1,
 ): number[] {
-  const step = rule === "daily" ? 86_400_000 : 604_800_000;
+  const days = rule === "weekly" ? 7 : rule === "interval" ? Math.max(1, Math.min(90, everyDays)) : 1;
+  const step = days * 86_400_000;
   const times: number[] = [];
   let next = scheduledAtMs + step;
   let n = 0;
@@ -37,6 +39,20 @@ export function mergeRssChannelIds(channelIds: string[], groupMemberIds: string[
 export function scheduleStatus(role: string, requested: "draft" | "scheduled") {
   if (requested === "scheduled" && role === "member") return "pending_approval" as const;
   return requested;
+}
+
+/** Replace http(s) URLs with /v1/go/:code links. Same URL reuses one code. */
+export function rewriteShortLinks(body: string, origin: string) {
+  const pairs: { code: string; url: string }[] = [];
+  const next = body.replace(/https?:\/\/[^\s)]+/g, (url) => {
+    let code = pairs.find((pair) => pair.url === url)?.code;
+    if (!code) {
+      code = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+      pairs.push({ code, url });
+    }
+    return `${origin.replace(/\/$/, "")}/v1/go/${code}`;
+  });
+  return { body: next, pairs };
 }
 
 export function pickMetrics(raw: Record<string, unknown>) {

@@ -139,6 +139,7 @@ type Recent = { id: string; body: string; status: string; at: number | null; cha
 export class AnalyticsPage implements OnInit {
   readonly labelStatus = labelStatus;
   readonly label = labelNetwork;
+  readonly labelNetwork = labelNetwork;
   totals = signal<{ posts: number; published: number; byStatus: Record<string, number> }>({
     posts: 0,
     published: 0,

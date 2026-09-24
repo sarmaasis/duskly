@@ -25,6 +25,7 @@ const STATUS: Record<string, string> = {
 
 const NETWORKS: Record<string, string> = {
   linkedin: "LinkedIn",
+  "linkedin-page": "LinkedIn Page",
   x: "X",
   instagram: "Instagram",
   threads: "Threads",

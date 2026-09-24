@@ -63,7 +63,7 @@ export async function refreshAccessToken(
     return { ok: true, creds: next, accessToken: tok.access_token };
   }
 
-  if (network === "linkedin") {
+  if (network === "linkedin" || network === "linkedin-page") {
     if (!env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_CLIENT_SECRET) {
       return { ok: false, reason: "LinkedIn OAuth client is not configured" };
     }

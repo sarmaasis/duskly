@@ -22,9 +22,9 @@ describe("MCP", () => {
     expect(body.message).toMatch(/dk_/);
   });
 
-  it("exposes the three tools agents are documented to call", () => {
+  it("exposes the tools agents are documented to call", () => {
     const names = MCP_TOOLS.map((t) => t.name);
-    expect(names).toEqual(["list_channels", "schedule_post", "list_posts"]);
+    expect(names).toEqual(["list_channels", "schedule_post", "list_posts", "channel_rules", "generate_image", "generate_video"]);
     const schedule = MCP_TOOLS.find((t) => t.name === "schedule_post");
     expect(schedule?.inputSchema.required).toEqual(["body", "channelIds", "scheduledAt"]);
   });
