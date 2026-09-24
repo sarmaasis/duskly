@@ -49,6 +49,21 @@ export function parseEmailSender(raw: string | undefined): EmailAddress {
   return { email: value };
 }
 
+function esc(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export function mailHtml(opts: { title: string; body: string; code?: string; href?: string; label?: string; note?: string }) {
+  const code = opts.code
+    ? `<p style="margin:24px 0;font-family:ui-monospace,monospace;font-size:32px;letter-spacing:0.18em;font-weight:700;color:#121417">${esc(opts.code)}</p>`
+    : "";
+  const button = opts.href
+    ? `<p style="margin:28px 0"><a href="${esc(opts.href)}" style="display:inline-block;background:#ff5c33;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:12px 20px;border-radius:999px">${esc(opts.label || "Open")}</a></p>`
+    : "";
+  const note = opts.note ? `<p style="margin:24px 0 0;font-size:13px;line-height:1.5;color:#63676c">${opts.note}</p>` : "";
+  return `<div style="background:#fbfbfa;padding:32px 16px;font-family:Georgia,'Iowan Old Style',serif;color:#121417"><div style="max-width:460px;margin:0 auto;background:#fff;border:1px solid #e8e8e3;border-radius:16px;padding:32px"><p style="margin:0;font-family:ui-sans-serif,system-ui,sans-serif;font-size:18px;font-weight:800">Dus<span style="color:#ff5c33">kly</span></p><h1 style="margin:24px 0 0;font-size:28px;line-height:1.15">${esc(opts.title)}</h1><p style="margin:12px 0 0;font-family:ui-sans-serif,system-ui,sans-serif;font-size:15px;line-height:1.5;color:#3f3f46">${opts.body}</p>${code}${button}${note}</div></div>`;
+}
+
 export function emailSendErrorFields(err: unknown): { name: string; message: string; code: string } {
   const e = err as { name?: unknown; message?: unknown; code?: unknown };
   return {

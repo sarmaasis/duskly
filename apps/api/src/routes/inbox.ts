@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
 import { and, eq } from "drizzle-orm";
+import { pageArgs, pageNext } from "../lib/page";
 import { postDestination, posts, socialAccount } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
@@ -17,7 +18,8 @@ inboxRoutes.get("/", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
-  const rows = await db
+  const { limit, offset } = pageArgs(c.req.query("limit"), c.req.query("offset"), 20, 50);
+  const selected = await db
     .select({
       remoteId: postDestination.remoteId,
       network: socialAccount.network,
@@ -31,7 +33,9 @@ inboxRoutes.get("/", async (c) => {
     .innerJoin(socialAccount, eq(postDestination.socialAccountId, socialAccount.id))
     .innerJoin(posts, eq(postDestination.postId, posts.id))
     .where(and(eq(posts.workspaceId, workspaceId), eq(postDestination.status, "published")))
-    .limit(20);
+    .limit(limit + 1)
+    .offset(offset);
+  const { rows, next } = pageNext(selected, limit, offset);
 
   const items: Item[] = [];
   const seen = new Set<string>();
@@ -75,7 +79,7 @@ inboxRoutes.get("/", async (c) => {
       /* skip a channel that does not return comments */
     }
   }
-  return c.json({ items });
+  return c.json({ items, next });
 });
 
 inboxRoutes.post("/reply", async (c) => {

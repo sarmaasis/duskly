@@ -8,6 +8,19 @@ export function apiBase() {
   return (injected || DEV_API).replace(/\/$/, "");
 }
 
+export async function apiAll<T>(path: string, key: string): Promise<T[]> {
+  const rows: T[] = [];
+  let offset = 0;
+  for (let i = 0; i < 40; i++) {
+    const data = await api<Record<string, T[] | number | null>>(`${path}${path.includes("?") ? "&" : "?"}limit=100&offset=${offset}`);
+    const page = data[key];
+    if (Array.isArray(page)) rows.push(...page);
+    if (typeof data.next !== "number") break;
+    offset = data.next;
+  }
+  return rows;
+}
+
 export async function api<T = unknown>(
   path: string,
   init: RequestInit & { json?: unknown } = {},

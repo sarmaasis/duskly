@@ -49,12 +49,15 @@ function wrapCryptoError(e: unknown): never {
   throw new Error(`${ENCRYPT_FAILED_PREFIX} (${cryptoErrorName(e)})`);
 }
 
+let aesCache: { raw: string; key: CryptoKey } | null = null;
+
 async function aesKey(env: Env) {
   try {
-    return await crypto.subtle.importKey("raw", await keyMaterial(env), { name: "AES-GCM" }, false, [
-      "encrypt",
-      "decrypt",
-    ]);
+    const raw = (env.TOKEN_ENCRYPTION_KEY || "").trim();
+    if (aesCache?.raw === raw) return aesCache.key;
+    const key = await crypto.subtle.importKey("raw", await keyMaterial(env), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+    aesCache = { raw, key };
+    return key;
   } catch (e) {
     wrapCryptoError(e);
   }

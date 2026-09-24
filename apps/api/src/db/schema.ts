@@ -66,7 +66,7 @@ export const workspaceMember = sqliteTable(
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
   },
-  (t) => [primaryKey({ columns: [t.workspaceId, t.userId] })],
+  (t) => [primaryKey({ columns: [t.workspaceId, t.userId] }), index("workspace_member_user").on(t.userId)],
 );
 
 export const customerGroup = sqliteTable("customer_group", {
@@ -121,14 +121,18 @@ export const posts = sqliteTable(
   (t) => [index("posts_due").on(t.status, t.scheduledAt), index("posts_ws").on(t.workspaceId)],
 );
 
-export const postDestination = sqliteTable("post_destination", {
-  id: text("id").primaryKey(),
-  postId: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
-  socialAccountId: text("social_account_id").notNull().references(() => socialAccount.id),
-  status: text("status").notNull().default("pending"),
-  remoteId: text("remote_id"),
-  error: text("error"),
-});
+export const postDestination = sqliteTable(
+  "post_destination",
+  {
+    id: text("id").primaryKey(),
+    postId: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+    socialAccountId: text("social_account_id").notNull().references(() => socialAccount.id),
+    status: text("status").notNull().default("pending"),
+    remoteId: text("remote_id"),
+    error: text("error"),
+  },
+  (t) => [index("post_destination_post").on(t.postId), index("post_destination_account").on(t.socialAccountId)],
+);
 
 export const media = sqliteTable("media", {
   id: text("id").primaryKey(),
@@ -230,14 +234,18 @@ export const agentRun = sqliteTable("agent_run", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-export const workspaceInvite = sqliteTable("workspace_invite", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
-  email: text("email").notNull(),
-  role: text("role").notNull().default("member"),
-  status: text("status").notNull().default("pending"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+export const workspaceInvite = sqliteTable(
+  "workspace_invite",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspace.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").notNull().default("member"),
+    status: text("status").notNull().default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("workspace_invite_email").on(t.email, t.status)],
+);
 
 export const schema = {
   user,

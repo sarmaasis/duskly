@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { pageArgs, pageNext } from "../lib/page";
 import { media } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
@@ -28,7 +29,9 @@ mediaRoutes.get("/", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
-  const rows = await db.select().from(media).where(eq(media.workspaceId, workspaceId));
+  const { limit, offset } = pageArgs(c.req.query("limit"), c.req.query("offset"), 48, 100);
+  const selected = await db.select().from(media).where(eq(media.workspaceId, workspaceId)).orderBy(desc(media.id)).limit(limit + 1).offset(offset);
+  const { rows, next } = pageNext(selected, limit, offset);
   return c.json({
     media: await Promise.all(
       rows.map(async (m) => ({
@@ -37,6 +40,7 @@ mediaRoutes.get("/", async (c) => {
         previewUrl: await signPublicMediaUrl(c.env, m.id),
       })),
     ),
+    next,
   });
 });
 

@@ -37,20 +37,32 @@ type Item = { id: string; kind: string; previewUrl: string; bytes: number };
           <p class="col-span-full text-sm text-[#63676c] dark:text-zinc-400">Nothing uploaded yet.</p>
         }
       </div>
+      @if (next() != null) {
+        <button type="button" (click)="more()" class="mt-4 h-9 rounded-full border border-[#e8e8e3] px-4 text-xs font-semibold dark:border-zinc-700">More</button>
+      }
     </div>
   `,
 })
 export class MediaPage implements OnInit {
   items = signal<Item[]>([]);
+  next = signal<number | null>(null);
   error = signal("");
+  private workspaceId = "";
 
   async ngOnInit() {
     try {
       const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
-      const data = await api<{ media: Item[] }>(`/v1/media?workspaceId=${me.workspace.id}`);
-      this.items.set(data.media || []);
+      this.workspaceId = me.workspace.id;
+      await this.more();
     } catch {
       this.error.set("Could not load the library.");
     }
+  }
+
+  async more() {
+    const offset = this.next() ?? 0;
+    const data = await api<{ media: Item[]; next: number | null }>(`/v1/media?workspaceId=${this.workspaceId}&offset=${offset}`);
+    this.items.update((rows) => rows.concat(data.media || []));
+    this.next.set(data.next);
   }
 }

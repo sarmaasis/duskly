@@ -547,13 +547,27 @@ export class AccountsPage implements OnInit {
     }
   }
 
+  async loadAccounts() {
+    const accounts: AccountRow[] = [];
+    let offset = 0;
+    let networks: string[] = [];
+    let meta: Record<string, NetMeta> | undefined;
+    for (let i = 0; i < 40; i++) {
+      const data = await api<{ accounts: AccountRow[]; networks: string[]; meta?: Record<string, NetMeta>; next?: number | null }>(
+        `/v1/accounts?workspaceId=${this.workspaceId}&limit=100&offset=${offset}`,
+      );
+      accounts.push(...(data.accounts || []));
+      if (!networks.length) networks = data.networks || [];
+      if (!meta && data.meta) meta = data.meta;
+      if (typeof data.next !== "number") break;
+      offset = data.next;
+    }
+    return { accounts, networks, meta };
+  }
+
   async reload() {
     const [data, groups, me] = await Promise.all([
-      api<{
-        accounts: AccountRow[];
-        networks: string[];
-        meta?: Record<string, NetMeta>;
-      }>(`/v1/accounts?workspaceId=${this.workspaceId}`),
+      this.loadAccounts(),
       api<{ groups: Company[] }>(`/v1/org/groups?workspaceId=${this.workspaceId}`),
       api<{ usage: PlanSnapshot }>("/v1/workspaces/me").catch(() => null),
     ]);

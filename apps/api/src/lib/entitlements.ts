@@ -105,24 +105,21 @@ export async function consumeQuota(
   }
 }
 
-export async function usageSnapshot(env: Env, workspaceId: string) {
-  const { limits, plan } = await getWorkspacePlan(env, workspaceId);
+export async function usageSnapshot(env: Env, workspaceId: string, knownPlan?: string) {
+  const mode = isCloud(env) ? "cloud" : "selfhost";
+  const plan = knownPlan ? resolvePlan(knownPlan, mode) : (await getWorkspacePlan(env, workspaceId)).plan;
+  const limits = limitsFor(plan);
   const db = drizzle(env.DB);
   const period = periodKey();
-  const rows = await db
-    .select()
-    .from(usageCounter)
-    .where(and(eq(usageCounter.workspaceId, workspaceId), eq(usageCounter.period, period)));
+  const [rows, channelRows, memberRows] = await db.batch([
+    db.select().from(usageCounter).where(and(eq(usageCounter.workspaceId, workspaceId), eq(usageCounter.period, period))),
+    db.select({ c: count() }).from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId)),
+    db.select({ c: count() }).from(workspaceMember).where(eq(workspaceMember.workspaceId, workspaceId)),
+  ]);
   const used: Record<string, number> = {};
   for (const r of rows) used[r.kind] = r.used;
-  const [channels] = await db
-    .select({ c: count() })
-    .from(socialAccount)
-    .where(eq(socialAccount.workspaceId, workspaceId));
-  const [members] = await db
-    .select({ c: count() })
-    .from(workspaceMember)
-    .where(eq(workspaceMember.workspaceId, workspaceId));
+  const channels = channelRows[0];
+  const members = memberRows[0];
   return {
     plan,
     period,

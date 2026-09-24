@@ -13,6 +13,7 @@ import {
   shouldDeferFirstComment,
 } from "../lib/schedule";
 import { nextSlotMs, occupiedSlotMs } from "../../../web/src/app/lib/slots";
+import { pageArgs, pageNext } from "../lib/page";
 
 describe("approvals, slots, and metrics", () => {
   it("keeps a member post pending until an admin approves it", () => {
@@ -29,6 +30,9 @@ describe("approvals, slots, and metrics", () => {
     expect(new Date(taken || 0).getDate()).toBe(25);
     const busy = Date.parse("2026-09-24T13:00:00");
     expect(occupiedSlotMs([{ scheduledAt: busy, accountIds: ["a"] }, { scheduledAt: busy, accountIds: ["b"] }], ["a"])).toEqual([busy]);
+    expect(pageArgs("500", "10")).toEqual({ limit: 100, offset: 10 });
+    expect(pageNext([1, 2, 3], 2, 0)).toEqual({ rows: [1, 2], next: 2 });
+    expect(pageNext([1], 2, 0).next).toBeNull();
   });
 
   it("drops engagement fields the network did not return", () => {

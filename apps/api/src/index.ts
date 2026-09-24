@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createAuth } from "./auth";
+import { getAuth } from "./auth";
 import { postRoutes } from "./routes/posts";
 import { inboxRoutes } from "./routes/inbox";
 import { billingRoutes, handleDodoWebhook } from "./routes/billing";
@@ -36,6 +36,8 @@ export { SchedulerLock };
 const app = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+// ponytail: 5s session cache per isolate. Drop if a revoked cookie must die immediately.
+const sessionCache = new Map<string, { exp: number; session: { user: { id: string; email: string } } }>();
 
 function securityHeaders(res: Response) {
   res.headers.set("X-Content-Type-Options", "nosniff");
@@ -58,7 +60,7 @@ app.use("*", async (c, next) => {
 });
 
 app.on(["POST", "GET"], "/api/auth/*", (c) => {
-  const auth = createAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
+  const auth = getAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
   return auth.handler(c.req.raw);
 });
 
@@ -91,6 +93,10 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
+  if (c.req.method === "GET" && c.req.path.match(/^\/v1\/team\/invite\/[^/]+$/)) {
+    await next();
+    return;
+  }
   const token = c.req.header("x-api-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token && MUTATING.has(c.req.method)) {
     const origin = c.req.header("origin");
@@ -106,13 +112,23 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
-  const auth = createAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
+  const auth = getAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
   type AuthSession = { user: { id: string; email: string } };
   let session: AuthSession | null = null;
-  try {
-    session = (await auth.api.getSession({ headers: c.req.raw.headers })) as AuthSession | null;
-  } catch {
-    return c.json({ error: "unauthorized" }, 401);
+  const cookie = c.req.header("cookie") || "";
+  const cached = cookie ? sessionCache.get(cookie) : undefined;
+  if (cached && cached.exp > Date.now()) {
+    session = cached.session;
+  } else {
+    try {
+      session = (await auth.api.getSession({ headers: c.req.raw.headers })) as AuthSession | null;
+    } catch {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    if (session?.user && cookie) {
+      if (sessionCache.size > 200) sessionCache.clear();
+      sessionCache.set(cookie, { exp: Date.now() + 5000, session });
+    }
   }
   if (!session?.user) return c.json({ error: "unauthorized" }, 401);
   c.set("userId", session.user.id);

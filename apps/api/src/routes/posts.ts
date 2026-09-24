@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
 import { eq, and, desc, inArray, ne } from "drizzle-orm";
+import { pageArgs, pageNext } from "../lib/page";
 import {
   media,
   posts,
@@ -139,11 +140,15 @@ postRoutes.get("/", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
-  const rows = await db
-    .select()
-    .from(posts)
-    .where(eq(posts.workspaceId, workspaceId))
-    .orderBy(desc(posts.scheduledAt));
+  const onlyId = c.req.query("id");
+  const { limit, offset } = pageArgs(c.req.query("limit"), c.req.query("offset"));
+  const where = onlyId
+    ? and(eq(posts.workspaceId, workspaceId), eq(posts.id, onlyId))
+    : c.req.query("issues") === "1"
+      ? and(eq(posts.workspaceId, workspaceId), inArray(posts.status, ["queued", "failed"]))
+      : eq(posts.workspaceId, workspaceId);
+  const selected = await db.select().from(posts).where(where).orderBy(desc(posts.scheduledAt), desc(posts.id)).limit(onlyId ? 1 : limit + 1).offset(onlyId ? 0 : offset);
+  const { rows, next } = onlyId ? { rows: selected, next: null } : pageNext(selected, limit, offset);
   const ids = rows.map((row) => row.id);
   const issuesByPost = new Map<string, { network: string; handle: string; status: string; error: string | null }[]>();
   const channelsByPost = new Map<string, { accountId: string; network: string; handle: string; status: string }[]>();
@@ -188,31 +193,24 @@ postRoutes.get("/", async (c) => {
       issuesByPost.set(dest.postId, list);
     }
   }
-  const mediaRows = mediaIdSet.size
-    ? await db.select().from(media).where(inArray(media.id, [...mediaIdSet]))
+  const skipPreview = c.req.query("issues") === "1";
+  const mediaRows = !skipPreview && mediaIdSet.size
+    ? await db.select({ id: media.id, kind: media.kind }).from(media).where(inArray(media.id, [...mediaIdSet]))
     : [];
   const mediaById = new Map(mediaRows.map((row) => [row.id, row]));
-  const postsOut = [];
-  for (const row of rows) {
-    const attached = (mediaIdsByPost.get(row.id) ?? [])
-      .map((id) => mediaById.get(id))
-      .filter((item): item is (typeof mediaRows)[number] => !!item);
-    const previewSource = attached.find((item) => item.kind !== "video") ?? attached[0];
-    const preview = previewSource
-      ? {
-          id: previewSource.id,
-          kind: previewSource.kind,
-          url: await signPublicMediaUrl(c.env, previewSource.id),
-        }
-      : null;
-    postsOut.push({
-      ...row,
-      issues: issuesByPost.get(row.id) ?? [],
-      channels: channelsByPost.get(row.id) ?? [],
-      preview,
-    });
-  }
-  return c.json({ posts: postsOut });
+  const postsOut = await Promise.all(
+    rows.map(async (row) => {
+      const attached = (mediaIdsByPost.get(row.id) ?? [])
+        .map((id) => mediaById.get(id))
+        .filter((item): item is (typeof mediaRows)[number] => !!item);
+      const previewSource = skipPreview ? undefined : attached.find((item) => item.kind !== "video") ?? attached[0];
+      const preview = previewSource
+        ? { id: previewSource.id, kind: previewSource.kind, url: await signPublicMediaUrl(c.env, previewSource.id) }
+        : null;
+      return { ...row, issues: issuesByPost.get(row.id) ?? [], channels: channelsByPost.get(row.id) ?? [], preview };
+    }),
+  );
+  return c.json({ posts: postsOut, next });
 });
 
 postRoutes.post("/", async (c) => {

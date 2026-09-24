@@ -3,23 +3,18 @@ import { eq, and } from "drizzle-orm";
 import { socialAccount, user, workspace, workspaceInvite, workspaceMember } from "../db/schema";
 import type { Env } from "../env";
 
-async function acceptPendingInvites(db: ReturnType<typeof drizzle>, userId: string) {
-  const [row] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId)).limit(1);
-  const email = row?.email?.toLowerCase();
-  if (!email) return;
-  const pending = await db
-    .select()
-    .from(workspaceInvite)
-    .where(and(eq(workspaceInvite.email, email), eq(workspaceInvite.status, "pending")));
+async function acceptPendingInvites(
+  db: ReturnType<typeof drizzle>,
+  userId: string,
+  pending: { id: string; workspaceId: string; role: string }[],
+  memberships: { workspaceId: string; role: string }[],
+) {
   for (const inv of pending) {
-    const [already] = await db
-      .select()
-      .from(workspaceMember)
-      .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)))
-      .limit(1);
+    const already = memberships.find((m) => m.workspaceId === inv.workspaceId);
     const role = inv.role === "admin" ? "admin" : "member";
     if (!already) {
       await db.insert(workspaceMember).values({ workspaceId: inv.workspaceId, userId, role });
+      memberships.push({ workspaceId: inv.workspaceId, role });
     } else if (already.role === "owner") {
       const [home] = await db.select({ ownerId: workspace.ownerId }).from(workspace).where(eq(workspace.id, inv.workspaceId)).limit(1);
       if (home && home.ownerId !== userId) {
@@ -27,16 +22,29 @@ async function acceptPendingInvites(db: ReturnType<typeof drizzle>, userId: stri
           .update(workspaceMember)
           .set({ role })
           .where(and(eq(workspaceMember.workspaceId, inv.workspaceId), eq(workspaceMember.userId, userId)));
+        already.role = role;
       }
     }
     await db.update(workspaceInvite).set({ status: "accepted" }).where(eq(workspaceInvite.id, inv.id));
   }
 }
 
-export async function ensureDefaultWorkspace(env: Env, userId: string, name = "") {
+export async function ensureDefaultWorkspace(env: Env, userId: string, name = "", email = "") {
   const db = drizzle(env.DB);
-  await acceptPendingInvites(db, userId);
-  const memberships = await db.select().from(workspaceMember).where(eq(workspaceMember.userId, userId));
+  let knownEmail = email.toLowerCase();
+  if (!knownEmail) {
+    const [row] = await db.select({ email: user.email }).from(user).where(eq(user.id, userId)).limit(1);
+    knownEmail = row?.email?.toLowerCase() || "";
+  }
+  const [pending, memberships, owned] = await db.batch([
+    db
+      .select()
+      .from(workspaceInvite)
+      .where(and(eq(workspaceInvite.email, knownEmail || "\0"), eq(workspaceInvite.status, "pending"))),
+    db.select().from(workspaceMember).where(eq(workspaceMember.userId, userId)),
+    db.select().from(workspace).where(eq(workspace.ownerId, userId)).limit(1),
+  ]);
+  if (pending.length) await acceptPendingInvites(db, userId, pending, memberships);
   const invited = memberships.find((m) => m.role === "member" || m.role === "admin");
   if (invited) {
     const ownedMembership = memberships.find((m) => m.role === "owner");
@@ -49,15 +57,14 @@ export async function ensureDefaultWorkspace(env: Env, userId: string, name = ""
       : [];
     if (!ownedMembership || !channel) {
       const [ws] = await db.select().from(workspace).where(eq(workspace.id, invited.workspaceId)).limit(1);
-      if (ws) return ws;
+      if (ws) return { ...ws, role: invited.role === "admin" ? ("admin" as const) : ("member" as const) };
     }
   }
-  const owned = await db.select().from(workspace).where(eq(workspace.ownerId, userId)).limit(1);
-  if (owned[0]) return owned[0];
+  if (owned[0]) return { ...owned[0], role: "owner" as const };
   const member = memberships[0];
   if (member) {
     const [ws] = await db.select().from(workspace).where(eq(workspace.id, member.workspaceId)).limit(1);
-    if (ws) return ws;
+    if (ws) return { ...ws, role: member.role === "admin" ? ("admin" as const) : member.role === "owner" ? ("owner" as const) : ("member" as const) };
   }
   const id = crypto.randomUUID();
   const now = new Date();
@@ -84,6 +91,7 @@ export async function ensureDefaultWorkspace(env: Env, userId: string, name = ""
     onboardingCompleted: false,
     extrasJson: null,
     createdAt: now,
+    role: "owner" as const,
   };
 }
 
@@ -124,14 +132,14 @@ export async function sha256Hex(input: string) {
   return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+const hmacKeys = new Map<string, CryptoKey>();
+
 export async function hmacSign(secret: string, body: string) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  let key = hmacKeys.get(secret);
+  if (!key) {
+    key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    hmacKeys.set(secret, key);
+  }
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }

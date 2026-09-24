@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and, inArray, or, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray, or, isNull } from "drizzle-orm";
 import {
   socialAccount,
   customerGroup,
@@ -19,7 +19,7 @@ import {
   user,
 } from "../db/schema";
 import type { Env } from "../env";
-import { parseEmailSender, sendViaEmailBinding } from "../lib/email-sender";
+import { mailHtml, parseEmailSender, sendViaEmailBinding } from "../lib/email-sender";
 import { assertWorkspaceAccess, ensureDefaultWorkspace, sha256Hex } from "../lib/workspace";
 import {
   assertChannelLimit,
@@ -34,9 +34,10 @@ import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
 import { pickMetrics } from "../lib/schedule";
+import { pageArgs, pageNext } from "../lib/page";
 import { rssHasPublishTarget } from "../lib/schedule";
 
-export const workspaceRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
+export const workspaceRoutes = new Hono<{ Bindings: Env; Variables: { userId: string; email?: string } }>();
 
 async function allChannelsInWorkspace(env: Env, workspaceId: string, channelIds: string[]) {
   const db = drizzle(env.DB);
@@ -53,16 +54,10 @@ async function allChannelsInWorkspace(env: Env, workspaceId: string, channelIds:
 
 workspaceRoutes.get("/me", async (c) => {
   const userId = c.get("userId");
-  const ws = await ensureDefaultWorkspace(c.env, userId);
-  const db = drizzle(c.env.DB);
-  const [member] = await db
-    .select({ role: workspaceMember.role })
-    .from(workspaceMember)
-    .where(and(eq(workspaceMember.workspaceId, ws.id), eq(workspaceMember.userId, userId)))
-    .limit(1);
-  const usage = await usageSnapshot(c.env, ws.id);
-  const role = member?.role && member.role !== "owner" ? member.role : ws.ownerId === userId ? "owner" : "member";
-  return c.json({ workspace: { ...ws, role }, usage, networks: NETWORKS, cloud: isCloud(c.env) });
+  const email = (c.get("email") || "").toLowerCase();
+  const ws = await ensureDefaultWorkspace(c.env, userId, "", email);
+  const usage = await usageSnapshot(c.env, ws.id, ws.plan);
+  return c.json({ workspace: ws, usage, networks: NETWORKS, cloud: isCloud(c.env) });
 });
 
 workspaceRoutes.patch("/:id", async (c) => {
@@ -155,7 +150,15 @@ accountRoutes.get("/", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
-  const rows = await db.select().from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId));
+  const { limit, offset } = pageArgs(c.req.query("limit"), c.req.query("offset"));
+  const selected = await db
+    .select()
+    .from(socialAccount)
+    .where(eq(socialAccount.workspaceId, workspaceId))
+    .orderBy(desc(socialAccount.createdAt))
+    .limit(limit + 1)
+    .offset(offset);
+  const { rows, next } = pageNext(selected, limit, offset);
   const problems = await db
     .select({ accountId: postDestination.socialAccountId, error: postDestination.error })
     .from(postDestination)
@@ -167,8 +170,6 @@ accountRoutes.get("/", async (c) => {
   }
   const accounts = await Promise.all(rows.map(async (row) => {
     let handle = row.handle;
-    let tokenCipher = await encryptSecret(c.env, await decryptSecret(c.env, row.tokenCipher));
-    let credentialsJson = row.credentialsJson;
     let channelId: string | null = null;
     let channelName: string | null = null;
     let pendingPages: Array<{ id: string; name: string }> = [];
@@ -202,7 +203,6 @@ accountRoutes.get("/", async (c) => {
             pendingPages = [];
           }
         }
-        credentialsJson = await encryptCredentials(c.env, creds);
         if (
           row.network === "instagram" &&
           creds.accessToken &&
@@ -213,22 +213,15 @@ accountRoutes.get("/", async (c) => {
           if (username) {
             handle = `@${username.replace(/^@/, "")}`;
             creds.igUsername = username.replace(/^@/, "");
-            credentialsJson = await encryptCredentials(c.env, creds);
             await db
               .update(socialAccount)
-              .set({ handle, credentialsJson })
+              .set({ handle, credentialsJson: await encryptCredentials(c.env, creds) })
               .where(and(eq(socialAccount.id, row.id), eq(socialAccount.workspaceId, workspaceId)));
           }
         }
       } catch {
         /* ignore */
       }
-    }
-    if (tokenCipher !== row.tokenCipher || credentialsJson !== row.credentialsJson) {
-      await db
-        .update(socialAccount)
-        .set({ tokenCipher, credentialsJson })
-        .where(and(eq(socialAccount.id, row.id), eq(socialAccount.workspaceId, workspaceId)));
     }
     return {
       id: row.id,
@@ -254,6 +247,7 @@ accountRoutes.get("/", async (c) => {
     accounts,
     networks: NETWORKS,
     meta: Object.fromEntries(NETWORKS.map((n) => [n, NETWORK_META[n]])),
+    next,
   });
 });
 
@@ -561,7 +555,8 @@ teamRoutes.get("/", async (c) => {
   const db = drizzle(c.env.DB);
   const members = await db.select().from(workspaceMember).where(eq(workspaceMember.workspaceId, workspaceId));
   const invites = await db.select().from(workspaceInvite).where(eq(workspaceInvite.workspaceId, workspaceId));
-  const users = await db.select().from(user);
+  const ids = members.map((m) => m.userId);
+  const users = ids.length ? await db.select().from(user).where(inArray(user.id, ids)) : [];
   const byId = Object.fromEntries(users.map((u) => [u.id, u]));
   return c.json({
     members: members.map((m) => ({ ...m, email: byId[m.userId]?.email, name: byId[m.userId]?.name })),
@@ -588,12 +583,20 @@ teamRoutes.post("/invite", async (c) => {
       createdAt: new Date(),
     });
     const acceptUrl = `${c.env.WEB_ORIGIN}/invite/${id}`;
+    const who = body.email.toLowerCase();
+    const roleLabel = body.role === "admin" ? "an admin" : "a member";
     await sendViaEmailBinding(c.env.EMAIL, {
-      to: body.email.toLowerCase(),
+      to: who,
       from: parseEmailSender(c.env.EMAIL_FROM),
       subject: `Join ${ws.name} on Duskly`,
-      text: `You've been invited to ${ws.name}. Open ${acceptUrl} while signed in as ${body.email.toLowerCase()} to join.`,
-      html: `<p>You've been invited to <strong>${ws.name}</strong> on Duskly.</p><p><a href="${acceptUrl}" style="color:#ff5c33">Accept invite</a></p><p>Sign in with <strong>${body.email.toLowerCase()}</strong> (same email OTP path as usual), then open the link.</p>`,
+      text: `You've been invited to ${ws.name} as ${roleLabel}. Open ${acceptUrl} and confirm ${who} with a sign-in code. That link is the whole join flow.`,
+      html: mailHtml({
+        title: `Join ${ws.name}`,
+        body: `You're invited as ${roleLabel}. Open the link and confirm <strong>${who}</strong> with a code on that page.`,
+        href: acceptUrl,
+        label: "Accept invite",
+        note: "You do not need to sign in first. The page sends the code to this address.",
+      }),
     });
     return c.json({ id, acceptUrl }, 201);
   } catch (e) {
@@ -608,7 +611,7 @@ teamRoutes.get("/invite/:id", async (c) => {
   const [inv] = await db.select().from(workspaceInvite).where(eq(workspaceInvite.id, c.req.param("id"))).limit(1);
   if (!inv || inv.status !== "pending") return c.json({ error: "not_found" }, 404);
   const [ws] = await db.select().from(workspace).where(eq(workspace.id, inv.workspaceId)).limit(1);
-  return c.json({ id: inv.id, email: inv.email, workspaceName: ws?.name ?? "Account", status: inv.status });
+  return c.json({ id: inv.id, email: inv.email, role: inv.role === "admin" ? "admin" : "member", workspaceName: ws?.name ?? "Account", status: inv.status });
 });
 
 teamRoutes.post("/invite/:id/accept", async (c) => {
@@ -990,7 +993,9 @@ orgRoutes.get("/analytics", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
 
-  const breakdown = await c.env.DB.prepare(
+  const shift = analyticsDayShift(c.req.query("tz"));
+  const [breakdown, totalsRow, recentRows] = await Promise.all([
+    c.env.DB.prepare(
     `SELECT sa.network AS network,
             sa.handle AS handle,
             pd.status AS status,
@@ -1005,17 +1010,9 @@ orgRoutes.get("/analytics", async (c) => {
      GROUP BY sa.network, sa.handle, pd.status, day
      ORDER BY day DESC`,
   )
-    .bind(
-      analyticsDayShift(c.req.query("tz")),
-      workspaceId,
-      analyticsDayShift(c.req.query("tz")),
-      c.req.query("from") || "1970-01-01",
-      analyticsDayShift(c.req.query("tz")),
-      c.req.query("to") || "2999-12-31",
-    )
-    .all<{ network: string; handle: string; status: string; day: string; c: number }>();
-
-  const totalsRow = await c.env.DB.prepare(
+    .bind(shift, workspaceId, shift, c.req.query("from") || "1970-01-01", shift, c.req.query("to") || "2999-12-31")
+    .all<{ network: string; handle: string; status: string; day: string; c: number }>(),
+    c.env.DB.prepare(
     `SELECT COUNT(*) AS posts,
             SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
             SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
@@ -1025,16 +1022,16 @@ orgRoutes.get("/analytics", async (c) => {
      FROM posts WHERE workspace_id = ?`,
   )
     .bind(workspaceId)
-    .first<{ posts: number; published: number; queued: number; failed: number; draft: number; scheduled: number }>();
-
-  const recentRows = await c.env.DB.prepare(
+    .first<{ posts: number; published: number; queued: number; failed: number; draft: number; scheduled: number }>(),
+    c.env.DB.prepare(
     `SELECT id, body, status, COALESCE(published_at, scheduled_at, created_at) AS at
      FROM posts WHERE workspace_id = ?
      ORDER BY at DESC
      LIMIT 20`,
   )
     .bind(workspaceId)
-    .all<{ id: string; body: string; status: string; at: number | null }>();
+    .all<{ id: string; body: string; status: string; at: number | null }>(),
+  ]);
 
   const db = drizzle(c.env.DB);
   const recentIds = (recentRows.results || []).map((row) => row.id);
@@ -1093,9 +1090,9 @@ orgRoutes.get("/analytics", async (c) => {
     .innerJoin(posts, eq(postDestination.postId, posts.id))
     .where(and(eq(posts.workspaceId, workspaceId), eq(postDestination.status, "published")))
     .limit(8);
-  for (const row of publishedRows) {
-    if (!row.remoteId) continue;
-    if (row.network !== "x" && row.network !== "instagram" && row.network !== "facebook") continue;
+  await Promise.all(publishedRows.map(async (row) => {
+    if (!row.remoteId) return;
+    if (row.network !== "x" && row.network !== "instagram" && row.network !== "facebook") return;
     try {
       const creds = (await decryptCredentials(c.env, row.credentialsJson)) || {};
       const token = creds.accessToken || (await decryptSecret(c.env, row.tokenCipher));
@@ -1104,7 +1101,7 @@ orgRoutes.get("/analytics", async (c) => {
         const res = await fetch(`https://api.x.com/2/tweets/${row.remoteId}?tweet.fields=public_metrics`, {
           headers: { authorization: `Bearer ${token}` },
         });
-        if (!res.ok) continue;
+        if (!res.ok) return;
         const data = (await res.json()) as { data?: { public_metrics?: { like_count?: number; reply_count?: number; impression_count?: number } } };
         const metrics = data.data?.public_metrics;
         if (metrics) {
@@ -1116,7 +1113,7 @@ orgRoutes.get("/analytics", async (c) => {
         const host = creds.authKind === "instagram_login" ? "https://graph.instagram.com" : "https://graph.facebook.com/v21.0";
         const fields = row.network === "instagram" ? "like_count,comments_count" : "likes.summary(true),comments.summary(true)";
         const res = await fetch(`${host}/${row.remoteId}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`);
-        if (!res.ok) continue;
+        if (!res.ok) return;
         const data = (await res.json()) as {
           like_count?: number;
           comments_count?: number;
@@ -1139,7 +1136,7 @@ orgRoutes.get("/analytics", async (c) => {
     } catch {
       /* leave the number off when the network does not return it */
     }
-  }
+  }));
 
   // Network insights only when credentials exist; never invent numbers.
   const networkInsights: { network: string; note: string }[] = [];

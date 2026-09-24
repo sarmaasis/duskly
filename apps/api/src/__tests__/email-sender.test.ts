@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { emailSendErrorFields, parseEmailSender, sendViaEmailBinding } from "../lib/email-sender";
+import { emailSendErrorFields, mailHtml, parseEmailSender, sendViaEmailBinding } from "../lib/email-sender";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +39,15 @@ describe("emailSendErrorFields", () => {
       message: "could not find domain config of sending domain",
       code: "E_SENDER_DOMAIN_NOT_AVAILABLE",
     });
+  });
+});
+
+describe("mailHtml", () => {
+  it("escapes the title and keeps the code", () => {
+    const html = mailHtml({ title: "Join <studio>", body: "Hello", code: "123456", href: "https://duskly.site/invite/1", label: "Accept invite" });
+    expect(html).toContain("Join &lt;studio&gt;");
+    expect(html).toContain("123456");
+    expect(html).toContain("https://duskly.site/invite/1");
   });
 });
 

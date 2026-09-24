@@ -1,7 +1,7 @@
 import { Component, ElementRef, OnInit, ViewChild, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, RouterLink } from "@angular/router";
-import { api, apiBase, type PlanSnapshot } from "../lib/api";
+import { api, apiAll, apiBase, type PlanSnapshot } from "../lib/api";
 import { CAPTION_LIMITS, countCaptionChars } from "../lib/caption-limits";
 import { nextSlotMs, occupiedSlotMs } from "../lib/slots";
 import { Notices } from "../lib/notices";
@@ -555,7 +555,7 @@ export class ComposerPage implements OnInit {
       lsSet("dk-ws", me.workspace.id);
       this.usage.set(me.usage);
       const [ac, sigs, sets, groups, feeds, plugs] = await Promise.all([
-        api<{ accounts: { id: string; network: string; handle: string; queueSlots?: string | null }[] }>(`/v1/accounts?workspaceId=${me.workspace.id}`),
+        apiAll<{ id: string; network: string; handle: string; queueSlots?: string | null }>(`/v1/accounts?workspaceId=${me.workspace.id}`, "accounts"),
         api<{ signatures: { id: string; name: string; body: string; isDefault: boolean }[] }>(
           `/v1/org/signatures?workspaceId=${me.workspace.id}`,
         ),
@@ -566,7 +566,7 @@ export class ComposerPage implements OnInit {
         api<{ feeds: { id: string; url: string }[] }>(`/v1/org/rss?workspaceId=${me.workspace.id}`),
         api<{ plugs: { id: string; name: string }[] }>(`/v1/org/plugs?workspaceId=${me.workspace.id}`),
       ]);
-      this.accounts.set(ac.accounts);
+      this.accounts.set(ac);
       this.signatures.set(sigs.signatures);
       this.sets.set(sets.sets);
       this.groups.set(groups.groups);
@@ -574,7 +574,7 @@ export class ComposerPage implements OnInit {
       this.plugs.set(plugs.plugs || []);
       const def = sigs.signatures.find((s) => s.isDefault);
       if (def) this.signatureId = def.id;
-      if (ac.accounts[0]) this.selected.set([ac.accounts[0].id]);
+      if (ac[0]) this.selected.set([ac[0].id]);
       await this.loadEditing(this.route.snapshot.queryParamMap.get("post"));
       const mediaId = this.route.snapshot.queryParamMap.get("media");
       if (mediaId) this.pushAttachment({ id: mediaId, url: `${apiBase()}/v1/media/${mediaId}/file?workspaceId=${this.workspaceId}`, kind: "image" });
@@ -644,11 +644,12 @@ export class ComposerPage implements OnInit {
     const slots = this.selectedAccounts().flatMap((account) => (account.queueSlots || "09:00,13:00,18:00").split(","));
     let taken: number[] = [];
     try {
-      const data = await api<{ posts: { scheduledAt?: string | number | null; channels?: { accountId?: string }[] }[] }>(
+      const posts = await apiAll<{ scheduledAt?: string | number | null; channels?: { accountId?: string }[] }>(
         `/v1/posts?workspaceId=${this.workspaceId}`,
+        "posts",
       );
       taken = occupiedSlotMs(
-        (data.posts || []).map((post) => ({
+        posts.map((post) => ({
           scheduledAt: post.scheduledAt,
           accountIds: (post.channels || []).map((channel) => channel.accountId).filter((id): id is string => !!id),
         })),
@@ -731,9 +732,9 @@ export class ComposerPage implements OnInit {
   private async loadEditing(id: string | null) {
     if (!id) return;
     const data = await api<{ posts: { id: string; body: string; status: string; scheduledAt: string | number | null; mediaIds: string | null; variantsJson: string | null; extrasJson?: string | null; channels?: { accountId?: string }[] }[] }>(
-      `/v1/posts?workspaceId=${this.workspaceId}`,
+      `/v1/posts?workspaceId=${this.workspaceId}&id=${encodeURIComponent(id)}`,
     );
-    const post = data.posts.find((p) => p.id === id);
+    const post = data.posts[0];
     if (!post || (post.status !== "draft" && post.status !== "scheduled" && post.status !== "pending_approval")) return;
     this.editingId = post.id;
     this.body = post.body;

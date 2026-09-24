@@ -32,11 +32,15 @@ type Item = { id: string; network: string; handle: string; text: string; account
           <p class="rounded-xl border border-[#e8e8e3] bg-white p-6 text-sm text-[#63676c] dark:border-zinc-700 dark:bg-zinc-900">No comments came back from the connected channels.</p>
         }
       </div>
+      @if (next() != null) {
+        <button type="button" (click)="more()" class="mt-4 h-9 rounded-full border border-[#e8e8e3] px-4 text-xs font-semibold dark:border-zinc-700">More</button>
+      }
     </div>
   `,
 })
 export class InboxPage implements OnInit {
   items = signal<Item[]>([]);
+  next = signal<number | null>(null);
   error = signal("");
   drafts: Record<string, string> = {};
   private workspaceId = "";
@@ -45,11 +49,17 @@ export class InboxPage implements OnInit {
     try {
       const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
       this.workspaceId = me.workspace.id;
-      const data = await api<{ items: Item[] }>(`/v1/inbox?workspaceId=${me.workspace.id}`);
-      this.items.set(data.items || []);
+      await this.more();
     } catch {
       this.error.set("Sign in to read comments.");
     }
+  }
+
+  async more() {
+    const offset = this.next() ?? 0;
+    const data = await api<{ items: Item[]; next: number | null }>(`/v1/inbox?workspaceId=${this.workspaceId}&offset=${offset}`);
+    this.items.update((rows) => rows.concat(data.items || []));
+    this.next.set(data.next);
   }
 
   async reply(item: Item) {

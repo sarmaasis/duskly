@@ -1,6 +1,6 @@
 import { Component, inject, signal, OnInit } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
-import { api } from "../lib/api";
+import { api, apiAll } from "../lib/api";
 import { lsSet } from "../lib/browser";
 
 type Channel = { accountId?: string; network: string; handle: string; status: string };
@@ -405,8 +405,7 @@ export class CalendarPage implements OnInit {
     this.loading.set(true);
     this.error.set("");
     try {
-      const data = await api<{ posts: Post[] }>(`/v1/posts?workspaceId=${workspaceId}`);
-      this.posts.set(data.posts || []);
+      this.posts.set(await apiAll<Post>(`/v1/posts?workspaceId=${workspaceId}`, "posts"));
       this.rebuild();
     } catch (err) {
       const status = (err as { status?: number }).status;

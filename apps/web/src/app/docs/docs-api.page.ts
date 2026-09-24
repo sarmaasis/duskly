@@ -35,7 +35,7 @@ import { RouterLink } from "@angular/router";
         <div class="mt-4 space-y-6 text-[14px] leading-relaxed text-[#52525b]">
           <div>
             <p class="font-mono text-[12px] font-semibold text-[#09090b]">GET /v1/posts?workspaceId=…</p>
-            <p class="mt-1">List posts for an account (newest scheduled first).</p>
+            <p class="mt-1">List posts for an account (newest scheduled first). <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">limit</code> defaults to 50 (max 100) and <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">offset</code> skips that many. <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">next</code> is the next offset, or null. The same query works on accounts, media, and inbox.</p>
           </div>
           <div>
             <p class="font-mono text-[12px] font-semibold text-[#09090b]">POST /v1/posts</p>

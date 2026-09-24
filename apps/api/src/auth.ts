@@ -3,7 +3,7 @@ import { emailOTP } from "better-auth/plugins";
 import { withCloudflare } from "better-auth-cloudflare";
 import { drizzle } from "drizzle-orm/d1";
 import { schema } from "./db/schema";
-import { emailSendErrorFields, parseEmailSender, sendViaEmailBinding } from "./lib/email-sender";
+import { emailSendErrorFields, mailHtml, parseEmailSender, sendViaEmailBinding } from "./lib/email-sender";
 import type { Env } from "./env";
 
 type SecondaryStorage = {
@@ -29,7 +29,11 @@ async function deliverOtp(env: Env, email: string, otp: string, type: string, lo
         from: parseEmailSender(env.EMAIL_FROM),
         subject: `Your Duskly code: ${otp}`,
         text: `Your ${type} code is ${otp}. It expires in 10 minutes.`,
-        html: `<p>Your ${type} code is <strong style="color:#FF5C33">${otp}</strong>.</p>`,
+        html: mailHtml({
+          title: "Your sign-in code",
+          body: `Use this code to sign in. It expires in 10 minutes.`,
+          code: otp,
+        }),
       });
       return;
     } catch (err) {
@@ -86,4 +90,11 @@ export function createAuth(env: Env, cf?: IncomingRequestCfProperties | null) {
     };
   }
   return betterAuth(config as never);
+}
+
+let cachedAuth: ReturnType<typeof createAuth> | undefined;
+
+export function getAuth(env: Env, cf?: IncomingRequestCfProperties | null) {
+  if (!cachedAuth) cachedAuth = createAuth(env, cf);
+  return cachedAuth;
 }

@@ -1,6 +1,6 @@
 import { Component, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { api } from "../lib/api";
+import { api, apiAll } from "../lib/api";
 import { setDarkClass } from "../lib/browser";
 import { DkChoice, DkPill, DkSelect } from "../ui/forms";
 
@@ -419,12 +419,10 @@ export class SettingsPage implements OnInit {
       const t = me.workspace.theme === "dark" ? "dark" : "light";
       this.theme.set(t);
       setDarkClass(t === "dark");
-      const ac = await api<{ accounts: { id: string; network: string; handle: string }[] }>(
-        `/v1/accounts?workspaceId=${this.workspaceId}`,
-      );
-      this.accounts.set(ac.accounts);
-      this.channelId = ac.accounts[0]?.id || "";
-      this.rssChannelId = ac.accounts[0]?.id || "";
+      const ac = await apiAll<{ id: string; network: string; handle: string }>(`/v1/accounts?workspaceId=${this.workspaceId}`, "accounts");
+      this.accounts.set(ac);
+      this.channelId = ac[0]?.id || "";
+      this.rssChannelId = ac[0]?.id || "";
       await this.reload();
     } catch {
       /* unauthenticated — Workspace ID row explains sign-in */

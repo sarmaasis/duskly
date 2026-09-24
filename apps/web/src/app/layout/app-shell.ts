@@ -392,7 +392,7 @@ export class AppShell implements OnInit {
 
   async loadAlerts(workspaceId: string) {
     try {
-      const data = await api<{ posts: AlertPost[] }>(`/v1/posts?workspaceId=${workspaceId}`);
+      const data = await api<{ posts: AlertPost[] }>(`/v1/posts?workspaceId=${workspaceId}&issues=1`);
       this.alerts.set(
         (data.posts || []).filter(
           (post) => post.status === "queued" || post.status === "failed" || (post.issues?.length ?? 0) > 0,

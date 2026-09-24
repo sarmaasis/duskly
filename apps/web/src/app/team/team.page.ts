@@ -19,6 +19,10 @@ import { api, type PlanSnapshot } from "../lib/api";
 
       <form class="mb-6 flex flex-wrap gap-2 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900" (ngSubmit)="invite()">
         <input [(ngModel)]="email" name="email" type="email" required placeholder="teammate@studio.com" class="h-10 min-w-[14rem] flex-1 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm outline-none transition-colors focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+        <select [(ngModel)]="role" name="role" class="h-10 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+          <option value="member">Member</option>
+          <option value="admin">Admin</option>
+        </select>
         <button type="submit" class="h-10 rounded-full bg-cta px-5 text-xs font-semibold text-white hover:bg-cta-hover">Invite</button>
       </form>
 
@@ -37,14 +41,14 @@ import { api, type PlanSnapshot } from "../lib/api";
         <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">Pending invites</p>
         @for (i of invites(); track i.id) {
           <div class="flex justify-between rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-            <span>{{ i.email }}</span>
+            <span>{{ i.email }} · {{ i.role || "member" }}</span>
             <button type="button" (click)="revoke(i.id)" class="text-xs font-semibold text-red-600">Revoke</button>
           </div>
         } @empty {
           <div class="rounded-xl border border-[#e8e8e3] bg-white p-6 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
             <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">No invites</p>
             <h2 class="mt-2 font-display text-lg font-semibold dark:text-zinc-100">Invite a teammate</h2>
-            <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">They accept via the emailed link while signed in as that address.</p>
+            <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">They open the emailed link and confirm that address with a code on the same page.</p>
           </div>
         }
       </div>
@@ -53,8 +57,9 @@ import { api, type PlanSnapshot } from "../lib/api";
 })
 export class TeamPage implements OnInit {
   members = signal<{ userId: string; role: string; email?: string; name?: string }[]>([]);
-  invites = signal<{ id: string; email: string }[]>([]);
+  invites = signal<{ id: string; email: string; role?: string }[]>([]);
   email = "";
+  role: "member" | "admin" = "member";
   workspaceId = "";
   msg = signal("");
   err = signal(false);
@@ -75,7 +80,7 @@ export class TeamPage implements OnInit {
   async reload() {
     const data = await api<{
       members: { userId: string; role: string; email?: string; name?: string }[];
-      invites: { id: string; email: string }[];
+      invites: { id: string; email: string; role?: string }[];
     }>(`/v1/team?workspaceId=${this.workspaceId}`);
     this.members.set(data.members);
     this.invites.set(data.invites);
@@ -85,11 +90,11 @@ export class TeamPage implements OnInit {
     try {
       await api("/v1/team/invite", {
         method: "POST",
-        json: { workspaceId: this.workspaceId, email: this.email },
+        json: { workspaceId: this.workspaceId, email: this.email, role: this.role },
       });
       this.email = "";
       this.err.set(false);
-      this.msg.set("Invite emailed — they accept via the link while signed in as that address");
+      this.msg.set("Invite emailed — they join from that link");
       await this.reload();
     } catch (e: unknown) {
       this.err.set(true);
