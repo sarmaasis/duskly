@@ -41,19 +41,32 @@ jobs:
           API_ORIGIN: ${{ secrets.API_ORIGIN || vars.API_ORIGIN }}
         run: |
           python3 - <<'PY'
-          import os, pathlib, re
+          import json, os, pathlib, re
+
+          def replace_quoted_placeholder(text, key, value):
+              needle = '"${' + key + '}"'
+              if needle not in text:
+                  raise SystemExit(f"missing {needle} in wrangler config")
+              return text.replace(needle, json.dumps(value))
+
+          def replace_string_field(text, key, value):
+              m = re.search(rf'("{re.escape(key)}"\s*:\s*)"(?:\\.|[^"\\])*"', text)
+              if not m:
+                  raise SystemExit(f"missing {key} string field in wrangler config")
+              return text[: m.start()] + m.group(1) + json.dumps(value) + text[m.end() :]
+
           api = pathlib.Path("apps/api/wrangler.jsonc")
           text = api.read_text()
           for key in ("D1_DATABASE_ID", "KV_NAMESPACE_ID"):
-              text = text.replace("${" + key + "}", os.environ[key])
+              text = replace_quoted_placeholder(text, key, os.environ[key])
           origin = os.environ.get("WEB_ORIGIN")
           if origin:
-              text = re.sub(r'("WEB_ORIGIN"\s*:\s*")[^"]*"', rf"\1{origin}\"", text)
+              text = replace_string_field(text, "WEB_ORIGIN", origin)
           api.write_text(text)
-          web_origin = os.environ.get("API_ORIGIN")
-          if web_origin:
+          api_origin = os.environ.get("API_ORIGIN")
+          if api_origin:
               web = pathlib.Path("apps/web/wrangler.jsonc")
-              web.write_text(re.sub(r'("API_ORIGIN"\s*:\s*")[^"]*"', rf"\1{web_origin}\"", web.read_text()))
+              web.write_text(replace_string_field(web.read_text(), "API_ORIGIN", api_origin))
           PY
 
       - name: Apply D1 migrations
