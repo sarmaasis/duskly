@@ -97,7 +97,7 @@ test("composer uses copilot and schedules a selected channel", async ({ page }) 
 
 test("accounts can add token channels, filter the board, and save client groups", async ({ page }) => {
   await page.goto("/app/accounts");
-  await page.getByRole("button", { name: "Add channel" }).click();
+  await page.getByRole("button", { name: "Add channel" }).first().click();
   await page.getByRole("radio", { name: "Bluesky" }).click();
   await page.getByLabel(/Handle/).fill("duskly.bsky.social");
   await page.getByLabel("App password").fill("app-password");
