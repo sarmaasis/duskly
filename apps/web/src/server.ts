@@ -26,17 +26,30 @@ function withSecurityHeaders(res: Response) {
   return next;
 }
 
+function apiOriginScript(env: Env) {
+  const origin = (env.API_ORIGIN || "").replace(/\/$/, "");
+  return `window.__API__=${JSON.stringify(origin)};`;
+}
+
 export default {
   async fetch(req: Request, env: Env) {
+    const url = new URL(req.url);
+    if (url.pathname === "/__api-config.js") {
+      return new Response(apiOriginScript(env), {
+        headers: {
+          "content-type": "application/javascript; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    }
     const handleAngular = createRequestHandler((r) => appEngine(env.WEB_ORIGIN).handle(r));
     const res = await handleAngular(req);
     if (!res) return withSecurityHeaders(new Response("Not Found", { status: 404 }));
     const contentType = res.headers.get("content-type") || "";
     if (!contentType.includes("text/html") || !env.API_ORIGIN) return withSecurityHeaders(res);
     const html = await res.text();
-    const api = JSON.stringify(env.API_ORIGIN.replace(/\/$/, ""));
     return withSecurityHeaders(
-      new Response(html.replace("</head>", `<script>window.__API__=${api}</script></head>`), res),
+      new Response(html.replace("</head>", `<script>${apiOriginScript(env)}</script></head>`), res),
     );
   },
 };

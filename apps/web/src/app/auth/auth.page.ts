@@ -2,7 +2,7 @@ import { Component, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
-import { nextAfterAuth } from "../lib/api";
+import { apiBase, nextAfterAuth } from "../lib/api";
 import { SessionService } from "../lib/session";
 
 @Component({
@@ -68,7 +68,7 @@ export class AuthPage {
   private readonly router = inject(Router);
   private readonly session = inject(SessionService);
   async send() {
-    await fetch(`${api()}/api/auth/email-otp/send-verification-otp`, {
+    await fetch(`${apiBase()}/api/auth/email-otp/send-verification-otp`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
@@ -77,7 +77,7 @@ export class AuthPage {
     this.step.set("otp");
   }
   async verify() {
-    await fetch(`${api()}/api/auth/sign-in/email-otp`, {
+    await fetch(`${apiBase()}/api/auth/sign-in/email-otp`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
@@ -86,7 +86,4 @@ export class AuthPage {
     await this.session.refresh();
     await this.router.navigateByUrl(await nextAfterAuth());
   }
-}
-function api() {
-  return "http://localhost:8787";
 }

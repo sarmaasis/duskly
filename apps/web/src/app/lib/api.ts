@@ -1,9 +1,11 @@
-const API =
-  (typeof window !== "undefined" && (window as unknown as { __API__?: string }).__API__) ||
-  "http://localhost:8787";
+const DEV_API = "http://localhost:8787";
 
 export function apiBase() {
-  return API.replace(/\/$/, "");
+  const injected =
+    typeof window !== "undefined"
+      ? (window as unknown as { __API__?: string }).__API__
+      : undefined;
+  return (injected || DEV_API).replace(/\/$/, "");
 }
 
 export async function api<T = unknown>(

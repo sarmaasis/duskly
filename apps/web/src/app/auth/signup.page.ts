@@ -2,7 +2,7 @@ import { Component, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
-import { nextAfterAuth } from "../lib/api";
+import { apiBase, nextAfterAuth } from "../lib/api";
 import { SessionService } from "../lib/session";
 
 @Component({
@@ -84,7 +84,7 @@ export class SignupPage {
     }
     this.busy.set(true);
     try {
-      const res = await fetch(`${api()}/api/auth/email-otp/send-verification-otp`, {
+      const res = await fetch(`${apiBase()}/api/auth/email-otp/send-verification-otp`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
@@ -115,7 +115,7 @@ export class SignupPage {
       };
       const name = this.name.trim();
       if (name) body.name = name;
-      const res = await fetch(`${api()}/api/auth/sign-in/email-otp`, {
+      const res = await fetch(`${apiBase()}/api/auth/sign-in/email-otp`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
@@ -134,9 +134,7 @@ export class SignupPage {
     }
   }
 }
-function api() {
-  return "http://localhost:8787";
-}
+
 async function readError(res: Response) {
   try {
     const data = (await res.json()) as { message?: string; error?: string };
