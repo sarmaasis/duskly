@@ -6,15 +6,20 @@ Requires **Wrangler 4+** (pinned in the workspace) and **Angular 22** for the we
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly)
 
+The button asks you to create or pick D1 / KV / R2 / queues in the Cloudflare dashboard. It does not need resource IDs committed to git.
+
 Repo: https://github.com/sarmaasis/duskly
 
-## Manual
+## GitHub Actions (fork / self-host)
 
-1. Create Cloudflare resources named: D1 `duskly`, R2 `duskly-media`, queues `duskly-publish` and `duskly-publish-dlq`, Vectorize `duskly-posts`, Analytics Engine `duskly_metrics`, plus a KV namespace and Email Sending.
-2. Do not commit production resource IDs or deployment-specific origins. Copy `apps/api/wrangler.jsonc` to ignored `apps/api/wrangler.production.jsonc`, replace the placeholder IDs there, and do the same for `apps/web/wrangler.production.jsonc` if `API_ORIGIN` differs.
-3. Set secrets with Wrangler from `apps/api`, for example `pnpm exec wrangler secret put BETTER_AUTH_SECRET --config wrangler.production.jsonc`. Also set `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`), `EMAIL_FROM`, `BETTER_AUTH_URL`, `WEB_ORIGIN`, and any OAuth/billing secrets required by your deployment.
-4. `pnpm --filter @duskly/api db:migrate:prod && pnpm --filter @duskly/api deploy:prod && pnpm --filter @duskly/web deploy:prod`  
-   Workers: `duskly-api`, `duskly-web`.
-5. Custom domains: duskly.site (web), api.duskly.site (api)
+Create these once in **your** Cloudflare account (names can stay as in `apps/api/wrangler.jsonc`): D1 `duskly`, KV namespace, R2 `duskly-media`, queues `duskly-publish` and `duskly-publish-dlq`, Vectorize `duskly-posts`, Analytics Engine `duskly_metrics`, Email Sending.
+
+Put the D1 database id and KV namespace id in GitHub Actions secrets or variables (`D1_DATABASE_ID`, `KV_NAMESPACE_ID`). Wrangler 4.136.3 does not expand `${VAR}` in `wrangler.jsonc`; the workflow replaces `${D1_DATABASE_ID}` and `${KV_NAMESPACE_ID}` at deploy time. `CLOUDFLARE_ACCOUNT_ID` is read from the environment (do not commit `account_id`).
+
+GitHub secrets/vars the workflow needs: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, plus `D1_DATABASE_ID` and `KV_NAMESPACE_ID` (secret or variable). Optional for `wrangler.jsonc` vars only: `WEB_ORIGIN` and `API_ORIGIN`.
+
+Worker secrets are not in the workflow. Set them once with `wrangler secret bulk` (or `wrangler secret put`); they persist across `wrangler deploy`. Required: `BETTER_AUTH_SECRET`, `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`), `BETTER_AUTH_URL`, `WEB_ORIGIN`, `EMAIL_FROM`. Optional: OAuth client ids/secrets, Dodo billing keys, `DUSKLY_MODE` (`selfhost` default; set `cloud` only for paid hosted SaaS).
+
+Push to `main` or run **deploy** via `workflow_dispatch`. The workflow installs, applies D1 migrations, then deploys `duskly-api` and `duskly-web`.
 
 Self-host stays free (`DUSKLY_MODE=selfhost`). Paid managed SaaS is Duskly Cloud on duskly.site (`DUSKLY_MODE=cloud`). Operator billing notes live in untracked `internal-docs/` (not in git).

@@ -6,7 +6,7 @@
     "start": "ng serve",
     "build": "ng build",
     "deploy": "ng build && wrangler deploy",
-    "deploy:prod": "ng build && wrangler deploy --config wrangler.production.jsonc",
+    "deploy:prod": "ng build && wrangler deploy",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "echo 'no tests'",
     "lint": "echo ok"

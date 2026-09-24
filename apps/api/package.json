@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "deploy:prod": "wrangler deploy --config wrangler.production.jsonc",
+    "deploy:prod": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply duskly --local",
     "db:migrate": "wrangler d1 migrations apply duskly --remote",
-    "db:migrate:prod": "wrangler d1 migrations apply duskly --remote --config wrangler.production.jsonc",
+    "db:migrate:prod": "wrangler d1 migrations apply duskly --remote",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "echo ok"
