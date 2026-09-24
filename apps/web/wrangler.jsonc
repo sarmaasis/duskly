@@ -6,6 +6,12 @@
   "alias": {
     "xhr2": "./xhr2-shim.mjs"
   },
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": ["**/*.mjs"]
+    }
+  ],
   "assets": {
     "directory": "dist/duskly/browser",
     "binding": "ASSETS",
