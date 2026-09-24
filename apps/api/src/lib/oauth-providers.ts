@@ -504,12 +504,35 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
       };
     }
     const userId = String((data as { user_id?: unknown }).user_id || data.id || "").trim();
-    const rawUser = typeof (data as { username?: unknown }).username === "string" ? (data as { username: string }).username : "";
-    const username = rawUser.replace(/^@/, "").trim();
-    if (!userId) return { ok: false, reason: "profile" };
+    const username = instagramUsernameField(data);
+    if (!userId && !username) return { ok: false, reason: "profile" };
     return { ok: true, userId, ...(username ? { username } : {}) };
   } catch {
     return { ok: false, reason: "profile" };
+  }
+}
+
+function instagramUsernameField(data: Record<string, unknown>): string {
+  const raw = typeof data.username === "string" ? data.username : "";
+  return raw.replace(/^@/, "").trim();
+}
+
+/** Username for an Instagram Login token. /me can omit it; /{ig-user-id}?fields=username is the fallback. */
+export async function fetchInstagramLoginUsername(accessToken: string, userId?: string): Promise<string | undefined> {
+  if (!accessToken) return undefined;
+  const profile = await fetchInstagramLoginProfile(accessToken);
+  if (profile.ok && profile.username) return profile.username;
+  const id = (profile.ok && profile.userId) || userId || "";
+  if (!id) return undefined;
+  try {
+    const res = await fetch(
+      `${INSTAGRAM_GRAPH_BASE}/${id}?${new URLSearchParams({ fields: "username", access_token: accessToken })}`,
+    );
+    const data = parseFacebookTokenPayload(await res.text());
+    if (!res.ok || data.error) return undefined;
+    return instagramUsernameField(data) || undefined;
+  } catch {
+    return undefined;
   }
 }
 

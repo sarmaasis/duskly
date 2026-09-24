@@ -204,11 +204,14 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(result).toMatchObject({ remoteId: "igmedia" });
     expect(String(fetch.mock.calls[0][0])).toBe("https://graph.instagram.com/v25.0/1784/media");
     expect(String(fetch.mock.calls[1][0])).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
-    const createBody = JSON.parse(String(fetch.mock.calls[0][1].body));
-    expect(createBody.access_token).toBe("IG_USER_TOKEN");
+    const createInit = fetch.mock.calls[0][1] as { headers?: { authorization?: string }; body?: string };
+    expect(createInit.headers?.authorization).toBe("Bearer IG_USER_TOKEN");
+    const createBody = JSON.parse(String(createInit.body));
+    expect(createBody.access_token).toBeUndefined();
+    expect(createBody.image_url).toBe("https://cdn.example/p.jpg");
     const pubBody = JSON.parse(String(fetch.mock.calls[1][1].body));
     expect(pubBody.creation_id).toBe("container");
-    expect(pubBody.access_token).toBe("IG_USER_TOKEN");
+    expect(pubBody.access_token).toBeUndefined();
   });
 
   it("Instagram Login publish failures stay queued (no fake success)", async () => {

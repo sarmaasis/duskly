@@ -29,7 +29,7 @@ import {
   usageSnapshot,
 } from "../lib/entitlements";
 import { NETWORKS, NETWORK_META } from "../lib/networks";
-import { instagramAccountLabel } from "../lib/oauth-providers";
+import { fetchInstagramLoginUsername, instagramAccountLabel } from "../lib/oauth-providers";
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
@@ -99,13 +99,14 @@ accountRoutes.get("/", async (c) => {
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
   const rows = await db.select().from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId));
-  const accounts = await Promise.all(rows.map(async (r) => {
-    const tokenCipher = await encryptSecret(c.env, await decryptSecret(c.env, r.tokenCipher));
-    let credentialsJson = r.credentialsJson;
+  const accounts = await Promise.all(rows.map(async (row) => {
+    let handle = row.handle;
+    const tokenCipher = await encryptSecret(c.env, await decryptSecret(c.env, row.tokenCipher));
+    let credentialsJson = row.credentialsJson;
     let channelId: string | null = null;
     let channelName: string | null = null;
     let pendingPages: Array<{ id: string; name: string }> = [];
-    if (r.credentialsJson) {
+    if (row.credentialsJson) {
       try {
         const creds = await decryptCredentials(c.env, r.credentialsJson);
         if (!creds) throw new Error("missing credentials");
@@ -124,7 +125,7 @@ accountRoutes.get("/", async (c) => {
               .map((p) => ({
                 id: p.id!,
                 name:
-                  r.network === "instagram"
+                  row.network === "instagram"
                     ? instagramAccountLabel(p) || p.id!
                     : p.name || p.id!,
               }));
@@ -133,30 +134,47 @@ accountRoutes.get("/", async (c) => {
           }
         }
         credentialsJson = await encryptCredentials(c.env, creds);
+        if (
+          row.network === "instagram" &&
+          creds.authKind === "instagram_login" &&
+          creds.accessToken &&
+          /^\d+$/.test(handle)
+        ) {
+          const username = await fetchInstagramLoginUsername(creds.accessToken, creds.igUserId || row.externalId);
+          if (username) {
+            handle = `@${username.replace(/^@/, "")}`;
+            creds.igUsername = username.replace(/^@/, "");
+            credentialsJson = await encryptCredentials(c.env, creds);
+            await db
+              .update(socialAccount)
+              .set({ handle, credentialsJson })
+              .where(and(eq(socialAccount.id, row.id), eq(socialAccount.workspaceId, workspaceId)));
+          }
+        }
       } catch {
         /* ignore */
       }
     }
-    if (tokenCipher !== r.tokenCipher || credentialsJson !== r.credentialsJson) {
+    if (tokenCipher !== row.tokenCipher || credentialsJson !== row.credentialsJson) {
       await db
         .update(socialAccount)
         .set({ tokenCipher, credentialsJson })
-        .where(and(eq(socialAccount.id, r.id), eq(socialAccount.workspaceId, workspaceId)));
+        .where(and(eq(socialAccount.id, row.id), eq(socialAccount.workspaceId, workspaceId)));
     }
     return {
-      id: r.id,
-      workspaceId: r.workspaceId,
-      network: r.network,
-      handle: r.handle,
-      externalId: r.externalId,
-      groupId: r.groupId,
-      status: r.status,
-      createdAt: r.createdAt,
-      slackChannelId: r.network === "slack" ? channelId : undefined,
-      slackChannelName: r.network === "slack" ? channelName : undefined,
-      needsSlackChannel: r.network === "slack" && !channelId,
-      needsPage: (r.network === "instagram" || r.network === "facebook") && r.status === "needs_page",
-      pendingPages: (r.network === "instagram" || r.network === "facebook") && r.status === "needs_page" ? pendingPages : undefined,
+      id: row.id,
+      workspaceId: row.workspaceId,
+      network: row.network,
+      handle,
+      externalId: row.externalId,
+      groupId: row.groupId,
+      status: row.status,
+      createdAt: row.createdAt,
+      slackChannelId: row.network === "slack" ? channelId : undefined,
+      slackChannelName: row.network === "slack" ? channelName : undefined,
+      needsSlackChannel: row.network === "slack" && !channelId,
+      needsPage: (row.network === "instagram" || row.network === "facebook") && row.status === "needs_page",
+      pendingPages: (row.network === "instagram" || row.network === "facebook") && row.status === "needs_page" ? pendingPages : undefined,
     };
   }));
   return c.json({

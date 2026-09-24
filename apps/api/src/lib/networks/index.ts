@@ -625,20 +625,29 @@ async function metaGraphPublish(
       }
       const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
       const graphVersion = instagramLogin ? "v25.0" : "v21.0";
+      const igAuth = instagramLogin
+        ? { authorization: `Bearer ${token}`, "content-type": "application/json" }
+        : { "content-type": "application/json" };
+      const igCreateBody = instagramLogin
+        ? { image_url: publishImageUrl(input), caption: input.body }
+        : { image_url: publishImageUrl(input), caption: input.body, access_token: token };
       const create = await fetch(`${graphHost}/${graphVersion}/${igUserId}/media`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image_url: publishImageUrl(input), caption: input.body, access_token: token }),
+        headers: igAuth,
+        body: JSON.stringify(igCreateBody),
       });
       if (!create.ok) {
         const err = await create.text();
         return missingCreds(`Instagram media create failed (${create.status}): ${err.slice(0, 200)}`);
       }
       const created = (await create.json()) as { id?: string };
+      const igPublishBody = instagramLogin
+        ? { creation_id: created.id }
+        : { creation_id: created.id, access_token: token };
       const pub = await fetch(`${graphHost}/${graphVersion}/${igUserId}/media_publish`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ creation_id: created.id, access_token: token }),
+        headers: igAuth,
+        body: JSON.stringify(igPublishBody),
       });
       if (!pub.ok) {
         const err = await pub.text();

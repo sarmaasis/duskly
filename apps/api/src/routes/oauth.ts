@@ -17,6 +17,7 @@ import {
   exchangeThreadsUserToken,
   facebookConnectHandle,
   fetchInstagramLoginProfile,
+  fetchInstagramLoginUsername,
   instagramAccountLabel,
   instagramLoginConfigured,
   listFacebookPages,
@@ -350,7 +351,9 @@ async function completeOAuthCallback(
         return fail(oauthFailQs(network, "error", profile.ok ? "profile" : profile.reason, profile.ok ? undefined : profile.detail));
       }
       accessToken = longLived.accessToken;
-      const username = profile.ok ? profile.username : undefined;
+      const username =
+        (profile.ok ? profile.username : undefined) ||
+        (await fetchInstagramLoginUsername(longLived.accessToken, userId));
       handle = instagramAccountLabel({ igUsername: username, igUserId: userId }) || "instagram-account";
       credentials = {
         accessToken: longLived.accessToken,
