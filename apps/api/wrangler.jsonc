@@ -1,47 +1,102 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "duskly-api",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-09-22",
-  "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
-  "vars": {
-    "APP_NAME": "Duskly",
-    "WEB_ORIGIN": "https://duskly.site"
-  },
-  // GitHub Actions replaces ${D1_DATABASE_ID} and ${KV_NAMESPACE_ID} before wrangler deploy.
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "duskly",
-      "database_id": "${D1_DATABASE_ID}",
-      "migrations_dir": "migrations"
-    }
-  ],
-  "kv_namespaces": [
-    { "binding": "KV", "id": "${KV_NAMESPACE_ID}" }
-  ],
-  "r2_buckets": [
-    { "binding": "MEDIA", "bucket_name": "duskly-media" }
-  ],
-  "send_email": [{ "name": "EMAIL", "remote": true }],
-  "queues": {
-    "producers": [{ "binding": "PUBLISH", "queue": "duskly-publish" }],
-    "consumers": [
-      {
-        "queue": "duskly-publish",
-        "max_retries": 8,
-        "dead_letter_queue": "duskly-publish-dlq"
-      }
-    ]
-  },
-  "durable_objects": {
-    "bindings": [{ "name": "SCHEDULER_LOCK", "class_name": "SchedulerLock" }]
-  },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SchedulerLock"] }],
-  "triggers": { "crons": ["* * * * *"] },
-  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "duskly_metrics" }],
-  "vectorize": [{ "binding": "SEARCH", "index_name": "duskly-posts" }],
-  "ai": { "binding": "AI" },
-  "images": { "binding": "IMAGES" }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "duskly-api",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-22",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"APP_NAME": "Duskly",
+		"WEB_ORIGIN": "https://duskly.site"
+	},
+	// GitHub Actions replaces ${D1_DATABASE_ID} and ${KV_NAMESPACE_ID} before wrangler deploy.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "duskly",
+			"database_id": "${D1_DATABASE_ID}",
+			"migrations_dir": "migrations"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "${KV_NAMESPACE_ID}"
+		},
+	],
+	"r2_buckets": [
+		{
+			"binding": "MEDIA",
+			"bucket_name": "duskly-media"
+		}
+	],
+	"send_email": [
+		{
+			"name": "EMAIL",
+			"remote": true
+		}
+	],
+	"queues": {
+		"producers": [
+			{
+				"binding": "PUBLISH",
+				"queue": "duskly-publish"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "duskly-publish",
+				"max_retries": 8,
+				"dead_letter_queue": "duskly-publish-dlq"
+			}
+		]
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SCHEDULER_LOCK",
+				"class_name": "SchedulerLock"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"SchedulerLock"
+			]
+		}
+	],
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	"analytics_engine_datasets": [
+		{
+			"binding": "METRICS",
+			"dataset": "duskly_metrics"
+		}
+	],
+	"vectorize": [
+		{
+			"binding": "SEARCH",
+			"index_name": "duskly-posts"
+		},
+		{
+			"binding": "METRICS",
+			"index_name": "duskly-posts",
+			"remote": true
+		}
+	],
+	"ai": {
+		"binding": "AI"
+	},
+	"images": {
+		"binding": "IMAGES"
+	}
 }

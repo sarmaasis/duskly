@@ -3,6 +3,9 @@
   "main": "dist/duskly/server/server.mjs",
   "compatibility_date": "2026-09-22",
   "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "xhr2": "./xhr2-shim.mjs"
+  },
   "assets": {
     "directory": "dist/duskly/browser",
     "binding": "ASSETS",
