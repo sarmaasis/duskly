@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { socialAccount } from "../db/schema";
 import type { Env } from "../env";
@@ -19,6 +19,7 @@ import {
   REDDIT_UA,
 } from "../lib/oauth-providers";
 import { applyTokenResponse } from "../lib/oauth-tokens";
+import { apiPublicOrigin } from "../lib/media-signed-url";
 
 export const oauthRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -53,7 +54,21 @@ async function pkcePair() {
 }
 
 function webRedirect(env: Env, qs: string) {
-  return `${env.WEB_ORIGIN}/app/accounts?${qs}`;
+  const origin = (env.WEB_ORIGIN || "https://duskly.site").replace(/\/$/, "");
+  return `${origin}/app/accounts?${qs}`;
+}
+
+function oauthCallbackUri(env: Env, network: string) {
+  return `${apiPublicOrigin(env)}/v1/accounts/oauth/${network}/callback`;
+}
+
+async function readJsonObject(res: Response): Promise<Record<string, unknown>> {
+  try {
+    const body = await res.json();
+    return body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 oauthRoutes.get("/status", async (c) => {
@@ -97,7 +112,7 @@ oauthRoutes.get("/:network/start", async (c) => {
     "",
   );
 
-  const redirectUri = `${c.env.BETTER_AUTH_URL}/v1/accounts/oauth/${network}/callback`;
+  const redirectUri = oauthCallbackUri(c.env, network);
   let mastodonClientId: string | undefined;
   let mastodonClientSecret: string | undefined;
   if (network === "mastodon") {
@@ -143,18 +158,36 @@ oauthRoutes.get("/:network/start", async (c) => {
 
 oauthRoutes.get("/:network/callback", async (c) => {
   const network = c.req.param("network") as Network;
+  const fail = (qs: string) => c.redirect(webRedirect(c.env, qs));
+  try {
+    return await completeOAuthCallback(c, network, fail);
+  } catch {
+    return fail("oauth=error");
+  }
+});
+
+async function completeOAuthCallback(
+  c: Context<{ Bindings: Env; Variables: { userId: string } }>,
+  network: Network,
+  fail: (qs: string) => Response,
+) {
   const code = c.req.query("code");
   const state = c.req.query("state");
   const err = c.req.query("error");
   if (err || !code || !state) {
-    return c.redirect(webRedirect(c.env, "oauth=error"));
+    return fail("oauth=error");
   }
 
-  const raw = await c.env.KV.get(`oauth:${state}`);
-  await c.env.KV.delete(`oauth:${state}`);
-  if (!raw) return c.redirect(webRedirect(c.env, "oauth=expired"));
+  let raw: string | null = null;
+  try {
+    raw = await c.env.KV.get(`oauth:${state}`);
+    await c.env.KV.delete(`oauth:${state}`);
+  } catch {
+    return fail("oauth=error");
+  }
+  if (!raw) return fail("oauth=expired");
 
-  const stored = JSON.parse(raw) as {
+  let stored: {
     workspaceId: string;
     userId: string;
     network: Network;
@@ -165,17 +198,21 @@ oauthRoutes.get("/:network/callback", async (c) => {
     mastodonClientSecret?: string;
     subreddit?: string;
   };
-  if (stored.network !== network) return c.redirect(webRedirect(c.env, "oauth=mismatch"));
+  try {
+    stored = JSON.parse(raw) as typeof stored;
+  } catch {
+    return fail("oauth=error");
+  }
+  if (stored.network !== network) return fail("oauth=mismatch");
 
   try {
     await assertChannelLimit(c.env, stored.workspaceId, 1);
   } catch (e) {
-    const pe = planErrorResponse(e);
-    if (pe) return pe;
-    throw e;
+    if (planErrorResponse(e)) return fail("oauth=error");
+    return fail("oauth=error");
   }
 
-  const redirectUri = `${c.env.BETTER_AUTH_URL}/v1/accounts/oauth/${network}/callback`;
+  const redirectUri = oauthCallbackUri(c.env, network);
   let accessToken = "";
   let handle = "";
   let credentials: Record<string, string> = {};
@@ -277,21 +314,25 @@ oauthRoutes.get("/:network/callback", async (c) => {
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
     } else if (network === "instagram" || network === "facebook") {
+      if (!c.env.META_APP_ID || !c.env.META_APP_SECRET) {
+        return fail("oauth=token_failed");
+      }
       const tokenRes = await fetch(
         `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
-          client_id: c.env.META_APP_ID!,
-          client_secret: c.env.META_APP_SECRET!,
+          client_id: c.env.META_APP_ID,
+          client_secret: c.env.META_APP_SECRET,
           redirect_uri: redirectUri,
           code,
         })}`,
       );
-      if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
-      const tok = (await tokenRes.json()) as { access_token: string };
-      const longLived = await exchangeLongLivedFacebookToken(c.env, tok.access_token);
+      const tok = await readJsonObject(tokenRes);
+      const access = typeof tok.access_token === "string" ? tok.access_token : "";
+      if (!tokenRes.ok || !access || tok.error) return fail("oauth=token_failed");
+      const longLived = await exchangeLongLivedFacebookToken(c.env, access);
       const metaUserId = await facebookUserId(longLived);
       const pages = await listFacebookPages(longLived, network === "instagram");
       if (!pages.length) {
-        return c.redirect(webRedirect(c.env, `oauth=no_page&network=${network}`));
+        return fail(`oauth=no_page&network=${network}`);
       }
       if (pages.length === 1) {
         const page = pages[0];
@@ -402,27 +443,31 @@ oauthRoutes.get("/:network/callback", async (c) => {
       return c.redirect(webRedirect(c.env, "oauth=unsupported"));
     }
   } catch {
-    return c.redirect(webRedirect(c.env, "oauth=token_failed"));
+    return fail("oauth=token_failed");
   }
 
   const id = crypto.randomUUID();
-  const db = drizzle(c.env.DB);
-  await db.insert(socialAccount).values({
-    id,
-    workspaceId: stored.workspaceId,
-    network,
-    handle,
-    externalId: handle,
-    tokenCipher: await encryptSecret(c.env, accessToken),
-    credentialsJson: await encryptCredentials(c.env, credentials),
-    groupId: stored.groupId || null,
-    status,
-    createdAt: new Date(),
-  });
+  try {
+    const db = drizzle(c.env.DB);
+    await db.insert(socialAccount).values({
+      id,
+      workspaceId: stored.workspaceId,
+      network,
+      handle,
+      externalId: handle,
+      tokenCipher: await encryptSecret(c.env, accessToken),
+      credentialsJson: await encryptCredentials(c.env, credentials),
+      groupId: stored.groupId || null,
+      status,
+      createdAt: new Date(),
+    });
+  } catch {
+    return fail("oauth=error");
+  }
 
   const extra =
     network === "slack" || status === "needs_page"
       ? `&accountId=${id}`
       : "";
   return c.redirect(webRedirect(c.env, `oauth=ok&network=${network}${extra}`));
-});
+}

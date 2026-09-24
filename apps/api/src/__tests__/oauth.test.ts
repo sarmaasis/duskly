@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,15 @@ import { applyTokenResponse, refreshAccessToken, tokenExpiryMs } from "../lib/oa
 import { parseMetaSignedRequest } from "../routes/meta-deletion";
 import { encryptCredentials, decryptCredentials } from "../lib/secrets";
 import { wipeMatchingMetaAccounts } from "../lib/meta-deletion";
+import { assertChannelLimit } from "../lib/entitlements";
+
+vi.mock("../lib/entitlements", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/entitlements")>();
+  return {
+    ...actual,
+    assertChannelLimit: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +37,10 @@ const env = {
   WEB_ORIGIN: "https://duskly.site",
   APP_NAME: "Duskly",
 } as Env;
+
+beforeEach(() => {
+  vi.mocked(assertChannelLimit).mockResolvedValue(undefined);
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -302,5 +315,180 @@ describe("tracked legal + callback docs", () => {
     expect(privacy).toContain("https://api.duskly.site/v1/media/:id/public?exp");
     expect(privacy).toContain("https://api.duskly.site/v1/meta/data-deletion");
     expect(privacy).toContain("https://duskly.site/data-deletion");
+  });
+});
+
+const FB_STATE = "11111111-1111-1111-1111-111111111111";
+
+function fbStored(network: "facebook" | "instagram" = "facebook") {
+  return JSON.stringify({
+    workspaceId: "ws1",
+    userId: "u1",
+    network,
+    verifier: "verifier",
+    instance: "https://mastodon.social",
+  });
+}
+
+function memoryKv(initial: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initial));
+  return {
+    get: async (k: string) => store.get(k) ?? null,
+    put: async (k: string, v: string) => {
+      store.set(k, v);
+    },
+    delete: async (k: string) => {
+      store.delete(k);
+    },
+  };
+}
+
+function callbackEnv(overrides: Record<string, unknown> = {}) {
+  return {
+    WEB_ORIGIN: "https://duskly.site",
+    BETTER_AUTH_URL: "https://api.duskly.site",
+    META_APP_ID: "meta-id",
+    META_APP_SECRET: "meta-secret",
+    TOKEN_ENCRYPTION_KEY: "a".repeat(64),
+    KV: memoryKv({ [`oauth:${FB_STATE}`]: fbStored() }),
+    ...overrides,
+  } as unknown as Env;
+}
+
+async function facebookCallback(env: Env, search = `code=test-code&state=${FB_STATE}`) {
+  return worker.fetch(
+    new Request(`https://api.duskly.site/v1/accounts/oauth/facebook/callback?${search}`),
+    env,
+    {} as ExecutionContext,
+  );
+}
+
+function expectAppRedirect(res: Response, oauth: string) {
+  expect(res.status).toBeGreaterThanOrEqual(300);
+  expect(res.status).toBeLessThan(400);
+  expect(res.status).not.toBe(500);
+  const loc = res.headers.get("location") || "";
+  expect(loc.startsWith("https://duskly.site/app/accounts?")).toBe(true);
+  expect(loc).toContain(`oauth=${oauth}`);
+}
+
+describe("Facebook OAuth callback", () => {
+  it("redirects oauth=error when Facebook sends error= (not 500)", async () => {
+    const res = await facebookCallback(callbackEnv(), `error=access_denied&state=${FB_STATE}`);
+    expectAppRedirect(res, "error");
+  });
+
+  it("redirects oauth=expired when state is missing from KV", async () => {
+    const res = await facebookCallback(callbackEnv({ KV: memoryKv() }));
+    expectAppRedirect(res, "expired");
+  });
+
+  it("redirects oauth=error when KV throws instead of 500", async () => {
+    const res = await facebookCallback(
+      callbackEnv({
+        KV: {
+          get: async () => {
+            throw new Error("kv down");
+          },
+          delete: async () => undefined,
+        },
+      }),
+    );
+    expectAppRedirect(res, "error");
+  });
+
+  it("redirects oauth=error when stored state is not JSON", async () => {
+    const res = await facebookCallback(
+      callbackEnv({ KV: memoryKv({ [`oauth:${FB_STATE}`]: "not-json" }) }),
+    );
+    expectAppRedirect(res, "error");
+  });
+
+  it("redirects oauth=token_failed when Graph returns an OAuthException (not 500)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: { message: "redirect_uri mismatch", type: "OAuthException" } }),
+      }),
+    );
+    const res = await facebookCallback(callbackEnv());
+    expectAppRedirect(res, "token_failed");
+  });
+
+  it("redirects oauth=token_failed when Graph returns HTTP 200 with an error object", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ error: { message: "Invalid verification code format", type: "OAuthException" } }),
+      }),
+    );
+    const res = await facebookCallback(callbackEnv());
+    expectAppRedirect(res, "token_failed");
+  });
+
+  it("redirects oauth=token_failed when Graph fetch throws", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    const res = await facebookCallback(callbackEnv());
+    expectAppRedirect(res, "token_failed");
+  });
+
+  it("redirects oauth=token_failed when META_APP_SECRET is missing", async () => {
+    const res = await facebookCallback(callbackEnv({ META_APP_SECRET: "" }));
+    expectAppRedirect(res, "token_failed");
+  });
+
+  it("exchanges against the dashboard callback URL even if BETTER_AUTH_URL has a trailing slash", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: { type: "OAuthException", message: "redirect_uri mismatch" } }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const res = await facebookCallback(callbackEnv({ BETTER_AUTH_URL: "https://api.duskly.site/" }));
+    expectAppRedirect(res, "token_failed");
+    expect(fetch).toHaveBeenCalled();
+    const called = String(fetch.mock.calls[0][0]);
+    const q = new URL(called).searchParams;
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/facebook/callback");
+    expect(q.get("client_id")).toBe("meta-id");
+  });
+
+  it("redirects oauth=error when persist/encrypt throws after a successful token exchange", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes("/oauth/access_token") && !u.includes("fb_exchange_token")) {
+          return { ok: true, json: async () => ({ access_token: "short-token" }) };
+        }
+        if (u.includes("fb_exchange_token")) {
+          return { ok: true, json: async () => ({ access_token: "long-token" }) };
+        }
+        if (u.includes("/me?") && u.includes("fields=id")) {
+          return { ok: true, json: async () => ({ id: "99" }) };
+        }
+        if (u.includes("/me/accounts")) {
+          return {
+            ok: true,
+            json: async () => ({ data: [{ id: "p1", name: "Page", access_token: "page-token" }] }),
+          };
+        }
+        return { ok: false, json: async () => ({}) };
+      }),
+    );
+    const res = await facebookCallback(callbackEnv({ TOKEN_ENCRYPTION_KEY: "not-a-32-byte-key" }));
+    expectAppRedirect(res, "error");
+  });
+
+  it("ignores Facebook's #_=_ fragment and still returns a redirect", async () => {
+    const res = await worker.fetch(
+      new Request(
+        `https://api.duskly.site/v1/accounts/oauth/facebook/callback?code=test-code&state=${FB_STATE}#_=_`,
+      ),
+      callbackEnv({ KV: memoryKv() }),
+      {} as ExecutionContext,
+    );
+    expectAppRedirect(res, "expired");
   });
 });
