@@ -93,6 +93,7 @@ Common optional secrets:
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth |
 | `META_APP_ID`, `META_APP_SECRET` | Facebook Login, Facebook Pages, Page-linked Instagram fallback |
 | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | Direct Instagram Business Login |
+| `THREADS_APP_ID`, `THREADS_APP_SECRET` | Direct Threads Login and publishing |
 | `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` | Instagram webhook verification |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | YouTube upload |
 | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Reddit OAuth |
@@ -127,6 +128,18 @@ https://api.duskly.site/v1/accounts/oauth/slack/callback
 
 Instagram professional accounts that are not linked to Facebook use Instagram Login. Set `INSTAGRAM_APP_ID` and `INSTAGRAM_APP_SECRET` from the Meta app's Instagram API setup. Add the Instagram callback under Instagram API / Business Login OAuth redirect URIs, not only under Facebook Login.
 
+Threads uses the Threads API, not Facebook Login or Instagram Login. Set `THREADS_APP_ID` and `THREADS_APP_SECRET` from Meta's Threads API setup. Add this redirect callback URL under Threads API settings:
+
+```text
+https://api.example.com/v1/accounts/oauth/threads/callback
+```
+
+For the production Duskly Cloud app:
+
+```text
+https://api.duskly.site/v1/accounts/oauth/threads/callback
+```
+
 Instagram webhook callback:
 
 ```text
@@ -154,7 +167,9 @@ Set these GitHub repository secrets or variables:
 | `WEB_ORIGIN` | recommended | e.g. `https://duskly.example.com` |
 | `API_ORIGIN` | recommended | e.g. `https://api.example.com` |
 
-Then push to `main` or run the `deploy` workflow manually.
+Pushes to `main` run the `ci` workflow first. The automatic `deploy` workflow starts only after `ci` completes successfully, including browser e2e tests. If typecheck, unit tests, or e2e fail, deployment does not run. Deploy checks out the exact commit that passed CI.
+
+You can still run the `deploy` workflow manually from GitHub Actions for an intentional emergency or rollback deploy.
 
 The workflow:
 

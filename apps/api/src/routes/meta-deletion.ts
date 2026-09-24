@@ -47,6 +47,17 @@ export async function parseMetaSignedRequest(
   }
 }
 
+async function parseMetaSignedRequestWithEnv(signedRequest: string, env: Env): Promise<{ user_id?: string } | null> {
+  const secrets = [env.META_APP_SECRET, env.INSTAGRAM_APP_SECRET, env.THREADS_APP_SECRET]
+    .map((s) => s?.trim())
+    .filter((s): s is string => !!s);
+  for (const secret of secrets) {
+    const parsed = await parseMetaSignedRequest(signedRequest, secret);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
 function deletionResponse(env: Env, code: string) {
   const origin = env.WEB_ORIGIN || "https://duskly.site";
   return {
@@ -95,8 +106,8 @@ async function handleDeletion(c: { env: Env; req: { query: (k: string) => string
   }
   let code = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
   let userId: string | undefined;
-  if (signed && env.META_APP_SECRET) {
-    const parsed = await parseMetaSignedRequest(signed, env.META_APP_SECRET);
+  if (signed) {
+    const parsed = await parseMetaSignedRequestWithEnv(signed, env);
     if (parsed?.user_id) {
       userId = parsed.user_id;
       code = `meta_${parsed.user_id}`.slice(0, 48);

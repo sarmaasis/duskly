@@ -43,6 +43,8 @@ const env = {
   LINKEDIN_CLIENT_SECRET: "li-secret",
   META_APP_ID: "meta-id",
   META_APP_SECRET: "meta-secret",
+  THREADS_APP_ID: "threads-id",
+  THREADS_APP_SECRET: "threads-secret",
   GOOGLE_CLIENT_ID: "g-id",
   GOOGLE_CLIENT_SECRET: "g-secret",
   REDDIT_CLIENT_ID: "r-id",
@@ -146,9 +148,22 @@ describe("OAuth authorize URLs", () => {
     });
     expect(url.startsWith("https://www.threads.net/oauth/authorize?")).toBe(true);
     expect(url).not.toContain("facebook.com");
+    expect(new URL(url).searchParams.get("client_id")).toBe("threads-id");
     expect(new URL(url).searchParams.get("scope")).toBe(
       "threads_basic,threads_content_publish,threads_manage_replies",
     );
+  });
+
+  it("Threads can fall back to META_APP_* for existing self-host installs", () => {
+    const url = buildAuthorizeUrl({
+      ...base,
+      env: { META_APP_ID: "legacy-meta-id", META_APP_SECRET: "legacy-meta-secret" } as Env,
+      network: "threads",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/threads/callback",
+    });
+    expect(oauthConfigured({ THREADS_APP_ID: "th", THREADS_APP_SECRET: "sec" } as Env, "threads")).toBe(true);
+    expect(oauthConfigured({ THREADS_APP_ID: "th", THREADS_APP_SECRET: "" } as Env, "threads")).toBe(false);
+    expect(new URL(url).searchParams.get("client_id")).toBe("legacy-meta-id");
   });
 
   it("Facebook keeps Page publish scopes", () => {
@@ -331,6 +346,31 @@ describe("Meta data-deletion", () => {
     expect(parsed?.user_id).toBe("99");
   });
 
+  it("accepts a Threads app secret for Meta deletion signed_request", async () => {
+    const payload = btoa(JSON.stringify({ user_id: "99", algorithm: "HMAC-SHA256" }))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode("threads-secret"),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+    let sig = "";
+    for (const b of new Uint8Array(sigBuf)) sig += String.fromCharCode(b);
+    const encodedSig = btoa(sig).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const res = await worker.fetch(
+      new Request(`https://api.duskly.test/v1/meta/data-deletion?signed_request=${encodedSig}.${payload}`),
+      { WEB_ORIGIN: "https://duskly.site", THREADS_APP_SECRET: "threads-secret" } as Env,
+      {} as ExecutionContext,
+    );
+    const body = (await res.json()) as { confirmation_code: string };
+    expect(body.confirmation_code).toBe("meta_99");
+  });
+
   it("deletes stored Instagram/Facebook/Threads tokens for the signed user", async () => {
     const encEnv = { TOKEN_ENCRYPTION_KEY: "a".repeat(64) } as Env;
     const ig = await encryptCredentials(encEnv, { accessToken: "IG_TOKEN", metaUserId: "99", igUserId: "1784" });
@@ -400,11 +440,15 @@ describe("tracked legal + callback docs", () => {
     expect(src).toContain("https://api.duskly.site/v1/media/{id}/public?exp=&sig=");
     expect(src).toContain("INSTAGRAM_APP_ID=");
     expect(src).toContain("INSTAGRAM_APP_SECRET=");
+    expect(src).toContain("THREADS_APP_ID=");
+    expect(src).toContain("THREADS_APP_SECRET=");
     expect(src).toContain("INSTAGRAM_WEBHOOK_VERIFY_TOKEN=");
     expect(src).toContain("https://api.duskly.site/v1/instagram/webhook");
+    expect(src).toContain("https://api.duskly.site/v1/accounts/oauth/threads/callback");
     expect(src).toContain("API setup with Instagram login");
     const deploy = readFileSync(join(here, "../../../../docs/DEPLOY.md"), "utf8");
     expect(deploy).toContain("INSTAGRAM_APP_ID");
+    expect(deploy).toContain("THREADS_APP_ID");
     expect(deploy).toContain("OAuth redirect URIs");
     expect(deploy).toContain("https://api.duskly.site/v1/instagram/webhook");
     expect(deploy).toContain("INSTAGRAM_WEBHOOK_VERIFY_TOKEN");

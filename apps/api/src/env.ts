@@ -53,6 +53,9 @@ export type Env = {
   /** Instagram app id/secret from Meta → Instagram → API setup with Instagram login. */
   INSTAGRAM_APP_ID?: string;
   INSTAGRAM_APP_SECRET?: string;
+  /** Threads app id/secret from Meta → Threads API setup. */
+  THREADS_APP_ID?: string;
+  THREADS_APP_SECRET?: string;
   /** Meta Instagram webhook hub.verify_token. Worker secret, not the app secret. */
   INSTAGRAM_WEBHOOK_VERIFY_TOKEN?: string;
   GOOGLE_CLIENT_ID?: string;

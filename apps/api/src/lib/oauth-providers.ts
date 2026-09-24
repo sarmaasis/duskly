@@ -59,12 +59,23 @@ function facebookLoginConfigured(env: Env): boolean {
   return !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
 }
 
+function threadsLoginConfigured(env: Env): boolean {
+  return !!(env.THREADS_APP_ID?.trim() && env.THREADS_APP_SECRET?.trim());
+}
+
 export function useInstagramBusinessLogin(env: Env): boolean {
   return instagramLoginConfigured(env);
 }
 
 export function instagramAppCreds(env: Env): { appId: string; appSecret: string } {
   return { appId: (env.INSTAGRAM_APP_ID || "").trim(), appSecret: (env.INSTAGRAM_APP_SECRET || "").trim() };
+}
+
+function threadsAppCreds(env: Env): { appId: string; appSecret: string } {
+  return {
+    appId: (env.THREADS_APP_ID || env.META_APP_ID || "").trim(),
+    appSecret: (env.THREADS_APP_SECRET || env.META_APP_SECRET || "").trim(),
+  };
 }
 
 export function oauthConfigured(env: Env, network: Network): boolean {
@@ -74,7 +85,10 @@ export function oauthConfigured(env: Env, network: Network): boolean {
   if (network === "instagram") {
     return instagramLoginConfigured(env) || facebookLoginConfigured(env);
   }
-  if (network === "threads" || network === "facebook") {
+  if (network === "threads") {
+    return threadsLoginConfigured(env) || facebookLoginConfigured(env);
+  }
+  if (network === "facebook") {
     return facebookLoginConfigured(env);
   }
   if (network === "youtube") return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
@@ -118,8 +132,9 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     return `${instance}/oauth/authorize?${params}`;
   }
   if (network === "threads") {
+    const { appId } = threadsAppCreds(env);
     const params = new URLSearchParams({
-      client_id: env.META_APP_ID!,
+      client_id: appId,
       redirect_uri: redirectUri,
       scope: "threads_basic,threads_content_publish,threads_manage_replies",
       response_type: "code",
@@ -673,10 +688,11 @@ export async function exchangeThreadsUserToken(
   code: string,
   redirectUri: string,
 ): Promise<{ accessToken: string; userId: string; handle: string; refreshToken?: string; expiresIn?: number }> {
+  const { appId, appSecret } = threadsAppCreds(env);
   const tokenRes = await fetch(
     `https://graph.threads.net/oauth/access_token?${new URLSearchParams({
-      client_id: env.META_APP_ID!,
-      client_secret: env.META_APP_SECRET!,
+      client_id: appId,
+      client_secret: appSecret,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,
       code,
@@ -694,7 +710,7 @@ export async function exchangeThreadsUserToken(
   const longRes = await fetch(
     `https://graph.threads.net/access_token?${new URLSearchParams({
       grant_type: "th_exchange_token",
-      client_secret: env.META_APP_SECRET!,
+      client_secret: appSecret,
       access_token: accessToken,
     })}`,
   );
