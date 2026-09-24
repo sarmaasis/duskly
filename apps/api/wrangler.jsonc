@@ -87,11 +87,6 @@
 			"binding": "SEARCH",
 			"index_name": "duskly-posts"
 		},
-		{
-			"binding": "METRICS",
-			"index_name": "duskly-posts",
-			"remote": true
-		}
 	],
 	"ai": {
 		"binding": "AI"
