@@ -34,11 +34,14 @@ DODO_ULTIMATE_YEARLY_PRODUCT_ID=
 # X (Twitter) OAuth 2.0 — callback https://api.duskly.site/v1/accounts/oauth/x/callback
 X_CLIENT_ID=
 X_CLIENT_SECRET=
-# LinkedIn member OAuth — callback https://api.duskly.site/v1/accounts/oauth/linkedin/callback
+# LinkedIn member app — callback https://api.duskly.site/v1/accounts/oauth/linkedin/callback
+# Products: Sign In with LinkedIn (OpenID) and Share on LinkedIn.
 LINKEDIN_CLIENT_ID=
 LINKEDIN_CLIENT_SECRET=
-# LinkedIn Page OAuth — callback https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback
-# Falls back to LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET when left empty.
+# LinkedIn Page app — a different LinkedIn app. Callback:
+# https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback
+# Products: OpenID, Share on LinkedIn, and Community Management
+# (rw_organization_admin, w_organization_social, r_organization_social).
 LINKEDIN_PAGE_CLIENT_ID=
 LINKEDIN_PAGE_CLIENT_SECRET=
 # Mastodon: optional override for one instance. Other hosts register via POST /api/v1/apps.

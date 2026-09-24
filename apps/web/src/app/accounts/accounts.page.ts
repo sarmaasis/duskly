@@ -435,6 +435,11 @@ export class AccountsPage implements OnInit {
     if (reason === "not_professional") {
       return "Instagram requires a professional (Business or Creator) account — personal accounts cannot be connected.";
     }
+    if ((reason === "access_denied" || reason === "user_denied" || reason === "interaction_required") && (network === "linkedin" || network === "linkedin-page")) {
+      return network === "linkedin-page"
+        ? "LinkedIn Page login was cancelled or the Page app rejected the requested permissions."
+        : "LinkedIn login was cancelled or permissions were denied.";
+    }
     if (reason === "access_denied" || reason === "user_denied") {
       return facebook
         ? instagram
@@ -462,9 +467,20 @@ export class AccountsPage implements OnInit {
       return "Facebook authorization code was invalid or expired. Connect again from Accounts.";
     }
     if (reason === "no_page") {
+      if (network === "linkedin-page") {
+        return "No LinkedIn Page was found. You need to be an admin or content admin, and the Page app needs rw_organization_admin.";
+      }
       return network === "instagram"
         ? "No Facebook Page with a linked Instagram professional account was found."
         : "No Facebook Pages were found on that account.";
+    }
+    if (reason === "scopes" && (network === "linkedin" || network === "linkedin-page")) {
+      return detail
+        ? `LinkedIn did not grant ${detail}. Add those products on the matching LinkedIn app, then connect again.`
+        : "LinkedIn did not grant the posting permissions. Check the app products, then connect again.";
+    }
+    if (reason === "pages" && network === "linkedin-page") {
+      return "LinkedIn login succeeded, but Pages could not be loaded. Confirm the Page app has Community Management access.";
     }
     if (reason === "pages") {
       return detail
@@ -498,6 +514,11 @@ export class AccountsPage implements OnInit {
     }
     if (reason && reason !== "token_failed" && reason !== "exchange" && reason !== "error") {
       return instagram ? `Instagram OAuth failed — ${reason}.` : threads ? `Threads OAuth failed — ${reason}.` : `Facebook OAuth failed — ${reason}.`;
+    }
+    if ((oauth === "token_failed" || reason === "token_failed" || reason === "exchange") && (network === "linkedin" || network === "linkedin-page")) {
+      return network === "linkedin-page"
+        ? "LinkedIn Page token exchange failed. Check LINKEDIN_PAGE_CLIENT_ID / LINKEDIN_PAGE_CLIENT_SECRET and the Page callback URL."
+        : "LinkedIn token exchange failed. Check LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET and the member callback URL.";
     }
     if (oauth === "token_failed" || reason === "token_failed" || reason === "exchange") {
       if (threads) {
@@ -538,9 +559,11 @@ export class AccountsPage implements OnInit {
         );
       } else if (oauth === "no_page" || reason === "no_page") {
         this.msg.set(
-          oauthNetwork === "instagram"
-            ? "No Facebook Page with a linked Instagram professional account was found."
-            : "No Facebook Pages were found on that account.",
+          oauthNetwork === "linkedin-page"
+            ? "No LinkedIn Page was found. You need to be an admin or content admin, and the Page app needs rw_organization_admin."
+            : oauthNetwork === "instagram"
+              ? "No Facebook Page with a linked Instagram professional account was found."
+              : "No Facebook Pages were found on that account.",
         );
       } else if (oauth === "limit") this.msg.set("OAuth failed — this plan has no free channel slots.");
       else if (oauth === "error" || oauth === "token_failed") {

@@ -5,8 +5,8 @@
   "scripts": {
     "start": "ng serve",
     "build": "ng build",
-    "deploy": "ng build && wrangler deploy",
-    "deploy:prod": "ng build && wrangler deploy",
+    "deploy": "ng build && wrangler deploy --no-bundle",
+    "deploy:prod": "ng build && wrangler deploy --no-bundle",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "node --experimental-strip-types scripts/check-allowed-hosts.mts",
     "e2e": "playwright test",

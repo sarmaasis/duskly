@@ -91,7 +91,7 @@ Common optional secrets:
 | `API_ORIGIN` | Web Worker runtime API URL |
 | `X_CLIENT_ID`, `X_CLIENT_SECRET` | X OAuth |
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | LinkedIn member OAuth |
-| `LINKEDIN_PAGE_CLIENT_ID`, `LINKEDIN_PAGE_CLIENT_SECRET` | LinkedIn Page OAuth; falls back to `LINKEDIN_*` when unset |
+| `LINKEDIN_PAGE_CLIENT_ID`, `LINKEDIN_PAGE_CLIENT_SECRET` | LinkedIn Page OAuth. Separate app from `LINKEDIN_*` |
 | `META_APP_ID`, `META_APP_SECRET` | Facebook Login, Facebook Pages, Page-linked Instagram fallback |
 | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | Direct Instagram Business Login |
 | `THREADS_APP_ID`, `THREADS_APP_SECRET` | Meta Threads API OAuth and publishing |
@@ -115,6 +115,7 @@ Examples:
 https://api.example.com/v1/accounts/oauth/instagram/callback
 https://api.example.com/v1/accounts/oauth/facebook/callback
 https://api.example.com/v1/accounts/oauth/linkedin/callback
+https://api.example.com/v1/accounts/oauth/linkedin-page/callback
 https://api.example.com/v1/accounts/oauth/slack/callback
 ```
 
@@ -124,6 +125,7 @@ Production Duskly Cloud examples:
 https://api.duskly.site/v1/accounts/oauth/instagram/callback
 https://api.duskly.site/v1/accounts/oauth/facebook/callback
 https://api.duskly.site/v1/accounts/oauth/linkedin/callback
+https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback
 https://api.duskly.site/v1/accounts/oauth/slack/callback
 ```
 

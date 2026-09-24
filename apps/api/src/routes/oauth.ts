@@ -21,6 +21,9 @@ import {
   fetchInstagramLoginUsername,
   instagramAccountLabel,
   linkedinAppCreds,
+  linkedinMissingScopes,
+  linkedinScopes,
+  listLinkedInPages,
   listFacebookPages,
   oauthConfigured,
   facebookUserId,
@@ -195,7 +198,7 @@ async function completeOAuthCallback(
   const err = c.req.query("error");
   if (err || !code || !state) {
     const reason = err || c.req.query("error_reason") || (!code ? "missing_code" : "missing_state");
-    return fail(oauthFailQs(network, "error", reason));
+    return fail(oauthFailQs(network, "error", reason, c.req.query("error_description") || undefined));
   }
 
   let raw: string | null = null;
@@ -295,12 +298,25 @@ async function completeOAuthCallback(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body,
       });
-      if (!tokenRes.ok) return fail(oauthFailQs(network, "token_failed", "exchange"));
-      const tok = (await tokenRes.json()) as {
-        access_token: string;
+      const tok = (await tokenRes.json().catch(() => ({}))) as {
+        access_token?: string;
         refresh_token?: string;
         expires_in?: number;
+        scope?: string;
+        error?: string;
+        error_description?: string;
       };
+      if (!tokenRes.ok || !tok.access_token) {
+        return fail(oauthFailQs(network, "token_failed", tok.error || "exchange", tok.error_description));
+      }
+      const required =
+        network === "linkedin-page"
+          ? ["openid", "profile", "w_organization_social", "rw_organization_admin"]
+          : linkedinScopes("linkedin");
+      const missing = linkedinMissingScopes(tok.scope, required);
+      if (missing.length) {
+        return fail(oauthFailQs(network, "token_failed", "scopes", missing.join(" ")));
+      }
       accessToken = tok.access_token;
       const me = await fetch("https://api.linkedin.com/v2/userinfo", {
         headers: { authorization: `Bearer ${accessToken}` },
@@ -308,29 +324,21 @@ async function completeOAuthCallback(
       const meJson = (await me.json()) as { sub?: string; name?: string; email?: string };
       const authorUrn = meJson.sub ? `urn:li:person:${meJson.sub}` : "";
       if (network === "linkedin-page") {
-        const listed = await fetch(
-          "https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED",
-          {
-            headers: {
-              authorization: `Bearer ${accessToken}`,
-              "linkedin-version": "202601",
-              "x-restli-protocol-version": "2.0.0",
-            },
-          },
-        );
-        const data = listed.ok ? ((await listed.json()) as { elements?: { organization?: string }[] }) : { elements: [] };
-        const pages = (data.elements || [])
-          .map((el) => el.organization || "")
-          .filter(Boolean)
-          .map((urn) => ({ id: urn, name: `Page ${urn.split(":").pop()}`, accessToken }));
-        if (!pages.length) return fail(oauthFailQs(network, "no_page", "no_page"));
-        if (pages.length === 1) {
-          handle = pages[0].name;
-          credentials = applyTokenResponse({ authorUrn: pages[0].id, pageName: pages[0].name }, tok);
+        const listed = await listLinkedInPages(accessToken);
+        if (!listed.pages.length) {
+          return fail(
+            listed.error
+              ? oauthFailQs(network, "token_failed", "pages", "LinkedIn did not return Pages for this login")
+              : oauthFailQs(network, "no_page", "no_page"),
+          );
+        }
+        if (listed.pages.length === 1) {
+          handle = listed.pages[0].name;
+          credentials = applyTokenResponse({ authorUrn: listed.pages[0].id, pageName: listed.pages[0].name }, tok);
         } else {
           status = "needs_page";
           handle = "LinkedIn Page";
-          credentials = applyTokenResponse({ authorUrn, pendingPagesJson: JSON.stringify(pages) }, tok);
+          credentials = applyTokenResponse({ authorUrn, pendingPagesJson: JSON.stringify(listed.pages) }, tok);
         }
       } else {
         handle = meJson.name || meJson.email || "linkedin-user";

@@ -77,20 +77,47 @@ export function instagramAppCreds(env: Env): { appId: string; appSecret: string 
   return { appId: (env.INSTAGRAM_APP_ID || "").trim(), appSecret: (env.INSTAGRAM_APP_SECRET || "").trim() };
 }
 
+/** Member app: Sign In with LinkedIn (OpenID) + Share on LinkedIn. */
+export const LINKEDIN_MEMBER_SCOPES = ["openid", "profile", "w_member_social"];
+
+/**
+ * Page app: Community Management products, separate from the member app.
+ * Listing Pages needs rw_organization_admin; posting needs w_organization_social.
+ */
+export const LINKEDIN_PAGE_SCOPES = [
+  "openid",
+  "profile",
+  "w_member_social",
+  "r_basicprofile",
+  "rw_organization_admin",
+  "w_organization_social",
+  "r_organization_social",
+];
+
+export function linkedinScopes(network: "linkedin" | "linkedin-page"): string[] {
+  return network === "linkedin-page" ? LINKEDIN_PAGE_SCOPES : LINKEDIN_MEMBER_SCOPES;
+}
+
 export function linkedinAppCreds(
   env: Env,
   network: "linkedin" | "linkedin-page",
 ): { clientId: string; clientSecret: string } {
   if (network === "linkedin-page") {
     return {
-      clientId: (env.LINKEDIN_PAGE_CLIENT_ID || env.LINKEDIN_CLIENT_ID || "").trim(),
-      clientSecret: (env.LINKEDIN_PAGE_CLIENT_SECRET || env.LINKEDIN_CLIENT_SECRET || "").trim(),
+      clientId: (env.LINKEDIN_PAGE_CLIENT_ID || "").trim(),
+      clientSecret: (env.LINKEDIN_PAGE_CLIENT_SECRET || "").trim(),
     };
   }
   return {
     clientId: (env.LINKEDIN_CLIENT_ID || "").trim(),
     clientSecret: (env.LINKEDIN_CLIENT_SECRET || "").trim(),
   };
+}
+
+export function linkedinMissingScopes(granted: string | undefined, required: string[]): string[] {
+  const have = new Set((granted || "").split(/[\s,]+/).filter(Boolean));
+  if (!have.size) return [];
+  return required.filter((scope) => !have.has(scope));
 }
 
 function threadsAppCreds(env: Env): { appId: string; appSecret: string } {
@@ -141,12 +168,8 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
-      prompt: "none",
       redirect_uri: redirectUri,
-      scope:
-        network === "linkedin-page"
-          ? "openid profile w_member_social w_organization_social"
-          : "openid profile w_member_social",
+      scope: linkedinScopes(network).join(" "),
       state,
     });
     return `https://www.linkedin.com/oauth/v2/authorization?${params.toString().replace(/\+/g, "%20")}`;
@@ -787,6 +810,100 @@ export async function facebookUserId(userToken: string): Promise<string> {
   } catch {
     return "";
   }
+}
+
+export type LinkedInPageOption = { id: string; name: string; accessToken: string };
+
+const LINKEDIN_PAGE_ROLES = ["ADMINISTRATOR", "CONTENT_ADMINISTRATOR"] as const;
+
+function linkedinApiHeaders(accessToken: string): HeadersInit {
+  return {
+    authorization: `Bearer ${accessToken}`,
+    "x-restli-protocol-version": "2.0.0",
+    "linkedin-version": "202601",
+  };
+}
+
+function linkedinPageFromAcl(
+  el: {
+    organizationalTarget?: string;
+    organization?: string;
+    role?: string;
+    "organizationalTarget~"?: { localizedName?: string; vanityName?: string };
+  },
+  accessToken: string,
+): LinkedInPageOption | null {
+  if (el.role && el.role !== "ADMINISTRATOR" && el.role !== "CONTENT_ADMINISTRATOR") return null;
+  const urn = el.organizationalTarget || el.organization || "";
+  if (!urn.startsWith("urn:li:organization")) return null;
+  const decorated = el["organizationalTarget~"];
+  const name = decorated?.localizedName || decorated?.vanityName || `Page ${urn.split(":").pop()}`;
+  return { id: urn, name, accessToken };
+}
+
+/** Pages the member can post to. v2 ACL finder returns names; REST is the fallback. */
+export async function listLinkedInPages(accessToken: string): Promise<{ pages: LinkedInPageOption[]; error?: string }> {
+  const headers = linkedinApiHeaders(accessToken);
+  const byId = new Map<string, LinkedInPageOption>();
+  let sawOk = false;
+  for (const role of LINKEDIN_PAGE_ROLES) {
+    try {
+      const res = await fetch(
+        `https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=${role}&projection=(elements*(organizationalTarget~(localizedName,vanityName)))`,
+        { headers },
+      );
+      if (!res.ok) continue;
+      sawOk = true;
+      const data = (await res.json()) as {
+        elements?: Array<{
+          organizationalTarget?: string;
+          organization?: string;
+          "organizationalTarget~"?: { localizedName?: string; vanityName?: string };
+        }>;
+      };
+      for (const el of data.elements || []) {
+        const page = linkedinPageFromAcl(el, accessToken);
+        if (!page) continue;
+        const prev = byId.get(page.id);
+        if (!prev || (prev.name.startsWith("Page ") && !page.name.startsWith("Page "))) byId.set(page.id, page);
+      }
+    } catch {
+      /* try the other role, then the REST finder */
+    }
+  }
+  if (!sawOk) {
+    try {
+      const res = await fetch("https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&state=APPROVED", { headers });
+      if (!res.ok) return { pages: [], error: "pages" };
+      const data = (await res.json()) as {
+        elements?: Array<{ organization?: string; organizationalTarget?: string; role?: string }>;
+      };
+      for (const el of data.elements || []) {
+        const page = linkedinPageFromAcl(el, accessToken);
+        if (page && !byId.has(page.id)) byId.set(page.id, page);
+      }
+    } catch {
+      return { pages: [], error: "pages" };
+    }
+  }
+  const pages = [...byId.values()];
+  for (const page of pages) {
+    if (!page.name.startsWith("Page ")) continue;
+    const id = page.id.split(":").pop();
+    if (!id) continue;
+    try {
+      const res = await fetch(
+        `https://api.linkedin.com/v2/organizations/${id}?projection=(localizedName,vanityName)`,
+        { headers: { authorization: `Bearer ${accessToken}`, "x-restli-protocol-version": "2.0.0" } },
+      );
+      if (!res.ok) continue;
+      const org = (await res.json()) as { localizedName?: string; vanityName?: string };
+      page.name = org.localizedName || org.vanityName || page.name;
+    } catch {
+      /* keep the id label */
+    }
+  }
+  return { pages };
 }
 
 export function credsFromTokenJson(

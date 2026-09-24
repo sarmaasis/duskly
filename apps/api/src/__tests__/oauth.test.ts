@@ -12,7 +12,9 @@ import {
   graphOauthReason,
   instagramAccountLabel,
   instagramLoginConfigured,
+  linkedinMissingScopes,
   listFacebookPages,
+  listLinkedInPages,
   normalizeSubreddit,
   oauthConfigured,
   parseFacebookTokenPayload,
@@ -93,13 +95,14 @@ describe("OAuth authorize URLs", () => {
     expect(url.startsWith("https://www.linkedin.com/oauth/v2/authorization?")).toBe(true);
     const q = new URL(url).searchParams;
     expect(q.get("client_id")).toBe("li-id");
-    expect(q.get("prompt")).toBe("none");
+    expect(q.get("prompt")).toBeNull();
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin/callback");
     expect(q.get("scope")).toBe("openid profile w_member_social");
     expect(url).toContain("scope=openid%20profile%20w_member_social");
+    expect(q.get("scope")).not.toContain("w_organization_social");
   });
 
-  it("LinkedIn Page uses the Page OAuth app when configured", () => {
+  it("LinkedIn Page uses its own OAuth app and organization scopes", () => {
     const url = buildAuthorizeUrl({
       ...base,
       network: "linkedin-page",
@@ -107,20 +110,59 @@ describe("OAuth authorize URLs", () => {
     });
     const q = new URL(url).searchParams;
     expect(q.get("client_id")).toBe("li-page-id");
-    expect(q.get("prompt")).toBe("none");
+    expect(q.get("prompt")).toBeNull();
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback");
-    expect(q.get("scope")).toBe("openid profile w_member_social w_organization_social");
+    expect(q.get("scope")).toBe(
+      "openid profile w_member_social r_basicprofile rw_organization_admin w_organization_social r_organization_social",
+    );
   });
 
-  it("LinkedIn Page falls back to the member OAuth app for self-host installs", () => {
-    expect(oauthConfigured({ LINKEDIN_CLIENT_ID: "li", LINKEDIN_CLIENT_SECRET: "sec" } as Env, "linkedin-page")).toBe(true);
-    const url = buildAuthorizeUrl({
-      ...base,
-      env: { LINKEDIN_CLIENT_ID: "li", LINKEDIN_CLIENT_SECRET: "sec" } as Env,
-      network: "linkedin-page",
-      redirectUri: "https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback",
+  it("LinkedIn Page does not reuse the member OAuth app", () => {
+    expect(oauthConfigured({ LINKEDIN_CLIENT_ID: "li", LINKEDIN_CLIENT_SECRET: "sec" } as Env, "linkedin-page")).toBe(false);
+    expect(oauthConfigured({ LINKEDIN_PAGE_CLIENT_ID: "page", LINKEDIN_PAGE_CLIENT_SECRET: "sec" } as Env, "linkedin")).toBe(false);
+    expect(
+      oauthConfigured({ LINKEDIN_PAGE_CLIENT_ID: "page", LINKEDIN_PAGE_CLIENT_SECRET: "sec" } as Env, "linkedin-page"),
+    ).toBe(true);
+  });
+
+  it("LinkedIn Page lists admin and content-admin pages by organization URN", async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (String(url).includes("role=CONTENT_ADMINISTRATOR")) {
+        return {
+          ok: true,
+          json: async () => ({
+            elements: [
+              {
+                organizationalTarget: "urn:li:organization:9",
+                "organizationalTarget~": { localizedName: "Content Co", vanityName: "content-co" },
+              },
+              {
+                organizationalTarget: "urn:li:organization:7",
+                "organizationalTarget~": { vanityName: "acme" },
+              },
+            ],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          elements: [
+            {
+              organizationalTarget: "urn:li:organization:7",
+              "organizationalTarget~": { localizedName: "Acme", vanityName: "acme" },
+            },
+          ],
+        }),
+      };
     });
-    expect(new URL(url).searchParams.get("client_id")).toBe("li");
+    vi.stubGlobal("fetch", fetch);
+    const listed = await listLinkedInPages("token");
+    expect(listed.error).toBeUndefined();
+    expect(listed.pages.map((p) => p.id).sort()).toEqual(["urn:li:organization:7", "urn:li:organization:9"]);
+    expect(listed.pages.find((p) => p.id.endsWith(":7"))?.name).toBe("Acme");
+    expect(linkedinMissingScopes("openid profile", ["openid", "w_member_social"])).toEqual(["w_member_social"]);
+    expect(linkedinMissingScopes(undefined, ["openid"])).toEqual([]);
   });
 
   it("LinkedIn Page refresh uses the Page OAuth app when configured", async () => {
