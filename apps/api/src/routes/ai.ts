@@ -8,9 +8,11 @@ import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertQuota, consumeQuota, planErrorResponse } from "../lib/entitlements";
 import { makePosterSvg } from "../lib/media-gen";
 import {
+  CLIP_DURATION_SEC,
   VIDEO_DURATION_OPTIONS,
   aiCopilotModel,
   aiImageModel,
+  generateCopilotDraft,
   generateTextToVideo,
   snapVideoDuration,
 } from "../lib/ai-models";
@@ -24,30 +26,24 @@ aiRoutes.post("/copilot", async (c) => {
       .parse(await c.req.json());
     const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
     if (!ws) return c.json({ error: "forbidden" }, 403);
-    await consumeQuota(c.env, body.workspaceId, "aiCopilot", 1);
+    await assertQuota(c.env, body.workspaceId, "aiCopilot", 1);
 
-    const model = aiCopilotModel(c.env);
-    let draft = "";
+    let generated: Awaited<ReturnType<typeof generateCopilotDraft>>;
     try {
-      const result = (await c.env.AI.run(model as keyof AiModels, {
-        messages: [
-          {
-            role: "system",
-            content:
-              "You write short social media posts. Return only the post text, no quotes or preamble. Keep under 280 characters unless asked otherwise.",
-          },
-          {
-            role: "user",
-            content: `Tone: ${body.tone || "clear"}. Draft a post about: ${body.prompt}`,
-          },
-        ],
-      })) as { response?: string };
-      draft = (result.response || "").trim();
-    } catch {
-      draft = `${body.prompt.trim()}\n\n— drafted for ${body.tone || "your"} audience`;
+      generated = await generateCopilotDraft(c.env, body.prompt, body.tone);
+    } catch (e) {
+      return c.json(
+        {
+          error: "copilot_generation_failed",
+          message: e instanceof Error ? e.message : "Caption generation failed",
+          hint: "Check AI binding and AI_COPILOT_MODEL. No quota was charged.",
+        },
+        502,
+      );
     }
-    if (!draft) draft = body.prompt.trim();
-    return c.json({ draft, model });
+
+    await consumeQuota(c.env, body.workspaceId, "aiCopilot", 1);
+    return c.json({ draft: generated.draft, model: generated.model });
   } catch (e) {
     const pe = planErrorResponse(e);
     if (pe) return pe;
@@ -109,9 +105,9 @@ aiRoutes.post("/video", async (c) => {
       .object({
         workspaceId: z.string(),
         prompt: z.string().min(1).max(2000),
-        /** Preferred: seconds for the T2V model (6–12). */
-        durationSec: z.number().int().min(6).max(20).optional(),
-        /** Legacy billing field; if set without durationSec, mapped via snapVideoDuration(minutes*60) then clamped. */
+        /** Seconds for the T2V model. Default is one short AI video credit. */
+        durationSec: z.number().int().min(6).max(CLIP_DURATION_SEC).optional(),
+        /** Legacy billing field; if set without durationSec, mapped via snapVideoDuration(minutes*60). */
         minutes: z.number().min(1).max(10).optional(),
       })
       .parse(await c.req.json());
@@ -119,12 +115,10 @@ aiRoutes.post("/video", async (c) => {
     if (!ws) return c.json({ error: "forbidden" }, 403);
 
     const durationSec = snapVideoDuration(
-      body.durationSec ?? (body.minutes ? Math.min(20, body.minutes * 60) : 8),
+      body.durationSec ?? (body.minutes ? Math.min(CLIP_DURATION_SEC, body.minutes * 60) : CLIP_DURATION_SEC),
     );
-    const clipMinutes = Math.max(1, Math.ceil(durationSec / 60));
 
     await assertQuota(c.env, body.workspaceId, "aiVideos", 1);
-    await assertQuota(c.env, body.workspaceId, "aiClipMinutes", clipMinutes);
 
     let generated: Awaited<ReturnType<typeof generateTextToVideo>>;
     try {
@@ -162,7 +156,6 @@ aiRoutes.post("/video", async (c) => {
     });
 
     await consumeQuota(c.env, body.workspaceId, "aiVideos", 1);
-    await consumeQuota(c.env, body.workspaceId, "aiClipMinutes", clipMinutes);
 
     return c.json(
       {

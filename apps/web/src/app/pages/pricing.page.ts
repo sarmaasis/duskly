@@ -141,7 +141,7 @@ export class PricingPage {
       yearly: 290,
       blurb: "Best for creators scheduling across a few channels.",
       popular: false,
-      features: ["5 channels", "Unlimited posts / month", "AI copilot & picture editor", "3 AI videos · 60 clip minutes / mo", "No team seats"],
+      features: ["5 channels", "Unlimited posts / month", "AI copilot & picture editor", "3 short AI videos / mo", "No team seats"],
     },
     {
       id: "team",
@@ -151,7 +151,7 @@ export class PricingPage {
       yearly: 390,
       blurb: "Best for small brands that need more channels and teammates.",
       popular: false,
-      features: ["10 channels", "Unlimited team members", "Unlimited posts / month", "100 AI images / mo", "10 AI videos · 120 clip minutes / mo"],
+      features: ["10 channels", "Unlimited team members", "Unlimited posts / month", "100 AI images / mo", "10 short AI videos / mo"],
     },
     {
       id: "pro",
@@ -161,7 +161,7 @@ export class PricingPage {
       yearly: 490,
       blurb: "Best for larger businesses with many channels and heavier AI use.",
       popular: false,
-      features: ["30 channels", "Unlimited team members", "Unlimited posts / month", "300 AI images / mo", "30 AI videos · 300 clip minutes / mo"],
+      features: ["30 channels", "Unlimited team members", "Unlimited posts / month", "300 AI images / mo", "30 short AI videos / mo"],
     },
     {
       id: "ultimate",
@@ -171,7 +171,7 @@ export class PricingPage {
       yearly: 990,
       blurb: "Best for agencies managing many clients and channels.",
       popular: true,
-      features: ["100 channels", "Unlimited team members", "Unlimited posts / month", "500 AI images / mo", "60 AI videos · 600 clip minutes / mo"],
+      features: ["100 channels", "Unlimited team members", "Unlimited posts / month", "500 AI images / mo", "60 short AI videos / mo"],
     },
   ];
 
@@ -181,8 +181,7 @@ export class PricingPage {
     ["Team members", "—", "Unlimited", "Unlimited", "Unlimited"],
     ["Posts per month", "Unlimited", "Unlimited", "Unlimited", "Unlimited"],
     ["AI images / mo", "—", "100", "300", "500"],
-    ["AI videos / mo", "3", "10", "30", "60"],
-    ["AI clip minutes / mo", "60", "120", "300", "600"],
+    ["Short AI videos / mo", "3", "10", "30", "60"],
     ["Picture editor · AI copilot", "✓", "✓", "✓", "✓"],
     ["API · webhooks · integrations", "✓", "✓", "✓", "✓"],
     ["Comments · repeats · delays", "✓", "✓", "✓", "✓"],

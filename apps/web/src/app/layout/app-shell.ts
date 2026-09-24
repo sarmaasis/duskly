@@ -25,22 +25,14 @@ const NAV = [
     <div class="h-dvh overflow-hidden bg-[#fcfcf9] font-sans text-[#121417] dark:bg-zinc-950 dark:text-zinc-100">
       <aside class="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col justify-between border-r border-[#e8e8e3] bg-white dark:border-zinc-800 dark:bg-zinc-900 md:flex" aria-label="Sidebar">
         <div class="flex min-h-0 flex-1 flex-col">
-          <div class="flex h-14 shrink-0 items-center justify-between border-b border-[#e8e8e3] px-4 dark:border-zinc-800">
+          <div class="flex h-14 shrink-0 items-center border-b border-[#e8e8e3] px-4 dark:border-zinc-800">
             <a href="/" (click)="go($event, '/')" class="font-display text-sm font-bold tracking-tight text-[#09090b] dark:text-zinc-50">
               Dus<span class="text-cta">kly</span>
             </a>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-[#e8e8e3] bg-[#f7f7f4] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#63676c] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
-              <span class="size-1.5 animate-pulse rounded-full bg-cta"></span>
-              {{ cloud() ? (usage()?.plan || 'cloud') : 'self-host' }}
-            </span>
           </div>
 
           <div class="mx-3 mb-1 mt-3 rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-2 dark:border-zinc-700 dark:bg-zinc-800">
             <p class="truncate text-[13px] font-semibold dark:text-zinc-100">{{ label() }}</p>
-            <p class="mt-0.5 flex items-center gap-1.5 truncate font-mono text-[11px] text-[#71717a] dark:text-zinc-400">
-              <span class="size-1.5 rounded-full bg-cta"></span>
-              {{ usage()?.plan || 'standard' }}
-            </p>
           </div>
 
           <nav class="flex-1 overflow-y-auto px-3" aria-label="Main navigation">
@@ -107,7 +99,6 @@ const NAV = [
 
         <div class="shrink-0 border-t border-[#e4e4e7] p-3 dark:border-zinc-800">
           <div class="rounded-xl border border-[#e4e4e7] bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="truncate px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a1a1aa] dark:text-zinc-500">{{ label() }}</p>
             <button type="button" (click)="toggleTheme()" class="flex w-full items-center gap-2 rounded-lg p-2 text-left transition-colors duration-150 hover:bg-[#f7f7f4] dark:hover:bg-zinc-800">
               <span class="flex size-7 items-center justify-center rounded-full bg-[#121417] font-mono text-[10px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">{{ theme() === 'dark' ? 'D' : 'L' }}</span>
               <span class="min-w-0 flex-1">
@@ -129,12 +120,9 @@ const NAV = [
             <h1 class="truncate font-display text-sm font-bold tracking-tight dark:text-zinc-100">{{ title() }}</h1>
           </div>
           <div class="flex items-center gap-3">
-            <span class="hidden items-center gap-1.5 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 font-mono text-[11px] font-medium text-[#63676c] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 lg:inline-flex">
+            <span class="inline-flex items-center gap-1.5 rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 font-mono text-[11px] font-medium text-[#63676c] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400">
               {{ usage()?.plan || (cloud() ? 'cloud' : 'self-host') }}
             </span>
-            <button type="button" (click)="signOut()" class="text-[13px] font-medium text-[#52525b] hover:text-[#09090b] dark:text-zinc-400 dark:hover:text-zinc-100">
-              Sign out
-            </button>
             <a href="/app/compose" (click)="go($event, '/app/compose')" class="inline-flex h-9 items-center rounded-full bg-cta px-4 font-mono text-xs font-semibold text-white transition-colors duration-150 hover:bg-cta-hover">
               New post
             </a>
@@ -144,9 +132,6 @@ const NAV = [
         <header class="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-[#e8e8e3] bg-white px-4 dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
           <a href="/" (click)="go($event, '/')" class="font-display text-[15px] font-bold tracking-tight dark:text-zinc-100">Dus<span class="text-cta">kly</span></a>
           <div class="flex items-center gap-2">
-            <button type="button" (click)="signOut()" class="px-2 text-[13px] font-medium text-[#52525b] hover:text-[#09090b] dark:text-zinc-400 dark:hover:text-zinc-100">
-              Sign out
-            </button>
             <a href="/app/compose" (click)="go($event, '/app/compose')" class="inline-flex h-9 items-center rounded-full bg-cta px-3.5 text-xs font-semibold text-white hover:bg-cta-hover">New</a>
           </div>
         </header>

@@ -12,7 +12,7 @@ export const CF_DEPLOY =
   template: `
     <footer class="border-t border-[#e4e4e7] bg-white">
       <div class="mx-auto max-w-6xl px-4 pb-8 pt-12 sm:px-6">
-        <div class="mb-12 grid grid-cols-2 gap-8 md:grid-cols-5">
+        <div class="mb-12 grid grid-cols-2 gap-8 md:grid-cols-6">
           <div class="col-span-2 space-y-3">
             <a routerLink="/" class="font-display text-[15px] font-extrabold tracking-tight text-[#09090b]">
               Dus<span class="text-cta">kly</span>
@@ -26,6 +26,11 @@ export const CF_DEPLOY =
             <a routerLink="/pricing" class="block text-[#52525b] hover:text-[#09090b]">Pricing</a>
             <a routerLink="/docs" class="block text-[#52525b] hover:text-[#09090b]">Docs</a>
             <a routerLink="/signin" class="block text-[#52525b] hover:text-[#09090b]">Sign in</a>
+          </div>
+          <div class="space-y-2.5 font-mono text-[12px]">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-[#09090b]">Resources</p>
+            <a routerLink="/blog" class="block text-[#52525b] hover:text-[#09090b]">Blog</a>
+            <a routerLink="/tools" class="block text-[#52525b] hover:text-[#09090b]">Free tools</a>
           </div>
           <div class="space-y-2.5 font-mono text-[12px]">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-[#09090b]">Account</p>

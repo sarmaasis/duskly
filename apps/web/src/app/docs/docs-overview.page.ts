@@ -17,7 +17,7 @@ import { RouterLink } from "@angular/router";
         <ul class="mt-4 space-y-3 text-[14px] leading-relaxed text-[#52525b]">
           <li><span class="font-semibold text-[#09090b]">Compose &amp; calendar</span> — draft posts, attach media, schedule LinkedIn, X, Instagram, and more.</li>
           <li><span class="font-semibold text-[#09090b]">Connect channels</span> — connect each network; posts stay queued until a channel is ready.</li>
-          <li><span class="font-semibold text-[#09090b]">API &amp; agents</span> — mint <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code> tokens for scripts, or drive scheduling from Cursor/Claude via MCP.</li>
+          <li><span class="font-semibold text-[#09090b]">API &amp; agents</span> — mint <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code> tokens in Settings. REST routes that take <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> use the Workspace ID row on that same page. MCP tools skip the id — the token already names the workspace.</li>
         </ul>
 
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">OAuth callbacks and legal</h2>
@@ -28,7 +28,15 @@ import { RouterLink } from "@angular/router";
           <a routerLink="/privacy" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/privacy</a>,
           <a routerLink="/terms" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/terms</a>, and
           <a routerLink="/data-deletion" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/data-deletion</a>.
-          Meta’s signed callback is <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST https://api.duskly.site/v1/meta/data-deletion</code>.
+          Meta’s signed callback is <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://api.duskly.site/v1/meta/data-deletion</code>.
+          The human status page is <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://duskly.site/data-deletion</code>.
+          Instagram fetches images from <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET https://api.duskly.site/v1/media/:id/public?exp&amp;sig</code>.
+        </p>
+        <p class="mt-4 text-[14px] leading-relaxed text-[#52525b]">
+          YouTube OAuth must list only <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://www.googleapis.com/auth/youtube.upload</code> on the Google consent screen — upload only, no <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">youtube.force-ssl</code>.
+        </p>
+        <p class="mt-4 text-[14px] leading-relaxed text-[#52525b]">
+          The Slack bot posts to the public channel you picked before the bot is invited, which is why <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">chat:write.public</code> is requested.
         </p>
 
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">Where to go next</h2>
@@ -63,9 +71,9 @@ import { RouterLink } from "@angular/router";
 })
 export class DocsOverviewPage {
   readonly quickStart = `# Mint a token in Settings → API tokens
-# Then list posts:
+# Copy Workspace ID from Settings (REST still needs it)
 
 curl -s \\
   -H "Authorization: Bearer dk_…" \\
-  "https://api.duskly.site/v1/posts?workspaceId=WS_ID"`;
+  "https://api.duskly.site/v1/posts?workspaceId=YOUR_WORKSPACE_ID"`;
 }

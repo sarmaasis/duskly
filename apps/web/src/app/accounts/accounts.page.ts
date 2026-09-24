@@ -31,7 +31,6 @@ const FALLBACK_META: Record<string, NetMeta> = {
   bluesky: { label: "Bluesky", group: "social", connect: "token" },
   mastodon: { label: "Mastodon", group: "social", connect: "oauth" },
   hashnode: { label: "Hashnode", group: "blogs", connect: "token" },
-  medium: { label: "Medium", group: "blogs", connect: "token" },
   devto: { label: "dev.to", group: "blogs", connect: "token" },
   telegram: { label: "Telegram", group: "chat", connect: "token" },
   discord: { label: "Discord", group: "chat", connect: "token" },
@@ -170,14 +169,6 @@ const FALLBACK_META: Record<string, NetMeta> = {
                 <input [(ngModel)]="publicationId" name="pub" [class]="'mt-1 ' + field" />
               </label>
             }
-            @if (network === 'medium') {
-              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Integration token
-                <input [(ngModel)]="integrationToken" name="med" type="password" [class]="'mt-1 ' + field" />
-              </label>
-              <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Author ID
-                <input [(ngModel)]="authorId" name="author" [class]="'mt-1 ' + field" />
-              </label>
-            }
             @if (network === 'telegram') {
               <label class="text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">Bot token
                 <input [(ngModel)]="botToken" name="bot" type="password" [class]="'mt-1 ' + field" />
@@ -214,6 +205,9 @@ const FALLBACK_META: Record<string, NetMeta> = {
               Connect with {{ labelOf(network) }} OAuth
             }
           </button>
+          @if (network === 'slack') {
+            <p class="text-[12px] text-[#63676c] dark:text-zinc-400">The bot posts to the public channel you picked before the bot is invited, which is why chat:write.public is requested.</p>
+          }
           @if (!oauthReady()[network]) {
             <p class="text-[12px] text-amber-700 dark:text-amber-400">
               @if (network === 'slack') {
@@ -350,12 +344,10 @@ export class AccountsPage implements OnInit {
   handle = "";
   appPassword = "";
   apiKey = "";
-  integrationToken = "";
   botToken = "";
   chatId = "";
   webhookUrl = "";
   publicationId = "";
-  authorId = "";
   subreddit = "";
   mastodonInstance = "https://mastodon.social";
   connectCompanyId = "";
@@ -494,6 +486,7 @@ export class AccountsPage implements OnInit {
     }
     const q = new URLSearchParams({ workspaceId: this.workspaceId });
     if (this.network === "mastodon") q.set("instance", this.mastodonInstance);
+    if (this.network === "reddit" && this.subreddit.trim()) q.set("subreddit", this.subreddit.trim());
     if (this.connectCompanyId) q.set("groupId", this.connectCompanyId);
     window.location.href = `${apiBase()}/v1/accounts/oauth/${this.network}/start?${q}`;
   }
@@ -583,12 +576,10 @@ export class AccountsPage implements OnInit {
           handle: this.handle,
           appPassword: this.appPassword || undefined,
           apiKey: this.apiKey || undefined,
-          integrationToken: this.integrationToken || undefined,
           botToken: this.botToken || undefined,
           chatId: this.chatId || undefined,
           webhookUrl: this.webhookUrl || undefined,
           publicationId: this.publicationId || undefined,
-          authorId: this.authorId || undefined,
           subreddit: this.subreddit || undefined,
           groupId: this.connectCompanyId || null,
         },
@@ -596,12 +587,10 @@ export class AccountsPage implements OnInit {
       this.handle = "";
       this.appPassword = "";
       this.apiKey = "";
-      this.integrationToken = "";
       this.botToken = "";
       this.chatId = "";
       this.webhookUrl = "";
       this.publicationId = "";
-      this.authorId = "";
       this.msg.set("Channel connected");
       await this.reload();
     } catch (e: unknown) {

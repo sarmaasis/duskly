@@ -47,9 +47,11 @@ MASTODON_INSTANCE=https://mastodon.social
 #   https://api.duskly.site/v1/accounts/oauth/facebook/callback
 #   https://api.duskly.site/v1/accounts/oauth/threads/callback
 # Data deletion: https://api.duskly.site/v1/meta/data-deletion
+# Public Instagram media: GET https://api.duskly.site/v1/media/{id}/public?exp=&sig=
 META_APP_ID=
 META_APP_SECRET=
-# Google OAuth — YouTube — callback https://api.duskly.site/v1/accounts/oauth/youtube/callback
+# Google OAuth — YouTube upload only. Consent screen scope: https://www.googleapis.com/auth/youtube.upload
+# Callback https://api.duskly.site/v1/accounts/oauth/youtube/callback
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 # Reddit OAuth (web app) — callback https://api.duskly.site/v1/accounts/oauth/reddit/callback
@@ -60,7 +62,7 @@ SLACK_CLIENT_ID=
 SLACK_CLIENT_SECRET=
 
 # Workers AI model ids (empty = use defaults in code)
-# Default: @cf/meta/llama-3.1-8b-instruct
+# Default: @cf/meta/llama-3.1-8b-instruct-fast
 AI_COPILOT_MODEL=
 # Default: @cf/black-forest-labs/flux-1-schnell
 AI_IMAGE_MODEL=

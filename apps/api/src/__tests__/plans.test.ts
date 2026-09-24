@@ -8,7 +8,7 @@ describe("plan limits", () => {
       team: false,
       aiImages: 0,
       aiVideos: 3,
-      aiClipMinutes: 60,
+      aiClipMinutes: 3,
       aiCopilot: 200,
     });
   });
@@ -19,7 +19,7 @@ describe("plan limits", () => {
       team: true,
       aiImages: 100,
       aiVideos: 10,
-      aiClipMinutes: 120,
+      aiClipMinutes: 10,
       aiCopilot: 500,
     });
   });
@@ -29,7 +29,7 @@ describe("plan limits", () => {
     expect(PLAN_LIMITS.pro.team).toBe(true);
     expect(PLAN_LIMITS.pro.aiImages).toBe(300);
     expect(PLAN_LIMITS.pro.aiVideos).toBe(30);
-    expect(PLAN_LIMITS.pro.aiClipMinutes).toBe(300);
+    expect(PLAN_LIMITS.pro.aiClipMinutes).toBe(30);
     expect(PLAN_LIMITS.pro.aiCopilot).toBe(2000);
   });
 
@@ -38,7 +38,7 @@ describe("plan limits", () => {
     expect(PLAN_LIMITS.ultimate.team).toBe(true);
     expect(PLAN_LIMITS.ultimate.aiImages).toBe(500);
     expect(PLAN_LIMITS.ultimate.aiVideos).toBe(60);
-    expect(PLAN_LIMITS.ultimate.aiClipMinutes).toBe(600);
+    expect(PLAN_LIMITS.ultimate.aiClipMinutes).toBe(60);
     expect(PLAN_LIMITS.ultimate.aiCopilot).toBe(5000);
   });
 

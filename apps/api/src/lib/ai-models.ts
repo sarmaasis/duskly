@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 
-export const DEFAULT_AI_COPILOT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+/** Active Workers AI chat model; `@cf/meta/llama-3.1-8b-instruct` was deprecated 2026-05-30. */
+export const DEFAULT_AI_COPILOT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 export const DEFAULT_AI_IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
 /** Cloudflare Workers AI text-to-video (Lightricks LTX-2.5 Fast). */
 export const DEFAULT_AI_VIDEO_MODEL = "lightricks/ltx-2-5-fast";
@@ -17,8 +18,11 @@ export function aiVideoModel(env: Env): string {
   return env.AI_VIDEO_MODEL?.trim() || DEFAULT_AI_VIDEO_MODEL;
 }
 
-/** LTX-2.5 Fast allows even durations from 6–20s at 24fps 720p/1080p. */
-export const VIDEO_DURATION_OPTIONS = [6, 8, 10, 12] as const;
+/** Product default sent to AI_VIDEO_MODEL: one short AI video credit. */
+export const CLIP_DURATION_SEC = 8;
+
+/** Keep video credits short enough for predictable plan margins. */
+export const VIDEO_DURATION_OPTIONS = [6, 8] as const;
 export type VideoDurationSec = (typeof VIDEO_DURATION_OPTIONS)[number];
 
 export function snapVideoDuration(sec: number): VideoDurationSec {
@@ -33,6 +37,73 @@ export function snapVideoDuration(sec: number): VideoDurationSec {
     }
   }
   return best;
+}
+
+/** Legacy helper for old clip-minute accounting. */
+export function clipMinutesToCharge(durationSec: number): number {
+  return Math.max(1, Math.ceil(durationSec / 60));
+}
+
+function textFromWorkersAiResult(result: unknown): string {
+  if (typeof result === "string") return result.trim();
+  if (!result || typeof result !== "object") return "";
+  const r = result as Record<string, unknown>;
+  if (typeof r.response === "string") return r.response.trim();
+  if (typeof r.text === "string") return r.text.trim();
+  if (typeof r.output === "string") return r.output.trim();
+  if (r.result && typeof r.result === "object") {
+    const inner = r.result as Record<string, unknown>;
+    if (typeof inner.response === "string") return inner.response.trim();
+    if (typeof inner.text === "string") return inner.text.trim();
+  }
+  return "";
+}
+
+function aiRunErrorMessage(e: unknown, model: string): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string") {
+    return (e as { message: string }).message;
+  }
+  return `AI.run failed for ${model}`;
+}
+
+/**
+ * Run the configured copilot chat model. Returns model text only — never a template suffix.
+ * Throws on missing binding, AI.run failure, or empty output so callers can skip quota.
+ */
+export async function generateCopilotDraft(
+  env: Env,
+  prompt: string,
+  tone?: string,
+): Promise<{ draft: string; model: string }> {
+  if (!env.AI) {
+    throw new Error("Workers AI binding is not configured");
+  }
+  const model = aiCopilotModel(env);
+  let result: unknown;
+  try {
+    result = await env.AI.run(model as never, {
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write short social media posts. Return only the post text, no quotes or preamble. Keep under 280 characters unless asked otherwise.",
+        },
+        {
+          role: "user",
+          content: `Tone: ${tone || "clear"}. Draft a post about: ${prompt}`,
+        },
+      ],
+    });
+  } catch (e) {
+    throw new Error(aiRunErrorMessage(e, model));
+  }
+
+  const draft = textFromWorkersAiResult(result);
+  if (!draft) {
+    throw new Error(`Copilot model ${model} returned no text`);
+  }
+  return { draft, model };
 }
 
 function videoUrlFromResult(result: unknown): string | null {

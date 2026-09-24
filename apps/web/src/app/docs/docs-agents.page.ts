@@ -19,7 +19,7 @@ import { RouterLink } from "@angular/router";
           The agent drafts copy, picks a time (default about an hour out), and schedules onto a connected channel—subject to your Cloud plan limits.
         </p>
         <ul class="mt-4 list-disc space-y-2 pl-5 text-[14px] text-[#52525b]">
-          <li><code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET /v1/ai/agent?workspaceId=…</code> — recent runs</li>
+          <li><code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET /v1/ai/agent?workspaceId=…</code> — recent runs. Copy <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> from <a routerLink="/app/settings" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Settings</a>.</li>
           <li><code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST /v1/ai/agent</code> — run with workspaceId, prompt, optional scheduleInMinutes</li>
         </ul>
 
@@ -28,10 +28,13 @@ import { RouterLink } from "@angular/router";
           Mint a <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code> token, then have your agent:
         </p>
         <ol class="mt-4 list-decimal space-y-2 pl-5 text-[14px] text-[#52525b]">
-          <li>List channels with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET /v1/accounts</code></li>
-          <li>Create a scheduled post with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST /v1/posts</code></li>
-          <li>Confirm with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET /v1/posts</code></li>
+          <li>List channels with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET /v1/accounts?workspaceId=…</code></li>
+          <li>Create a scheduled post with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST /v1/posts</code> (body includes workspaceId)</li>
+          <li>Confirm with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET /v1/posts?workspaceId=…</code></li>
         </ol>
+        <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
+          Or skip the id on MCP: those tools inherit the token’s workspace and do not take a workspace id.
+        </p>
         <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
           Plan limits match the UI: channel caps and AI quotas apply on Duskly Cloud the same way they do for a signed-in user.
         </p>
@@ -48,11 +51,12 @@ import { RouterLink } from "@angular/router";
   `,
 })
 export class DocsAgentsPage {
-  readonly agentCurl = `curl -X POST https://api.duskly.site/v1/ai/agent \\
+  readonly agentCurl = `# workspaceId: copy from Settings
+curl -X POST https://api.duskly.site/v1/ai/agent \\
   -H "Authorization: Bearer dk_…" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "workspaceId": "WS_ID",
+    "workspaceId": "YOUR_WORKSPACE_ID",
     "prompt": "Announce Friday drop",
     "scheduleInMinutes": 60
   }'`;

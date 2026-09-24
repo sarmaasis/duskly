@@ -31,21 +31,12 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#e8e8e3] pb-3 dark:border-zinc-700">
               <p class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Draft</p>
               <div class="flex flex-wrap items-center gap-2">
-                <button type="button" (click)="copilot()" class="inline-flex items-center gap-1.5 rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">
+                <button type="button" (click)="copilot()" [disabled]="!!aiBusy()" class="inline-flex items-center gap-1.5 rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">
                   <span class="size-1.5 rounded-full bg-cta"></span>
-                  AI copilot
+                  {{ aiBusy() === 'copilot' ? 'Generating…' : 'Write caption' }}
                 </button>
-                <button type="button" (click)="aiImage()" [disabled]="(usage()?.limits.aiImages||0)===0" class="rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">AI image</button>
-                <label class="inline-flex items-center rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
-                  <span class="sr-only">Clip seconds</span>
-                  <select [(ngModel)]="clipDurationSec" name="clipSec" class="appearance-none bg-transparent font-medium outline-none dark:text-zinc-100">
-                    <option [ngValue]="6">6s</option>
-                    <option [ngValue]="8">8s</option>
-                    <option [ngValue]="10">10s</option>
-                    <option [ngValue]="12">12s</option>
-                  </select>
-                </label>
-                <button type="button" (click)="aiVideo()" class="rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">AI clip</button>
+                <button type="button" (click)="aiImage()" [disabled]="!!aiBusy() || (usage()?.limits.aiImages||0)===0" class="rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ aiBusy() === 'image' ? 'Generating…' : 'Generate image' }}</button>
+                <button type="button" (click)="aiVideo()" [disabled]="!!aiBusy()" class="rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700">{{ aiBusy() === 'video' ? 'Generating…' : 'Generate AI video' }}</button>
               </div>
             </div>
             <textarea
@@ -54,16 +45,42 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               placeholder="What are you posting?"
               class="w-full resize-y border-0 bg-transparent p-0 font-sans text-sm text-[#121417] outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
             ></textarea>
-            @if (videoPreview()) {
-              <div class="mt-3 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
-                <video [src]="videoPreview()!" controls class="max-h-56 w-full rounded-xl border border-[#e8e8e3] dark:border-zinc-700"></video>
+            @if (aiBusy() === 'video' || attachments().length) {
+              <div class="mt-3 space-y-3 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
+                @if (aiBusy() === 'video') {
+                  <div class="flex aspect-video min-h-[240px] w-full items-center justify-center rounded-xl border border-dashed border-[#e8e8e3] bg-[#f7f7f4] dark:border-zinc-700 dark:bg-zinc-800">
+                    <p class="text-sm font-medium text-zinc-600 dark:text-zinc-300">Generating AI video…</p>
+                  </div>
+                }
+                @for (m of attachments(); track m.id) {
+                  @if (m.kind === 'video') {
+                    <div class="relative">
+                      <video [src]="m.url" controls playsinline class="aspect-video min-h-[240px] w-full rounded-xl border border-[#e8e8e3] bg-black object-contain dark:border-zinc-700"></video>
+                      <button type="button" (click)="removeAttachment(m.id)" class="absolute right-2 top-2 rounded-lg bg-black/70 px-2 py-1 text-[11px] font-medium text-white">Remove</button>
+                    </div>
+                  }
+                }
+                @if (imageAttachments().length) {
+                  <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    @for (m of imageAttachments(); track m.id) {
+                      <div class="relative overflow-hidden rounded-xl border border-[#e8e8e3] dark:border-zinc-700">
+                        <img [src]="m.url" alt="Attached image" class="h-28 w-full object-cover" />
+                        <button type="button" (click)="removeAttachment(m.id)" class="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">Remove</button>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
             }
-            @if (mediaPreview() && !videoPreview()) {
-              <div class="mt-3 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
-                <img [src]="mediaPreview()!" alt="Edited media" class="max-h-48 rounded-xl border border-[#e8e8e3] dark:border-zinc-700" />
-              </div>
-            }
+            <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-[#e8e8e3] pt-3 dark:border-zinc-700">
+              <label class="relative inline-flex cursor-pointer items-center rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2.5 py-1 text-xs font-medium text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
+                Add photos or videos
+                <input type="file" accept="image/*,video/*" multiple (change)="onAttachFiles($event)" class="absolute inset-0 cursor-pointer opacity-0" />
+              </label>
+              @if (attachments().length) {
+                <span class="text-[11px] text-zinc-400">{{ attachments().length }} attached</span>
+              }
+            </div>
           </section>
 
           <section class="space-y-5 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
@@ -241,10 +258,6 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                 <dt class="text-zinc-600 dark:text-zinc-400">AI videos</dt>
                 <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiVideos'] || 0 }}/{{ usage()?.limits?.aiVideos ?? 0 }}</dd>
               </div>
-              <div class="flex items-center justify-between border-b border-[#e8e8e3]/60 pb-2 dark:border-zinc-700">
-                <dt class="text-zinc-600 dark:text-zinc-400">Clip min</dt>
-                <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiClipMinutes'] || 0 }}/{{ usage()?.limits?.aiClipMinutes ?? 0 }}</dd>
-              </div>
               <div class="flex items-center justify-between">
                 <dt class="text-zinc-600 dark:text-zinc-400">Copilot</dt>
                 <dd class="font-mono font-semibold text-[#121417] dark:text-zinc-100">{{ usage()?.used?.['aiCopilot'] || 0 }}/{{ usage()?.limits?.aiCopilot ?? 0 }}</dd>
@@ -282,7 +295,6 @@ export class ComposerPage implements OnInit {
     bluesky: { label: "Bluesky", group: "social" },
     mastodon: { label: "Mastodon", group: "social" },
     hashnode: { label: "Hashnode", group: "blogs" },
-    medium: { label: "Medium", group: "blogs" },
     devto: { label: "dev.to", group: "blogs" },
     telegram: { label: "Telegram", group: "chat" },
     discord: { label: "Discord", group: "chat" },
@@ -290,7 +302,6 @@ export class ComposerPage implements OnInit {
   };
 
   body = "";
-  clipDurationSec = 8;
   when = "";
   delaySeconds = 0;
   repeatRule = "none";
@@ -308,8 +319,8 @@ export class ComposerPage implements OnInit {
   cropPct = 0;
   sourceMediaId = "";
   private sourceImg: HTMLImageElement | null = null;
-  mediaPreview = signal<string | null>(null);
-  videoPreview = signal<string | null>(null);
+  attachments = signal<{ id: string; url: string; kind: "image" | "video" }[]>([]);
+  aiBusy = signal<null | "copilot" | "image" | "video">(null);
   accounts = signal<{ id: string; network: string; handle: string }[]>([]);
   signatures = signal<{ id: string; name: string; body: string; isDefault: boolean }[]>([]);
   sets = signal<{ id: string; name: string; channelIds: string; templateBody: string | null }[]>([]);
@@ -386,7 +397,23 @@ export class ComposerPage implements OnInit {
     if (g?.accountIds?.length) this.selected.set([...g.accountIds]);
   }
 
+  imageAttachments() {
+    return this.attachments().filter((m) => m.kind === "image");
+  }
+
+  pushAttachment(item: { id: string; url: string; kind: "image" | "video" }) {
+    if (!item.id) return;
+    this.attachments.update((list) => (list.some((a) => a.id === item.id) ? list : [...list, item]));
+  }
+
+  removeAttachment(id: string) {
+    this.attachments.update((list) => list.filter((a) => a.id !== id));
+    if (this.sourceMediaId === id) this.sourceMediaId = "";
+  }
+
   async copilot() {
+    if (this.aiBusy()) return;
+    this.aiBusy.set("copilot");
     try {
       const r = await api<{ draft: string }>("/v1/ai/copilot", {
         method: "POST",
@@ -397,10 +424,14 @@ export class ComposerPage implements OnInit {
       await this.refreshUsage();
     } catch (e: unknown) {
       this.fail(e);
+    } finally {
+      this.aiBusy.set(null);
     }
   }
 
   async aiImage() {
+    if (this.aiBusy()) return;
+    this.aiBusy.set("image");
     try {
       const r = await api<{ id: string; url: string }>("/v1/ai/image", {
         method: "POST",
@@ -408,34 +439,37 @@ export class ComposerPage implements OnInit {
       });
       this.sourceMediaId = r.id;
       const url = `${apiBase()}${r.url}`;
-      this.mediaPreview.set(url);
-      this.videoPreview.set(null);
+      this.pushAttachment({ id: r.id, url, kind: "image" });
       await this.loadImageToCanvas(url);
       this.flash("AI image stored");
       await this.refreshUsage();
     } catch (e: unknown) {
       this.fail(e);
+    } finally {
+      this.aiBusy.set(null);
     }
   }
 
   async aiVideo() {
+    if (this.aiBusy()) return;
+    this.aiBusy.set("video");
     try {
       const r = await api<{ id: string; url: string; contentType?: string }>("/v1/ai/video", {
         method: "POST",
         json: {
           workspaceId: this.workspaceId,
           prompt: this.body || "Sunset over a quiet Main Street",
-          durationSec: this.clipDurationSec,
+          durationSec: 8,
         },
       });
-      this.sourceMediaId = r.id;
       const url = `${apiBase()}${r.url}`;
-      this.videoPreview.set(url);
-      this.mediaPreview.set(null);
-      this.flash("AI video clip ready");
+      this.pushAttachment({ id: r.id, url, kind: "video" });
+      this.flash("AI video ready");
       await this.refreshUsage();
     } catch (e: unknown) {
       this.fail(e);
+    } finally {
+      this.aiBusy.set(null);
     }
   }
 
@@ -450,13 +484,10 @@ export class ComposerPage implements OnInit {
 
     // Paint the editor immediately from the local file so choosing an image is never a no-op.
     const localUrl = URL.createObjectURL(file);
-    this.videoPreview.set(null);
-    this.mediaPreview.set(localUrl);
     try {
       await this.loadImageToCanvas(localUrl);
     } catch (e: unknown) {
       URL.revokeObjectURL(localUrl);
-      this.mediaPreview.set(null);
       return this.fail(e instanceof Error ? e : { message: "Could not read image" });
     }
 
@@ -479,14 +510,58 @@ export class ComposerPage implements OnInit {
         return this.fail({ message: data.message || data.error || "Upload failed" });
       }
       this.sourceMediaId = data.id || "";
-      if (data.url) {
-        // Keep the blob on the canvas (avoids CORS-tainted draws); use server URL for the draft preview.
-        this.mediaPreview.set(`${apiBase()}${data.url}`);
+      if (data.id && data.url) {
+        this.pushAttachment({ id: data.id, url: `${apiBase()}${data.url}`, kind: "image" });
       }
       this.flash("Image uploaded to media library");
     } catch (e: unknown) {
       this.fail(e instanceof Error ? e : { message: "Upload failed" });
     }
+  }
+
+  async onAttachFiles(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const files = [...(input.files || [])];
+    input.value = "";
+    if (!files.length) return;
+    if (!this.workspaceId) return this.fail({ message: "Sign in to upload to the media library" });
+
+    let added = 0;
+    for (const file of files) {
+      const isVideo = file.type.startsWith("video/");
+      const isImage = file.type.startsWith("image/");
+      if (!isVideo && !isImage) {
+        this.fail({ message: "Choose images or videos" });
+        continue;
+      }
+      try {
+        const fd = new FormData();
+        fd.set("workspaceId", this.workspaceId);
+        fd.set("file", file);
+        const res = await fetch(`${apiBase()}/v1/media/upload`, { method: "POST", body: fd, credentials: "include" });
+        const data = (await res.json().catch(() => ({}))) as {
+          id?: string;
+          url?: string;
+          error?: string;
+          message?: string;
+        };
+        if (!res.ok) {
+          this.fail({ message: data.message || data.error || "Upload failed" });
+          continue;
+        }
+        if (data.id && data.url) {
+          this.pushAttachment({
+            id: data.id,
+            url: `${apiBase()}${data.url}`,
+            kind: isVideo ? "video" : "image",
+          });
+          added += 1;
+        }
+      } catch (e: unknown) {
+        this.fail(e instanceof Error ? e : { message: "Upload failed" });
+      }
+    }
+    if (added) this.flash(added === 1 ? "Media attached" : `${added} files attached`);
   }
 
   private async loadImageToCanvas(url: string) {
@@ -554,7 +629,7 @@ export class ComposerPage implements OnInit {
         },
       });
       this.sourceMediaId = r.id;
-      this.mediaPreview.set(`${apiBase()}${r.url}`);
+      this.pushAttachment({ id: r.id, url: `${apiBase()}${r.url}`, kind: "image" });
       this.flash("Edited PNG/JPEG saved to media library");
     } catch (e: unknown) {
       this.fail(e);
@@ -582,7 +657,7 @@ export class ComposerPage implements OnInit {
           postingSetId: this.postingSetId || null,
           commentBody: this.commentBody || null,
           commentDelaySeconds: this.commentBody ? this.commentDelaySeconds : 0,
-          mediaIds: this.sourceMediaId ? [this.sourceMediaId] : [],
+          mediaIds: this.attachments().map((a) => a.id),
         },
       });
       this.flash("Post saved");

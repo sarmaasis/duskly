@@ -146,7 +146,11 @@ accountRoutes.get("/", async (c) => {
       pendingPages: (r.network === "instagram" || r.network === "facebook") && r.status === "needs_page" ? pendingPages : undefined,
     };
   }));
-  return c.json({ accounts, networks: NETWORKS, meta: NETWORK_META });
+  return c.json({
+    accounts,
+    networks: NETWORKS,
+    meta: Object.fromEntries(NETWORKS.map((n) => [n, NETWORK_META[n]])),
+  });
 });
 
 accountRoutes.post("/", async (c) => {
@@ -165,7 +169,6 @@ accountRoutes.post("/", async (c) => {
           "bluesky",
           "mastodon",
           "hashnode",
-          "medium",
           "devto",
           "telegram",
           "discord",
@@ -174,12 +177,10 @@ accountRoutes.post("/", async (c) => {
         handle: z.string().min(1),
         appPassword: z.string().optional(),
         apiKey: z.string().optional(),
-        integrationToken: z.string().optional(),
         botToken: z.string().optional(),
         chatId: z.string().optional(),
         webhookUrl: z.string().optional(),
         publicationId: z.string().optional(),
-        authorId: z.string().optional(),
         subreddit: z.string().optional(),
         groupId: z.string().nullable().optional(),
       })
@@ -196,18 +197,15 @@ accountRoutes.post("/", async (c) => {
       creds.appPassword = body.appPassword;
     }
     if (body.apiKey) creds.apiKey = body.apiKey;
-    if (body.integrationToken) creds.integrationToken = body.integrationToken;
     if (body.botToken) creds.botToken = body.botToken;
     if (body.chatId) creds.chatId = body.chatId;
     if (body.webhookUrl) creds.webhookUrl = body.webhookUrl;
     if (body.publicationId) creds.publicationId = body.publicationId;
-    if (body.authorId) creds.authorId = body.authorId;
-    if (body.subreddit) creds.subreddit = body.subreddit;
+    if (body.subreddit) creds.subreddit = body.subreddit.trim().replace(/^\/?r\//i, "");
 
     const secret =
       body.appPassword ||
       body.apiKey ||
-      body.integrationToken ||
       body.botToken ||
       body.webhookUrl ||
       "pending";

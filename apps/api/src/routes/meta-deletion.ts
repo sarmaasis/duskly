@@ -1,5 +1,9 @@
 import { Hono } from "hono";
+import { drizzle } from "drizzle-orm/d1";
+import { eq, inArray } from "drizzle-orm";
+import { socialAccount } from "../db/schema";
 import type { Env } from "../env";
+import { META_NETWORKS, wipeMatchingMetaAccounts } from "../lib/meta-deletion";
 
 export const metaDeletionRoutes = new Hono<{ Bindings: Env }>();
 
@@ -51,6 +55,32 @@ function deletionResponse(env: Env, code: string) {
   };
 }
 
+async function loadMetaAccounts(env: Env) {
+  if (!env.DB) return [];
+  try {
+    const db = drizzle(env.DB);
+    return await db
+      .select({
+        id: socialAccount.id,
+        network: socialAccount.network,
+        credentialsJson: socialAccount.credentialsJson,
+      })
+      .from(socialAccount)
+      .where(inArray(socialAccount.network, [...META_NETWORKS]));
+  } catch {
+    return [];
+  }
+}
+
+export async function applyMetaDataDeletion(env: Env, metaUserId: string): Promise<string[]> {
+  const rows = await loadMetaAccounts(env);
+  const db = env.DB ? drizzle(env.DB) : null;
+  return wipeMatchingMetaAccounts(env, rows, metaUserId, async (id, tokenCipher, credentialsJson, status) => {
+    if (!db) return;
+    await db.update(socialAccount).set({ tokenCipher, credentialsJson, status }).where(eq(socialAccount.id, id));
+  });
+}
+
 async function handleDeletion(c: { env: Env; req: { query: (k: string) => string | undefined; parseBody: () => Promise<Record<string, string | File>> } }) {
   const env = c.env;
   let signed = c.req.query("signed_request") || c.req.query("signedRequest") || "";
@@ -64,9 +94,34 @@ async function handleDeletion(c: { env: Env; req: { query: (k: string) => string
     }
   }
   let code = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  let userId: string | undefined;
   if (signed && env.META_APP_SECRET) {
     const parsed = await parseMetaSignedRequest(signed, env.META_APP_SECRET);
-    if (parsed?.user_id) code = `meta_${parsed.user_id}`.slice(0, 48);
+    if (parsed?.user_id) {
+      userId = parsed.user_id;
+      code = `meta_${parsed.user_id}`.slice(0, 48);
+    }
+  }
+  let deletedAccountIds: string[] = [];
+  if (userId) {
+    try {
+      deletedAccountIds = await applyMetaDataDeletion(env, userId);
+    } catch {
+      deletedAccountIds = [];
+    }
+  }
+  try {
+    await env.KV?.put(
+      `meta-deletion:${code}`,
+      JSON.stringify({
+        userId: userId || null,
+        deletedAccountIds,
+        at: Date.now(),
+      }),
+      { expirationTtl: 60 * 60 * 24 * 90 },
+    );
+  } catch {
+    /* confirmation still returned even if KV is unavailable */
   }
   return deletionResponse(env, code);
 }

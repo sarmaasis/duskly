@@ -4,7 +4,7 @@ import { socialAccount } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertChannelLimit, planErrorResponse } from "../lib/entitlements";
-import { NETWORK_META, type Network } from "../lib/networks";
+import { NETWORKS, NETWORK_META, type Network } from "../lib/networks";
 import { encryptCredentials, encryptSecret } from "../lib/secrets";
 import {
   buildAuthorizeUrl,
@@ -13,6 +13,8 @@ import {
   exchangeThreadsUserToken,
   listFacebookPages,
   oauthConfigured,
+  facebookUserId,
+  normalizeSubreddit,
   registerMastodonApp,
   REDDIT_UA,
 } from "../lib/oauth-providers";
@@ -60,7 +62,7 @@ oauthRoutes.get("/status", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const status: Record<string, boolean> = {};
-  for (const n of Object.keys(NETWORK_META) as Network[]) {
+  for (const n of NETWORKS) {
     status[n] = oauthConfigured(c.env, n) || NETWORK_META[n]?.connect === "token";
   }
   return c.json(status);
@@ -122,6 +124,7 @@ oauthRoutes.get("/:network/start", async (c) => {
       groupId: c.req.query("groupId") || null,
       mastodonClientId,
       mastodonClientSecret,
+      subreddit: normalizeSubreddit(c.req.query("subreddit")),
     }),
     { expirationTtl: 600 },
   );
@@ -160,6 +163,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
     groupId?: string | null;
     mastodonClientId?: string;
     mastodonClientSecret?: string;
+    subreddit?: string;
   };
   if (stored.network !== network) return c.redirect(webRedirect(c.env, "oauth=mismatch"));
 
@@ -268,9 +272,10 @@ oauthRoutes.get("/:network/callback", async (c) => {
       accessToken = th.accessToken;
       handle = th.handle;
       credentials = applyTokenResponse(
-        { threadsUserId: th.userId },
+        { threadsUserId: th.userId, metaUserId: th.userId },
         { access_token: th.accessToken, expires_in: th.expiresIn },
       );
+      if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
     } else if (network === "instagram" || network === "facebook") {
       const tokenRes = await fetch(
         `https://graph.facebook.com/v21.0/oauth/access_token?${new URLSearchParams({
@@ -283,6 +288,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
       if (!tokenRes.ok) return c.redirect(webRedirect(c.env, "oauth=token_failed"));
       const tok = (await tokenRes.json()) as { access_token: string };
       const longLived = await exchangeLongLivedFacebookToken(c.env, tok.access_token);
+      const metaUserId = await facebookUserId(longLived);
       const pages = await listFacebookPages(longLived, network === "instagram");
       if (!pages.length) {
         return c.redirect(webRedirect(c.env, `oauth=no_page&network=${network}`));
@@ -296,6 +302,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
           pageId: page.id,
           pageName: page.name,
           ...(page.igUserId ? { igUserId: page.igUserId } : {}),
+          ...(metaUserId ? { metaUserId } : {}),
         };
       } else {
         accessToken = pages[0].accessToken;
@@ -304,8 +311,10 @@ oauthRoutes.get("/:network/callback", async (c) => {
         credentials = {
           accessToken: pages[0].accessToken,
           pendingPagesJson: JSON.stringify(pages),
+          ...(metaUserId ? { metaUserId } : {}),
         };
       }
+      if (metaUserId) await c.env.KV.put(`meta-user:${metaUserId}`, stored.workspaceId);
     } else if (network === "youtube") {
       const body = new URLSearchParams({
         code,
@@ -357,7 +366,7 @@ oauthRoutes.get("/:network/callback", async (c) => {
       });
       const meJson = (await me.json()) as { name?: string };
       handle = meJson.name ? `u/${meJson.name}` : "reddit-user";
-      credentials = applyTokenResponse({ subreddit: "" }, tok);
+      credentials = applyTokenResponse({ subreddit: stored.subreddit || "" }, tok);
     } else if (network === "slack") {
       const body = new URLSearchParams({
         code,

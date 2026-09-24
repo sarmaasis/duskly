@@ -25,6 +25,21 @@ import { DkChoice, DkPill, DkSelect } from "../ui/forms";
             <h2 class="font-display text-xl font-bold text-[#121417] dark:text-zinc-50">Workspace Configuration</h2>
             <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Signatures, feeds, and keys for this workspace. Changes apply to compose and RSS.</p>
           </div>
+          <div class="mt-6 flex items-center justify-between gap-3 rounded-xl border border-[#e8e8e3] bg-[#f7f7f4] px-3.5 py-3 dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="min-w-0">
+              <p class="text-[11px] font-semibold uppercase text-zinc-400">Workspace ID</p>
+              @if (workspaceId) {
+                <p class="mt-0.5 truncate font-mono text-sm text-[#121417] dark:text-zinc-100">{{ workspaceId }}</p>
+              } @else if (sessionReady()) {
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Sign in to see the id used in API requests.</p>
+              } @else {
+                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Loading…</p>
+              }
+            </div>
+            @if (workspaceId) {
+              <button type="button" (click)="copyWorkspaceId()" class="shrink-0 rounded-xl border border-[#e8e8e3] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#121417] hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800">{{ idCopied() ? 'Copied' : 'Copy' }}</button>
+            }
+          </div>
           <div class="mt-8 flex flex-wrap items-center gap-6 border-t border-[#e8e8e3] pt-6 dark:border-zinc-700">
             <div>
               <p class="text-[11px] font-semibold uppercase text-zinc-400">Signatures</p>
@@ -360,6 +375,9 @@ export class SettingsPage implements OnInit {
   hooks = signal<{ id: string; name: string; url: string }[]>([]);
   newToken = signal("");
   theme = signal<"light" | "dark">("light");
+  sessionReady = signal(false);
+  idCopied = signal(false);
+  private copyTimer: ReturnType<typeof setTimeout> | null = null;
 
   async ngOnInit() {
     try {
@@ -376,7 +394,21 @@ export class SettingsPage implements OnInit {
       this.rssChannelId = ac.accounts[0]?.id || "";
       await this.reload();
     } catch {
-      /* unauthenticated */
+      /* unauthenticated — Workspace ID row explains sign-in */
+    } finally {
+      this.sessionReady.set(true);
+    }
+  }
+
+  async copyWorkspaceId() {
+    if (!this.workspaceId) return;
+    try {
+      await navigator.clipboard.writeText(this.workspaceId);
+      this.idCopied.set(true);
+      if (this.copyTimer) clearTimeout(this.copyTimer);
+      this.copyTimer = setTimeout(() => this.idCopied.set(false), 1500);
+    } catch {
+      /* clipboard unavailable */
     }
   }
 

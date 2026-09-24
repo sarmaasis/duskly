@@ -49,6 +49,16 @@ describe("repeat series", () => {
     expect(parsed.commentDelaySeconds).toBe(30);
     expect(() => createPost.parse({ workspaceId: "ws", body: "hi", destinations: ["ch1"], repeatRule: "yearly" })).toThrow();
   });
+
+  it("keeps multiple media ids in order on create", () => {
+    const parsed = createPost.parse({
+      workspaceId: "ws",
+      body: "hi",
+      destinations: ["ch1"],
+      mediaIds: ["img-1", "clip-2", "img-3"],
+    });
+    expect(parsed.mediaIds).toEqual(["img-1", "clip-2", "img-3"]);
+  });
 });
 
 describe("first-comment delay", () => {

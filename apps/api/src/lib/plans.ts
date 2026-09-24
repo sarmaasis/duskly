@@ -10,10 +10,10 @@ export type PlanLimits = {
 };
 
 export const PLAN_LIMITS: Record<PlanId, PlanLimits> = {
-  standard: { channels: 5, team: false, aiImages: 0, aiVideos: 3, aiClipMinutes: 60, aiCopilot: 200 },
-  team: { channels: 10, team: true, aiImages: 100, aiVideos: 10, aiClipMinutes: 120, aiCopilot: 500 },
-  pro: { channels: 30, team: true, aiImages: 300, aiVideos: 30, aiClipMinutes: 300, aiCopilot: 2000 },
-  ultimate: { channels: 100, team: true, aiImages: 500, aiVideos: 60, aiClipMinutes: 600, aiCopilot: 5000 },
+  standard: { channels: 5, team: false, aiImages: 0, aiVideos: 3, aiClipMinutes: 3, aiCopilot: 200 },
+  team: { channels: 10, team: true, aiImages: 100, aiVideos: 10, aiClipMinutes: 10, aiCopilot: 500 },
+  pro: { channels: 30, team: true, aiImages: 300, aiVideos: 30, aiClipMinutes: 30, aiCopilot: 2000 },
+  ultimate: { channels: 100, team: true, aiImages: 500, aiVideos: 60, aiClipMinutes: 60, aiCopilot: 5000 },
 };
 
 export function isPlanId(v: string): v is PlanId {

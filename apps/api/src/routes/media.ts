@@ -6,6 +6,7 @@ import { media } from "../db/schema";
 import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { makePosterSvg } from "../lib/media-gen";
+import { verifyPublicMediaSig } from "../lib/media-signed-url";
 
 export const mediaRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
@@ -33,6 +34,29 @@ mediaRoutes.get("/", async (c) => {
       ...m,
       url: `/v1/media/${m.id}/file?workspaceId=${workspaceId}`,
     })),
+  });
+});
+
+mediaRoutes.get("/:id/public", async (c) => {
+  const id = c.req.param("id");
+  const ok = await verifyPublicMediaSig(c.env, id, c.req.query("exp"), c.req.query("sig"));
+  if (!ok) return c.json({ error: "invalid_signature" }, 403);
+  const db = drizzle(c.env.DB);
+  const [row] = await db.select().from(media).where(eq(media.id, id)).limit(1);
+  if (!row) return c.json({ error: "not_found" }, 404);
+  const obj = await c.env.MEDIA.get(row.r2Key);
+  if (!obj) return c.json({ error: "missing" }, 404);
+  return new Response(obj.body, {
+    headers: {
+      "content-type": row.contentType,
+      "cache-control": "private, max-age=3600",
+      "content-security-policy":
+        row.contentType === "image/svg+xml"
+          ? "sandbox; default-src 'none'; style-src 'unsafe-inline'"
+          : "default-src 'none'",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+    },
   });
 });
 

@@ -52,7 +52,13 @@ export class LegalShell {
       <h2 class="font-display text-lg font-bold text-[#09090b]">How we use it</h2>
       <p>We use this data to run the scheduler: authenticate you, keep channels connected, send posts when due, and bill Cloud plans. We do not sell your posts, media, or connected-network tokens. We do not use connected-network content to train models.</p>
       <h2 class="font-display text-lg font-bold text-[#09090b]">Google, Meta, Slack, Reddit, and X</h2>
-      <p>When you connect a network, that provider shares an access token (and sometimes a refresh token or profile name) so Duskly can publish on your behalf. You can revoke that access in the provider’s security settings and by removing the channel in Duskly. Google users can also revoke access at <a class="underline decoration-cta decoration-2 underline-offset-4" href="https://security.google.com/settings/security/permissions">Google security settings</a>. Google’s privacy policy is at <a class="underline decoration-cta decoration-2 underline-offset-4" href="https://policies.google.com/privacy">policies.google.com/privacy</a>.</p>
+      <p>When you connect a network, that provider shares an access token (and sometimes a refresh token or profile name) so Duskly can publish on your behalf. You can revoke that access in the provider’s security settings and by removing the channel in Duskly. The Slack bot posts to the public channel you picked before the bot is invited, which is why chat:write.public is requested. Google users can also revoke access at <a class="underline decoration-cta decoration-2 underline-offset-4" href="https://security.google.com/settings/security/permissions">Google security settings</a>. Google’s privacy policy is at <a class="underline decoration-cta decoration-2 underline-offset-4" href="https://policies.google.com/privacy">policies.google.com/privacy</a>.</p>
+      <h2 class="font-display text-lg font-bold text-[#09090b]">Reviewer URLs</h2>
+      <ul class="list-disc space-y-1 pl-5">
+        <li>Instagram public media: <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET https://api.duskly.site/v1/media/:id/public?exp&amp;sig</code></li>
+        <li>Meta data-deletion callback: <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://api.duskly.site/v1/meta/data-deletion</code></li>
+        <li>Human data-deletion page: <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://duskly.site/data-deletion</code></li>
+      </ul>
       <h2 class="font-display text-lg font-bold text-[#09090b]">How to delete your data</h2>
       <p>Sign in, open <a routerLink="/app/accounts" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Accounts</a>, and remove a channel to drop its tokens. Delete posts from the calendar. To delete an entire Cloud account, email <a href="mailto:hello@duskly.site" class="font-semibold text-[#09090b]">hello&#64;duskly.site</a> from the same address you use to sign in. Meta also calls our data-deletion callback; see <a routerLink="/data-deletion" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Data deletion</a>.</p>
       <h2 class="font-display text-lg font-bold text-[#09090b]">Contact</h2>
@@ -102,7 +108,7 @@ export class TermsPage {}
       <h2 class="font-display text-lg font-bold text-[#09090b]">Delete your Cloud account</h2>
       <p>Email <a href="mailto:hello@duskly.site" class="font-semibold text-[#09090b]">hello&#64;duskly.site</a> from the address you sign in with and ask us to delete the workspace. We will remove account email, tokens, posts, and media for that workspace.</p>
       <h2 class="font-display text-lg font-bold text-[#09090b]">Meta callback</h2>
-      <p>When Facebook or Instagram send a signed deletion request, we return a confirmation code and a status URL in the shape Meta requires. You can still use the steps above if you connected those networks yourself.</p>
+      <p>When Facebook or Instagram send a signed deletion request, we verify it, delete stored Instagram, Threads, and Facebook tokens for that user when we can identify them, record the confirmation code, and return a status URL in the shape Meta requires. You can still use the steps above if you connected those networks yourself.</p>
     </dk-legal-shell>
   `,
 })

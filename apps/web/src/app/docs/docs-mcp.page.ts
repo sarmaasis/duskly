@@ -1,15 +1,19 @@
 import { Component } from "@angular/core";
+import { RouterLink } from "@angular/router";
 
 @Component({
   standalone: true,
+  imports: [RouterLink],
   template: `
     <div class="mx-auto grid max-w-5xl gap-10 xl:grid-cols-[minmax(0,1fr)_340px]">
       <article class="min-w-0">
         <p class="font-mono text-[11px] font-semibold uppercase tracking-widest text-cta">MCP</p>
         <h1 class="mt-2 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">Model Context Protocol</h1>
         <p class="mt-4 text-[15px] leading-relaxed text-[#52525b]">
-          Connect Cursor, Claude, or any MCP client to Duskly over HTTP. Auth is the same account API token
-          (<code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code>). Tools call the same account data as the REST API. No second data model.
+          Connect Cursor, Claude, or any MCP client to Duskly over HTTP. Auth is the same workspace API token
+          (<code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code> from
+          <a routerLink="/app/settings" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Settings → API tokens</a>).
+          Tools call the same workspace data as the REST API. No second data model.
         </p>
 
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">Endpoint</h2>
@@ -21,6 +25,9 @@ import { Component } from "@angular/core";
           Transport: JSON-RPC over HTTP (Streamable HTTP–compatible). Send
           <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">Authorization: Bearer dk_…</code>.
           Requests without a valid token return <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">401</code>.
+          The token is already workspace-scoped — MCP tools do not take a workspace id.
+          If you also call REST routes that require one, copy Workspace ID from
+          <a routerLink="/app/settings" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Settings</a>.
         </p>
 
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">Tools</h2>

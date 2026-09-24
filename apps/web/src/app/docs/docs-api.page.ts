@@ -1,7 +1,9 @@
 import { Component } from "@angular/core";
+import { RouterLink } from "@angular/router";
 
 @Component({
   standalone: true,
+  imports: [RouterLink],
   template: `
     <div class="mx-auto grid max-w-5xl gap-10 xl:grid-cols-[minmax(0,1fr)_340px]">
       <article class="min-w-0">
@@ -20,7 +22,13 @@ import { Component } from "@angular/core";
         <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
           Send it as <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">Authorization: Bearer dk_…</code>
           or <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">X-Api-Token: dk_…</code>.
-          Tokens are scoped to the account that created them. Session cookies from Sign in also work for browser clients.
+          Tokens are scoped to the workspace that minted them. Session cookies from Sign in also work for browser clients.
+        </p>
+        <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
+          Routes below that show <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> still need that
+          value in the query string or body — the token does not fill it in. Copy it from
+          <a routerLink="/app/settings" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">Settings</a>
+          (the Workspace ID row). MCP tools do not take this id; they use the token’s workspace automatically.
         </p>
 
         <h2 id="posts" class="mt-10 scroll-mt-24 font-display text-xl font-bold">Posts</h2>
@@ -31,7 +39,7 @@ import { Component } from "@angular/core";
           </div>
           <div>
             <p class="font-mono text-[12px] font-semibold text-[#09090b]">POST /v1/posts</p>
-            <p class="mt-1">Create a draft or scheduled post. <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">destinations</code> is an array of social account ids. <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">scheduledAt</code> is unix milliseconds.</p>
+            <p class="mt-1">Create a draft or scheduled post. Body includes <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> (copy from Settings). <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">destinations</code> is an array of social account ids. <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">scheduledAt</code> is unix milliseconds.</p>
           </div>
           <div>
             <p class="font-mono text-[12px] font-semibold text-[#09090b]">POST /v1/posts/:id/queue-now</p>
@@ -81,7 +89,9 @@ import { Component } from "@angular/core";
 
         <h2 id="tokens" class="mt-10 scroll-mt-24 font-display text-xl font-bold">Mint tokens via API</h2>
         <p class="mt-3 text-[14px] leading-relaxed text-[#52525b]">
-          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST /v1/org/tokens</code> with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> and name (session auth). Response includes the raw token once.
+          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">POST /v1/org/tokens</code> with
+          <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> (copy from Settings) and name (session auth).
+          Response includes the raw token once. The minted token can only act on that workspace.
         </p>
       </article>
 
@@ -104,23 +114,26 @@ import { Component } from "@angular/core";
   `,
 })
 export class DocsApiPage {
-  readonly createPost = `curl -X POST https://api.duskly.site/v1/posts \\
+  readonly createPost = `# workspaceId: copy from Settings
+curl -X POST https://api.duskly.site/v1/posts \\
   -H "Authorization: Bearer dk_…" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "workspaceId": "WS_ID",
+    "workspaceId": "YOUR_WORKSPACE_ID",
     "body": "Launch drops Thursday.",
     "status": "scheduled",
     "scheduledAt": 1735689600000,
     "destinations": ["ACCT_ID"]
   }'`;
 
-  readonly listAccounts = `curl -s \\
+  readonly listAccounts = `# workspaceId: copy from Settings
+curl -s \\
   -H "Authorization: Bearer dk_…" \\
-  "https://api.duskly.site/v1/accounts?workspaceId=WS_ID"`;
+  "https://api.duskly.site/v1/accounts?workspaceId=YOUR_WORKSPACE_ID"`;
 
-  readonly uploadMedia = `curl -X POST https://api.duskly.site/v1/media/upload \\
+  readonly uploadMedia = `# workspaceId: copy from Settings
+curl -X POST https://api.duskly.site/v1/media/upload \\
   -H "Authorization: Bearer dk_…" \\
-  -F "workspaceId=WS_ID" \\
+  -F "workspaceId=YOUR_WORKSPACE_ID" \\
   -F "file=@./clip.mp4"`;
 }

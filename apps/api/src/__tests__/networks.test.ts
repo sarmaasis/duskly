@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NETWORK_META, adapters } from "../lib/networks";
+import { NETWORKS, NETWORK_META, adapters, firstPublishMedia, isVideoMedia } from "../lib/networks";
 import { REDDIT_UA } from "../lib/oauth-tokens";
 
 const pending = {
@@ -98,6 +98,39 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("LinkedIn publishes through the current Posts API with a version header", async () => {
+    const fetch = spyFetch();
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: (h: string) => (h.toLowerCase() === "x-restli-id" ? "urn:li:share:123" : null) },
+      json: async () => ({}),
+      text: async () => "",
+    });
+    const result = await adapters.linkedin.publish({
+      ...pending,
+      token: "li-token",
+      credentials: { accessToken: "li-token", authorUrn: "urn:li:person:abc" },
+    });
+    expect(result).toMatchObject({ remoteId: "urn:li:share:123" });
+    expect(String(fetch.mock.calls[0][0])).toBe("https://api.linkedin.com/rest/posts");
+    expect(fetch.mock.calls[0][1].headers["linkedin-version"]).toBe("202603");
+    const body = JSON.parse(String(fetch.mock.calls[0][1].body));
+    expect(body.commentary).toBe("hello");
+    expect(body.distribution.feedDistribution).toBe("MAIN_FEED");
+  });
+
+  it("YouTube with only a videoId (comment-on-existing) stays queued — upload-only", async () => {
+    const fetch = spyFetch();
+    const result = await adapters.youtube.publish({
+      ...pending,
+      token: "ya29.token",
+      credentials: { accessToken: "ya29.token", videoId: "abc" },
+    });
+    expect(result).toMatchObject({ queued: true });
+    expect(String("reason" in result ? result.reason : "")).toMatch(/video file/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("YouTube text-only posts stay queued with a clear reason", async () => {
     const fetch = spyFetch();
     const result = await adapters.youtube.publish({
@@ -179,6 +212,38 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(result).toMatchObject({ remoteId: "t3_abc" });
     expect(fetch.mock.calls[0][1].headers["user-agent"]).toBe(REDDIT_UA);
     expect(REDDIT_UA).toContain("duskly.site");
+    const body = fetch.mock.calls[0][1].body as URLSearchParams;
+    expect(body.get("sr")).toBe("duskly");
+  });
+
+  it("Reddit publish uses the persisted OAuth subreddit, not the u/ handle", async () => {
+    const fetch = spyFetch();
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ json: { data: { name: "t3_xyz" } } }),
+      text: async () => "",
+    });
+    const result = await adapters.reddit.publish({
+      body: "hello",
+      handle: "u/alice",
+      token: "reddit-token",
+      credentials: { accessToken: "reddit-token", subreddit: "r/duskly" },
+    });
+    expect(result).toMatchObject({ remoteId: "t3_xyz" });
+    const body = fetch.mock.calls[0][1].body as URLSearchParams;
+    expect(body.get("sr")).toBe("duskly");
+  });
+
+  it("Reddit without a stored subreddit and a u/ handle stays queued", async () => {
+    const fetch = spyFetch();
+    const result = await adapters.reddit.publish({
+      body: "hello",
+      handle: "u/alice",
+      token: "reddit-token",
+      credentials: { accessToken: "reddit-token", subreddit: "" },
+    });
+    expect(result).toMatchObject({ queued: true });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("does not mark Slack as a token-connect network (OAuth path)", () => {
@@ -187,5 +252,36 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(NETWORK_META.devto.connect).toBe("token");
     expect(NETWORK_META.instagram.connect).toBe("oauth");
     expect(NETWORK_META.bluesky.connect).toBe("token");
+  });
+
+  it("does not offer Medium as a connectable network; leftover rows queue without calling Medium", async () => {
+    expect(NETWORKS).not.toContain("medium");
+    const fetch = spyFetch();
+    const result = await adapters.medium.publish({
+      body: "hello",
+      handle: "author",
+      token: "medium-token",
+      credentials: { integrationToken: "medium-token", authorId: "abc" },
+    });
+    expect(result).toEqual({ queued: true, reason: expect.stringMatching(/Medium was removed/i) });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("first-media publish pick", () => {
+  const rows = [
+    { id: "v1", kind: "clip", contentType: "video/mp4" },
+    { id: "i1", kind: "image", contentType: "image/png" },
+    { id: "i2", kind: "image", contentType: "image/jpeg" },
+  ];
+
+  it("uses composer order, not row order", () => {
+    expect(firstPublishMedia(["i2", "v1"], rows)?.id).toBe("i2");
+    expect(firstPublishMedia(["v1", "i1"], rows)?.id).toBe("v1");
+  });
+
+  it("classifies clips as video", () => {
+    expect(isVideoMedia(rows[0])).toBe(true);
+    expect(isVideoMedia(rows[1])).toBe(false);
   });
 });

@@ -20,7 +20,8 @@ import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
 import { and, eq, inArray, lte } from "drizzle-orm";
 import { posts, postDestination, socialAccount, rssFeed, workspace, media, apiToken } from "./db/schema";
-import { adapters, type Network } from "./lib/networks";
+import { adapters, firstPublishMedia, isVideoMedia, type Network } from "./lib/networks";
+import { signPublicMediaUrl } from "./lib/media-signed-url";
 import { dispatchWebhooks } from "./lib/webhooks-out";
 import { sha256Hex } from "./lib/workspace";
 import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
@@ -70,6 +71,11 @@ app.use("/v1/*", async (c, next) => {
   }
   // Meta signed data-deletion callback is public (reviewers and Facebook hit it unauthenticated).
   if (c.req.path === "/v1/meta/data-deletion") {
+    await next();
+    return;
+  }
+  // Signed, time-limited media URLs for providers (Instagram) that fetch the file themselves.
+  if (c.req.path.match(/^\/v1\/media\/[^/]+\/public$/)) {
     await next();
     return;
   }
@@ -222,17 +228,15 @@ async function publishPost(env: Env, postId: string) {
     const mediaIds = post.mediaIds ? (JSON.parse(post.mediaIds) as string[]) : [];
     if (mediaIds.length) {
       const mediaRows = await db.select().from(media).where(inArray(media.id, mediaIds));
-      const video = mediaRows.find((m) => m.kind === "clip" || m.contentType.startsWith("video/"));
-      const image = mediaRows.find((m) => m.contentType.startsWith("image/"));
-      if (video) {
-        const obj = await env.MEDIA.get(video.r2Key);
+      const first = firstPublishMedia(mediaIds, mediaRows);
+      if (first && isVideoMedia(first)) {
+        const obj = await env.MEDIA.get(first.r2Key);
         if (obj) {
           videoBytes = await obj.arrayBuffer();
-          videoContentType = video.contentType;
+          videoContentType = first.contentType;
         }
-      }
-      if (image) {
-        imageUrl = `${env.BETTER_AUTH_URL}/v1/media/${image.id}/file?workspaceId=${post.workspaceId}`;
+      } else if (first?.contentType.startsWith("image/")) {
+        imageUrl = await signPublicMediaUrl(env, first.id);
       }
     }
   } catch {

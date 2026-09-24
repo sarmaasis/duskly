@@ -21,9 +21,28 @@ import { DocsApiPage } from "./docs/docs-api.page";
 import { DocsAgentsPage } from "./docs/docs-agents.page";
 import { DocsMcpPage } from "./docs/docs-mcp.page";
 import { PrivacyPage, TermsPage, DataDeletionPage } from "./pages/legal.page";
+import { BlogArticlePage, BlogIndexPage } from "./pages/growth.page";
+import { ToolsShell } from "./pages/tools/tools-shell";
+import { ToolsIndexPage } from "./pages/tools/tools-index.page";
+import { CaptionCounterPage } from "./pages/tools/caption-counter.page";
+import { ImageSizePage } from "./pages/tools/image-size.page";
+import { PostPreviewPage } from "./pages/tools/post-preview.page";
 
 export const routes: Routes = [
   { path: "", component: LandingPage },
+  { path: "blog", component: BlogIndexPage },
+  { path: "blog/:slug", component: BlogArticlePage },
+  {
+    path: "tools",
+    component: ToolsShell,
+    children: [
+      { path: "", component: ToolsIndexPage },
+      { path: "caption-counter", component: CaptionCounterPage },
+      { path: "image-size", component: ImageSizePage },
+      { path: "post-preview", component: PostPreviewPage },
+    ],
+  },
+  { path: "free-tools", redirectTo: "tools", pathMatch: "full" },
   { path: "pricing", component: PricingPage },
   { path: "privacy", component: PrivacyPage },
   { path: "terms", component: TermsPage },

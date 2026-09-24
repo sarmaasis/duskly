@@ -21,7 +21,7 @@ export const createPost = z.object({
   scheduledAt: z.number().optional(),
   destinations: z.array(z.string()).default([]),
   status: z.enum(["draft", "scheduled"]).default("draft"),
-  mediaIds: z.array(z.string()).optional(),
+  mediaIds: z.array(z.string()).max(20).optional(),
   signatureId: z.string().optional().nullable(),
   delaySeconds: z.number().int().min(0).max(86400).optional(),
   repeatRule: z.enum(["none", "daily", "weekly"]).optional(),

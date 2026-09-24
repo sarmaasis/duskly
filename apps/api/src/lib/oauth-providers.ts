@@ -95,7 +95,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
       client_id: env.GOOGLE_CLIENT_ID!,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "https://www.googleapis.com/auth/youtube.force-ssl",
+      scope: "https://www.googleapis.com/auth/youtube.upload",
       access_type: "offline",
       prompt: "consent",
       state,
@@ -241,6 +241,23 @@ export async function exchangeThreadsUserToken(
     handle: meJson.username ? `@${meJson.username}` : "threads-user",
     expiresIn: tok.expires_in,
   };
+}
+
+export function normalizeSubreddit(raw: string | undefined | null): string {
+  return (raw || "").trim().replace(/^\/?r\//i, "");
+}
+
+export async function facebookUserId(userToken: string): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/me?${new URLSearchParams({ fields: "id", access_token: userToken })}`,
+    );
+    if (!res.ok) return "";
+    const data = (await res.json()) as { id?: string };
+    return data.id || "";
+  } catch {
+    return "";
+  }
 }
 
 export function credsFromTokenJson(

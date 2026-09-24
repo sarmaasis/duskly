@@ -46,6 +46,20 @@ export type NetworkAdapter = {
   comment?(input: CommentInput): Promise<{ commentRemoteId?: string; commentSkipped?: string }>;
 };
 
+/** First attached item in composer order — extras stay on the post, not dropped. */
+export function firstPublishMedia<T extends { id: string }>(mediaIds: string[], rows: T[]): T | undefined {
+  const byId = new Map(rows.map((m) => [m.id, m]));
+  for (const id of mediaIds) {
+    const found = byId.get(id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function isVideoMedia(m: { kind: string; contentType: string }) {
+  return m.kind === "clip" || m.contentType.startsWith("video/");
+}
+
 export type NetworkGroup = "social" | "blogs" | "chat";
 
 export const NETWORK_META: Record<Network, { label: string; group: NetworkGroup; connect: "oauth" | "token" }> = {
@@ -78,7 +92,6 @@ export const NETWORKS: Network[] = [
   "bluesky",
   "mastodon",
   "hashnode",
-  "medium",
   "devto",
   "telegram",
   "discord",
@@ -92,6 +105,8 @@ function missingCreds(reason: string): PublishQueued {
 function hasToken(token: string | undefined): boolean {
   return !!token && token !== "pending";
 }
+
+const LINKEDIN_VERSION = "202603";
 
 /* ——— Bluesky ——— */
 async function blueskyPublish(input: PublishInput): Promise<PublishOk | PublishQueued> {
@@ -251,23 +266,25 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
     return missingCreds("LinkedIn OAuth credentials are not configured — scheduled and queued honestly, not marked published");
   }
   try {
-    const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+    const res = await fetch("https://api.linkedin.com/rest/posts", {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
+        "linkedin-version": LINKEDIN_VERSION,
         "x-restli-protocol-version": "2.0.0",
       },
       body: JSON.stringify({
         author,
-        lifecycleState: "PUBLISHED",
-        specificContent: {
-          "com.linkedin.ugc.ShareContent": {
-            shareCommentary: { text: input.body },
-            shareMediaCategory: "NONE",
-          },
+        commentary: input.body,
+        visibility: "PUBLIC",
+        distribution: {
+          feedDistribution: "MAIN_FEED",
+          targetEntities: [],
+          thirdPartyDistributionChannels: [],
         },
-        visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+        lifecycleState: "PUBLISHED",
+        isReshareDisabledByAuthor: false,
       }),
     });
     if (!res.ok) {
@@ -532,27 +549,6 @@ async function youtubePublish(input: PublishInput): Promise<PublishOk | PublishQ
     if (bytes) {
       return youtubeUploadVideo(token, input, bytes, contentType);
     }
-    if (input.credentials?.videoId) {
-      const res = await fetch("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet", {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          snippet: {
-            videoId: input.credentials.videoId,
-            topLevelComment: { snippet: { textOriginal: input.body } },
-          },
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        return missingCreds(`YouTube comment/post failed (${res.status}): ${err.slice(0, 200)}`);
-      }
-      const data = (await res.json()) as { id?: string };
-      return {
-        remoteId: data.id ?? crypto.randomUUID(),
-        commentSkipped: input.commentBody?.trim() ? "YouTube first-comment nested replies skipped" : undefined,
-      };
-    }
     return missingCreds("YouTube publish needs a video file — text-only posts stay queued");
   } catch (e) {
     return missingCreds(e instanceof Error ? e.message : "YouTube error");
@@ -562,7 +558,9 @@ async function youtubePublish(input: PublishInput): Promise<PublishOk | PublishQ
 /* ——— Reddit ——— */
 async function redditPublish(input: PublishInput): Promise<PublishOk | PublishQueued> {
   const token = input.credentials?.accessToken ?? input.token;
-  const subreddit = input.credentials?.subreddit || input.handle.replace(/^r\//, "");
+  const stored = (input.credentials?.subreddit || "").trim().replace(/^\/?r\//i, "");
+  const fromHandle = /^u\//i.test(input.handle) ? "" : input.handle.replace(/^\/?r\//i, "");
+  const subreddit = stored || fromHandle;
   if (!hasToken(token) || !subreddit) {
     return missingCreds("Reddit OAuth credentials / subreddit are not configured — stays queued");
   }
@@ -634,40 +632,9 @@ async function hashnodePublish(input: PublishInput): Promise<PublishOk | Publish
   }
 }
 
-/* ——— Medium ——— */
-async function mediumPublish(input: PublishInput): Promise<PublishOk | PublishQueued> {
-  const token = input.credentials?.integrationToken ?? input.token;
-  const authorId = input.credentials?.authorId;
-  if (!hasToken(token) || !authorId) {
-    return missingCreds("Medium integration token / authorId not configured — stays queued");
-  }
-  try {
-    const res = await fetch(`https://api.medium.com/v1/users/${authorId}/posts`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({
-        title: input.body.slice(0, 100) || "Untitled",
-        contentFormat: "markdown",
-        content: input.body,
-        publishStatus: "public",
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.text();
-      return missingCreds(`Medium publish failed (${res.status}): ${err.slice(0, 200)}`);
-    }
-    const data = (await res.json()) as { data?: { id?: string } };
-    return {
-      remoteId: data.data?.id ?? crypto.randomUUID(),
-      commentSkipped: input.commentBody?.trim() ? "Medium has no first-comment API — skipped" : undefined,
-    };
-  } catch (e) {
-    return missingCreds(e instanceof Error ? e.message : "Medium error");
-  }
+/* ——— Medium (removed) ——— */
+async function mediumPublish(_input: PublishInput): Promise<PublishOk | PublishQueued> {
+  return missingCreds("Medium was removed — this channel can no longer publish");
 }
 
 /* ——— dev.to ——— */
