@@ -204,16 +204,15 @@ describe("publish adapters — missing credentials stay queued", () => {
       },
     });
     expect(result).toMatchObject({ remoteId: "igmedia" });
-    expect(String(fetch.mock.calls[0][0])).toBe("https://graph.instagram.com/v25.0/1784/media");
-    expect(String(fetch.mock.calls[2][0])).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
-    const createInit = fetch.mock.calls[0][1] as { headers?: { authorization?: string }; body?: string };
-    expect(createInit.headers?.authorization).toBe("Bearer IG_USER_TOKEN");
-    const createBody = new URLSearchParams(String(createInit.body));
-    expect(createBody.get("access_token")).toBeNull();
-    expect(createBody.get("image_url")).toBe("https://cdn.example/p.jpg");
-    const pubBody = new URLSearchParams(String(fetch.mock.calls[2][1].body));
-    expect(pubBody.get("creation_id")).toBe("container");
-    expect(pubBody.get("access_token")).toBeNull();
+    const createUrl = new URL(String(fetch.mock.calls[0][0]));
+    expect(`${createUrl.origin}${createUrl.pathname}`).toBe("https://graph.instagram.com/v25.0/1784/media");
+    expect(createUrl.searchParams.get("image_url")).toBe("https://cdn.example/p.jpg");
+    expect(createUrl.searchParams.get("access_token")).toBe("IG_USER_TOKEN");
+    const publishUrl = new URL(String(fetch.mock.calls[2][0]));
+    expect(`${publishUrl.origin}${publishUrl.pathname}`).toBe("https://graph.instagram.com/v25.0/1784/media_publish");
+    expect(publishUrl.searchParams.get("creation_id")).toBe("container");
+    const createInit = fetch.mock.calls[0][1] as { body?: string };
+    expect(createInit.body).toBeUndefined();
   });
 
   it("Instagram Login publish failures stay queued (no fake success)", async () => {

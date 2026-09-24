@@ -489,8 +489,10 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
   if (!accessToken) return { ok: false, reason: "profile" };
   try {
     const res = await fetch(
-      `${INSTAGRAM_GRAPH_BASE}/me?${new URLSearchParams({ fields: "user_id,username" })}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
+      `${INSTAGRAM_GRAPH_BASE}/me?${new URLSearchParams({
+        fields: "user_id,username,name",
+        access_token: accessToken,
+      })}`,
     );
     const data = parseFacebookTokenPayload(await res.text());
     if (!res.ok || data.error) {
@@ -511,7 +513,7 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
 }
 
 function instagramUsernameField(data: Record<string, unknown>): string {
-  const raw = typeof data.username === "string" ? data.username : "";
+  const raw = typeof data.username === "string" ? data.username : typeof data.name === "string" ? data.name : "";
   return raw.replace(/^@/, "").trim();
 }
 
@@ -524,8 +526,10 @@ export async function fetchInstagramLoginUsername(accessToken: string, userId?: 
   if (!id) return undefined;
   try {
     const res = await fetch(
-      `${INSTAGRAM_GRAPH_BASE}/${id}?${new URLSearchParams({ fields: "username" })}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
+      `${INSTAGRAM_GRAPH_BASE}/${id}?${new URLSearchParams({
+        fields: "username,name",
+        access_token: accessToken,
+      })}`,
     );
     const data = parseFacebookTokenPayload(await res.text());
     if (!res.ok || data.error) return undefined;

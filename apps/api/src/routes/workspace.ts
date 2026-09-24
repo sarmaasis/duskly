@@ -136,9 +136,8 @@ accountRoutes.get("/", async (c) => {
         credentialsJson = await encryptCredentials(c.env, creds);
         if (
           row.network === "instagram" &&
-          creds.authKind === "instagram_login" &&
           creds.accessToken &&
-          /^\d+$/.test(handle)
+          /^\d+$/.test(handle.replace(/^@/, ""))
         ) {
           const username = await fetchInstagramLoginUsername(creds.accessToken, creds.igUserId || row.externalId);
           if (username) {

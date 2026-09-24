@@ -550,12 +550,13 @@ async function instagramGraph(
 ): Promise<{ ok: boolean; status: number; data: IgGraphData; detail: string }> {
   const headers: Record<string, string> = {};
   const params = new URLSearchParams(fields);
-  if (instagramLogin) headers.authorization = `Bearer ${token}`;
-  else params.set("access_token", token);
+  params.set("access_token", token);
   let url = `${host}/${version}/${path}`;
   let body: string | undefined;
-  if (method === "GET") url = `${url}?${params}`;
-  else {
+  if (method === "GET" || instagramLogin) {
+    // Instagram Login /media is a query-string POST. A JSON body is Graph error 100: method type post.
+    url = `${url}?${params}`;
+  } else {
     headers["content-type"] = "application/x-www-form-urlencoded";
     body = params.toString();
   }
