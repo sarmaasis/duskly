@@ -28,7 +28,6 @@ import { sha256Hex } from "./lib/workspace";
 import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "./lib/secrets";
 import { commentQueueDelay, mergeRssChannelIds, shouldDeferFirstComment } from "./lib/schedule";
-import { fetchFacebookPageInstagramAccount, instagramAccountLabel } from "./lib/oauth-providers";
 
 export { SchedulerLock };
 
@@ -203,56 +202,6 @@ async function pollRss(env: Env) {
   }
 }
 
-async function pageBackedInstagramCreds(
-  env: Env,
-  db: ReturnType<typeof drizzle>,
-  workspaceId: string,
-  igUserId: string,
-) {
-  if (!igUserId) return null;
-  const candidates: Array<{
-    token: string;
-    creds: Record<string, string>;
-    handle: string;
-  }> = [];
-  const facebookRows = await db
-    .select({
-      handle: socialAccount.handle,
-      externalId: socialAccount.externalId,
-      credentialsJson: socialAccount.credentialsJson,
-    })
-    .from(socialAccount)
-    .where(and(eq(socialAccount.workspaceId, workspaceId), eq(socialAccount.network, "facebook")));
-  for (const row of facebookRows) {
-    try {
-      const creds = await decryptCredentials(env, row.credentialsJson);
-      const pageToken = creds?.accessToken;
-      const pageId = creds?.pageId || row.externalId;
-      if (!pageToken || !pageId) continue;
-      const linked = await fetchFacebookPageInstagramAccount(pageToken, pageId);
-      const nextCreds = {
-        accessToken: pageToken,
-        pageId,
-        pageName: linked.pageName || row.handle,
-        igUserId: linked.igUserId || igUserId,
-        ...(linked.igUsername ? { igUsername: linked.igUsername } : {}),
-      };
-      if (!linked.igUserId) continue;
-      const candidate = {
-        token: pageToken,
-        creds: nextCreds,
-        handle: instagramAccountLabel(nextCreds) || igUserId,
-      };
-      if (linked.igUserId === igUserId) return candidate;
-      candidates.push(candidate);
-    } catch {
-      /* keep scanning */
-    }
-  }
-  if (candidates.length === 1) return candidates[0];
-  return null;
-}
-
 async function publishPost(env: Env, postId: string) {
   const db = drizzle(env.DB);
   const [post] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
@@ -333,23 +282,6 @@ async function publishPost(env: Env, postId: string) {
           credentialsJson: await encryptCredentials(env, creds),
         })
         .where(eq(socialAccount.id, d.socialAccountId));
-    }
-    if (d.network === "instagram") {
-      const upgraded = await pageBackedInstagramCreds(env, db, post.workspaceId, creds.igUserId || d.handle);
-      if (upgraded) {
-        creds = upgraded.creds;
-        token = upgraded.token;
-        handle = upgraded.handle;
-        await db
-          .update(socialAccount)
-          .set({
-            handle,
-            externalId: upgraded.creds.igUserId,
-            tokenCipher: await encryptSecret(env, token),
-            credentialsJson: await encryptCredentials(env, creds),
-          })
-          .where(eq(socialAccount.id, d.socialAccountId));
-      }
     }
     if (mediaMissing) {
       anyQueued = true;

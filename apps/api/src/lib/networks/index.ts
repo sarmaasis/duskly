@@ -554,14 +554,10 @@ async function instagramGraph(
 ): Promise<{ ok: boolean; status: number; data: IgGraphData; detail: string }> {
   const headers: Record<string, string> = {};
   const params = new URLSearchParams(fields);
-  if (bearerAuth) {
-    headers.authorization = `Bearer ${token}`;
-  } else {
-    params.set("access_token", token);
-  }
+  params.set("access_token", token);
   let url = `${host}/${version}/${path}`;
   let body: string | undefined;
-  if (method === "GET") {
+  if (method === "GET" || bearerAuth) {
     url = `${url}?${params}`;
   } else {
     headers["content-type"] = "application/x-www-form-urlencoded";

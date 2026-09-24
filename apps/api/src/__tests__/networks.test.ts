@@ -206,20 +206,19 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(result).toMatchObject({ remoteId: "igmedia" });
     const createUrl = new URL(String(fetch.mock.calls[0][0]));
     expect(`${createUrl.origin}${createUrl.pathname}`).toBe("https://graph.instagram.com/v26.0/1784/media");
-    expect(createUrl.search).toBe("");
+    expect(createUrl.searchParams.get("image_url")).toBe("https://cdn.example/p.jpg");
+    expect(createUrl.searchParams.get("caption")).toBe("hello");
+    expect(createUrl.searchParams.get("access_token")).toBe("IG_USER_TOKEN");
     const createInit = fetch.mock.calls[0][1] as { body?: string; headers?: Record<string, string> };
-    const createBody = new URLSearchParams(String(createInit.body));
-    expect(createBody.get("image_url")).toBe("https://cdn.example/p.jpg");
-    expect(createBody.get("access_token")).toBeNull();
-    expect(createInit.headers?.authorization).toBe("Bearer IG_USER_TOKEN");
+    expect(createInit.body).toBeUndefined();
+    expect(createInit.headers?.authorization).toBeUndefined();
     const publishUrl = new URL(String(fetch.mock.calls[2][0]));
     expect(`${publishUrl.origin}${publishUrl.pathname}`).toBe("https://graph.instagram.com/v26.0/1784/media_publish");
-    expect(publishUrl.search).toBe("");
+    expect(publishUrl.searchParams.get("creation_id")).toBe("container");
+    expect(publishUrl.searchParams.get("access_token")).toBe("IG_USER_TOKEN");
     const publishInit = fetch.mock.calls[2][1] as { body?: string; headers?: Record<string, string> };
-    const publishBody = new URLSearchParams(String(publishInit.body));
-    expect(publishBody.get("creation_id")).toBe("container");
-    expect(publishBody.get("access_token")).toBeNull();
-    expect(publishInit.headers?.authorization).toBe("Bearer IG_USER_TOKEN");
+    expect(publishInit.body).toBeUndefined();
+    expect(publishInit.headers?.authorization).toBeUndefined();
   });
 
   it("Instagram Login publish failures stay queued (no fake success)", async () => {

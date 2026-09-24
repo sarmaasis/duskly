@@ -91,10 +91,23 @@ describe("OAuth authorize URLs", () => {
     expect(new URL(url).searchParams.get("scope")).toContain("instagram_content_publish");
   });
 
-  it("Instagram prefers Facebook Login + Pages when META_APP_* is configured", () => {
+  it("Instagram uses Instagram Business Login when INSTAGRAM_APP_* is configured", () => {
     const url = buildAuthorizeUrl({
       ...base,
       env: { ...env, INSTAGRAM_APP_ID: "ig-app-id", INSTAGRAM_APP_SECRET: "ig-app-secret" },
+      network: "instagram",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/instagram/callback",
+    });
+    expect(url.startsWith("https://www.instagram.com/oauth/authorize?")).toBe(true);
+    const q = new URL(url).searchParams;
+    expect(q.get("client_id")).toBe("ig-app-id");
+    expect(q.get("enable_fb_login")).toBe("0");
+    expect(q.get("scope")).toContain("instagram_business_content_publish");
+  });
+
+  it("Instagram falls back to Facebook Login + Pages when Instagram credentials are absent", () => {
+    const url = buildAuthorizeUrl({
+      ...base,
       network: "instagram",
       redirectUri: "https://api.duskly.site/v1/accounts/oauth/instagram/callback",
     });
@@ -103,26 +116,6 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("client_id")).toBe("meta-id");
     expect(q.get("scope")).toContain("instagram_content_publish");
     expect(q.get("scope")).toContain("pages_show_list");
-  });
-
-  it("Instagram Business Login is used only when Facebook Login credentials are absent", () => {
-    const url = buildAuthorizeUrl({
-      ...base,
-      env: { INSTAGRAM_APP_ID: "ig-app-id", INSTAGRAM_APP_SECRET: "ig-app-secret" } as Env,
-      network: "instagram",
-      redirectUri: "https://api.duskly.site/v1/accounts/oauth/instagram/callback",
-    });
-    expect(url.startsWith("https://www.instagram.com/oauth/authorize?")).toBe(true);
-    expect(url).not.toContain("facebook.com");
-    const q = new URL(url).searchParams;
-    expect(q.get("client_id")).toBe("ig-app-id");
-    expect(q.get("response_type")).toBe("code");
-    expect(q.get("force_reauth")).toBe("true");
-    expect(q.get("scope")).toBe(
-      "instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_content_publish,instagram_business_manage_insights",
-    );
-    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/instagram/callback");
-    expect(q.get("state")).toBe("st");
   });
 
   it("Instagram is configured from Instagram Login secrets even without META_APP_*", () => {
@@ -141,7 +134,7 @@ describe("OAuth authorize URLs", () => {
         INSTAGRAM_APP_ID: "ig",
         INSTAGRAM_APP_SECRET: "ig-s",
       } as Env),
-    ).toBe(false);
+    ).toBe(true);
     expect(oauthConfigured({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "  " } as Env, "instagram")).toBe(false);
   });
 
@@ -1034,14 +1027,14 @@ describe("Instagram Login OAuth callback", () => {
     const res = await instagramCallback(instagramLoginEnv());
     expectAppRedirect(res, "token_failed");
     expect(String(fetch.mock.calls[0][0])).toBe("https://api.instagram.com/oauth/access_token");
-    const init = fetch.mock.calls[0][1] as { method?: string; body?: URLSearchParams };
+    const init = fetch.mock.calls[0][1] as { method?: string; body?: FormData };
     expect(init.method).toBe("POST");
-    const q = new URLSearchParams(String(init.body));
-    expect(q.get("client_id")).toBe("ig-app-id");
-    expect(q.get("client_secret")).toBe("ig-app-secret");
-    expect(q.get("grant_type")).toBe("authorization_code");
-    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/instagram/callback");
-    expect(q.get("code")).toBe("test-code");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.body?.get("client_id")).toBe("ig-app-id");
+    expect(init.body?.get("client_secret")).toBe("ig-app-secret");
+    expect(init.body?.get("grant_type")).toBe("authorization_code");
+    expect(init.body?.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/instagram/callback");
+    expect(init.body?.get("code")).toBe("test-code");
     expect(res.headers.get("location") || "").toContain("reason=redirect_uri");
     expect(fetch.mock.calls.some(([u]) => isFacebookOauthAccessToken(String(u)))).toBe(false);
   });
@@ -1073,14 +1066,15 @@ describe("Instagram Login OAuth callback", () => {
     expect((longLived![1] as { method?: string } | undefined)?.method || "GET").toBe("GET");
     expect((longLived![1] as { body?: unknown } | undefined)?.body).toBeUndefined();
     expect(longUrl.searchParams.get("grant_type")).toBe("ig_exchange_token");
+    expect(longUrl.searchParams.get("client_id")).toBe("ig-app-id");
     expect(longUrl.searchParams.get("client_secret")).toBe("ig-app-secret");
     expect(longUrl.searchParams.get("access_token")).toBe("ig-short");
     expect(await KV.get("meta-user:1784")).toBe("ws1");
     expect(await KV.get("meta-user:9999")).toBeNull();
     const meCall = fetch.mock.calls.find(([u]) => isInstagramLoginMe(String(u)));
     expect(meCall).toBeTruthy();
-    expect(String(meCall![0])).not.toContain("access_token=");
-    expect((meCall![1] as { headers?: Record<string, string> } | undefined)?.headers?.authorization).toBe("Bearer ig-long");
+    expect(new URL(String(meCall![0])).searchParams.get("access_token")).toBe("ig-long");
+    expect((meCall![1] as { headers?: Record<string, string> } | undefined)?.headers?.authorization).toBeUndefined();
     expect(
       fetch.mock.calls.some(
         ([u, init]) => isFacebookOauthAccessToken(String(u)) && (init?.method || "GET").toUpperCase() === "GET",
@@ -1162,8 +1156,8 @@ describe("Instagram Login OAuth callback", () => {
           });
         }
         if (isInstagramLoginMe(u)) {
-          expect(u).not.toContain("access_token=");
-          expect(init?.headers?.authorization).toBe("Bearer ig-short");
+          expect(new URL(u).searchParams.get("access_token")).toBe("ig-short");
+          expect(init?.headers?.authorization).toBeUndefined();
           return graphRes(true, { user_id: "1784", username: "dusklycafe" });
         }
         return graphRes(false, {});

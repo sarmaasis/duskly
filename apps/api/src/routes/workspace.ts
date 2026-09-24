@@ -29,11 +29,7 @@ import {
   usageSnapshot,
 } from "../lib/entitlements";
 import { NETWORKS, NETWORK_META } from "../lib/networks";
-import {
-  fetchFacebookPageInstagramAccount,
-  fetchInstagramLoginUsername,
-  instagramAccountLabel,
-} from "../lib/oauth-providers";
+import { fetchInstagramLoginUsername, instagramAccountLabel } from "../lib/oauth-providers";
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
@@ -96,35 +92,6 @@ workspaceRoutes.get("/:id/usage", async (c) => {
 
 export const accountRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
 
-async function linkedFacebookInstagramCreds(
-  env: Env,
-  rows: Array<typeof socialAccount.$inferSelect>,
-  igUserId: string,
-) {
-  if (!igUserId) return null;
-  for (const row of rows) {
-    if (row.network !== "facebook" || !row.credentialsJson) continue;
-    try {
-      const creds = await decryptCredentials(env, row.credentialsJson);
-      const pageToken = creds?.accessToken;
-      const pageId = creds?.pageId || row.externalId;
-      if (!pageToken || !pageId) continue;
-      const linked = await fetchFacebookPageInstagramAccount(pageToken, pageId);
-      if (linked.igUserId !== igUserId) continue;
-      return {
-        accessToken: pageToken,
-        pageId,
-        pageName: linked.pageName || row.handle,
-        igUserId,
-        ...(linked.igUsername ? { igUsername: linked.igUsername } : {}),
-      };
-    } catch {
-      /* keep scanning */
-    }
-  }
-  return null;
-}
-
 accountRoutes.get("/", async (c) => {
   const workspaceId = c.req.query("workspaceId");
   if (!workspaceId) return c.json({ error: "workspaceId required" }, 400);
@@ -174,7 +141,6 @@ accountRoutes.get("/", async (c) => {
         ) {
           const igUserId = creds.igUserId || row.externalId;
           const username = await fetchInstagramLoginUsername(creds.accessToken, igUserId);
-          const pageCreds = username ? null : await linkedFacebookInstagramCreds(c.env, rows, igUserId);
           if (username) {
             handle = `@${username.replace(/^@/, "")}`;
             creds.igUsername = username.replace(/^@/, "");
@@ -182,19 +148,6 @@ accountRoutes.get("/", async (c) => {
             await db
               .update(socialAccount)
               .set({ handle, credentialsJson })
-              .where(and(eq(socialAccount.id, row.id), eq(socialAccount.workspaceId, workspaceId)));
-          } else if (pageCreds) {
-            handle = instagramAccountLabel(pageCreds) || igUserId;
-            tokenCipher = await encryptSecret(c.env, pageCreds.accessToken);
-            credentialsJson = await encryptCredentials(c.env, pageCreds);
-            await db
-              .update(socialAccount)
-              .set({
-                handle,
-                externalId: pageCreds.igUserId,
-                tokenCipher,
-                credentialsJson,
-              })
               .where(and(eq(socialAccount.id, row.id), eq(socialAccount.workspaceId, workspaceId)));
           }
         }

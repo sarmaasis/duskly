@@ -42,9 +42,8 @@ export const INSTAGRAM_GRAPH_VERSION = "v26.0";
 const INSTAGRAM_GRAPH_BASE = `https://graph.instagram.com/${INSTAGRAM_GRAPH_VERSION}`;
 const INSTAGRAM_BUSINESS_SCOPES = [
   "instagram_business_basic",
-  "instagram_business_manage_messages",
-  "instagram_business_manage_comments",
   "instagram_business_content_publish",
+  "instagram_business_manage_comments",
   "instagram_business_manage_insights",
 ].join(",");
 
@@ -61,7 +60,7 @@ function facebookLoginConfigured(env: Env): boolean {
 }
 
 export function useInstagramBusinessLogin(env: Env): boolean {
-  return instagramLoginConfigured(env) && !facebookLoginConfigured(env);
+  return instagramLoginConfigured(env);
 }
 
 export function instagramAppCreds(env: Env): { appId: string; appSecret: string } {
@@ -131,7 +130,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
   if (network === "instagram" && useInstagramBusinessLogin(env)) {
     const { appId } = instagramAppCreds(env);
     const params = new URLSearchParams({
-      force_reauth: "true",
+      enable_fb_login: "0",
       client_id: appId,
       redirect_uri: redirectUri,
       response_type: "code",
@@ -419,17 +418,13 @@ export async function exchangeInstagramUserToken(
   const { appId, appSecret } = instagramAppCreds(env);
   if (!appId || !appSecret) return { ok: false, reason: "missing_secret" };
   try {
-    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: appId,
-        client_secret: appSecret,
-        grant_type: "authorization_code",
-        redirect_uri: redirectUri,
-        code,
-      }),
-    });
+    const body = new FormData();
+    body.append("client_id", appId);
+    body.append("client_secret", appSecret);
+    body.append("grant_type", "authorization_code");
+    body.append("redirect_uri", redirectUri);
+    body.append("code", code);
+    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", { method: "POST", body });
     const tok = parseFacebookTokenPayload(await tokenRes.text());
     const access = instagramAccessTokenFromPayload(tok);
     if (!tokenRes.ok || !access || tok.error) {
@@ -467,12 +462,13 @@ export async function exchangeLongLivedInstagramToken(
   if (instagramTokenAlreadyLongLived(shortLivedExpiresIn)) {
     return { ok: true, accessToken: shortLived, expiresIn: shortLivedExpiresIn };
   }
-  const { appSecret } = instagramAppCreds(env);
-  if (!appSecret) return { ok: false, reason: "missing_secret" };
+  const { appId, appSecret } = instagramAppCreds(env);
+  if (!appId || !appSecret) return { ok: false, reason: "missing_secret" };
   try {
     const res = await fetch(
       `https://graph.instagram.com/access_token?${new URLSearchParams({
         grant_type: "ig_exchange_token",
+        client_id: appId,
         client_secret: appSecret,
         access_token: shortLived,
       })}`,
@@ -507,8 +503,8 @@ export async function fetchInstagramLoginProfile(accessToken: string): Promise<I
     const res = await fetch(
       `${INSTAGRAM_GRAPH_BASE}/me?${new URLSearchParams({
         fields,
+        access_token: accessToken,
       })}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     const data = parseFacebookTokenPayload(await res.text());
     return { res, data };
@@ -555,8 +551,8 @@ export async function fetchInstagramLoginUsername(accessToken: string, userId?: 
     const res = await fetch(
       `${INSTAGRAM_GRAPH_BASE}/${id}?${new URLSearchParams({
         fields: "id,user_id,username",
+        access_token: accessToken,
       })}`,
-      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     const data = parseFacebookTokenPayload(await res.text());
     if (!res.ok || data.error) return undefined;
