@@ -1,31 +1,16 @@
 import { Component, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { api } from "../lib/api";
+import { labelNetwork, labelStatus } from "../lib/labels";
+import { DkDate } from "../ui/forms";
 
 type ChannelStat = { network: string; handle: string; published: number; queued: number; failed: number; pending: number };
 type RecentChannel = { network: string; handle: string; status: string; error: string | null };
 type Recent = { id: string; body: string; status: string; at: number | null; channels: RecentChannel[] };
 
-const LABELS: Record<string, string> = {
-  linkedin: "LinkedIn",
-  x: "X",
-  instagram: "Instagram",
-  threads: "Threads",
-  facebook: "Facebook",
-  youtube: "YouTube",
-  reddit: "Reddit",
-  bluesky: "Bluesky",
-  mastodon: "Mastodon",
-  hashnode: "Hashnode",
-  devto: "dev.to",
-  telegram: "Telegram",
-  discord: "Discord",
-  slack: "Slack",
-};
-
 @Component({
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, DkDate],
   template: `
     <div class="mx-auto max-w-5xl">
       <div class="mb-6">
@@ -35,13 +20,13 @@ const LABELS: Record<string, string> = {
       </div>
 
       <form class="mb-4 flex flex-wrap items-end gap-2" (ngSubmit)="load()">
-        <label class="text-[11px] font-medium text-[#71717a]">From
-          <input type="date" name="from" [value]="from" (input)="from = $any($event.target).value" class="mt-1 block h-9 rounded-lg border border-[#e8e8e3] bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
+        <label class="w-40 text-[11px] font-medium text-[#71717a]">From
+          <div class="mt-1"><dk-date name="from" [(ngModel)]="from" placeholder="Start" /></div>
         </label>
-        <label class="text-[11px] font-medium text-[#71717a]">To
-          <input type="date" name="to" [value]="to" (input)="to = $any($event.target).value" class="mt-1 block h-9 rounded-lg border border-[#e8e8e3] bg-white px-2 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
+        <label class="w-40 text-[11px] font-medium text-[#71717a]">To
+          <div class="mt-1"><dk-date name="to" [(ngModel)]="to" placeholder="End" /></div>
         </label>
-        <button type="submit" class="h-9 rounded-full bg-cta px-3 text-xs font-semibold text-white">Apply</button>
+        <button type="submit" class="h-10 rounded-full bg-cta px-3 text-xs font-semibold text-white">Apply</button>
       </form>
       <p class="mb-4 text-[12px] text-[#71717a]">Likes, comments, and reach show only when X, Instagram, or Facebook returns a number.</p>
       @if (engagement().length) {
@@ -101,20 +86,23 @@ const LABELS: Record<string, string> = {
           }
         </section>
         <section class="rounded-xl border border-[#e8e8e3] bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-          <p class="mb-3 font-mono text-[10px] uppercase tracking-wider text-[#92969b]">Sends by day</p>
-          @for (day of days(); track day.day) {
-            <div class="mb-2">
-              <div class="mb-1 flex justify-between text-[12px] dark:text-zinc-200">
-                <span>{{ formatDay(day.day) }}</span>
-                <span class="font-mono text-[#71717a]">{{ day.count }}</span>
-              </div>
-              <div class="h-1.5 overflow-hidden rounded-full bg-[#f7f7f4] dark:bg-zinc-800">
-                <div class="h-full rounded-full bg-cta" [style.width.%]="day.pct"></div>
-              </div>
-            </div>
-          } @empty {
-            <p class="text-sm text-[#63676c] dark:text-zinc-400">No daily activity yet.</p>
-          }
+          <p class="mb-3 font-mono text-[10px] uppercase tracking-wider text-[#92969b]">{{ monthLabel() }}</p>
+          <div class="mb-1 grid grid-cols-7 gap-1 text-center font-mono text-[9px] font-semibold uppercase text-[#a1a1aa]">
+            @for (d of dow; track d) { <span>{{ d }}</span> }
+          </div>
+          <div class="grid grid-cols-7 gap-1">
+            @for (cell of monthCells(); track cell.key) {
+              <div
+                class="flex h-8 items-center justify-center rounded-md text-[12px] font-semibold"
+                [class.text-transparent]="!cell.day"
+                [class.bg-cta]="cell.count > 0"
+                [class.text-white]="cell.count > 0"
+                [class.text-[#121417]]="!!cell.day && !cell.count"
+                [class.dark:text-zinc-100]="!!cell.day && !cell.count"
+                [attr.title]="cell.count ? cell.count + ' sends' : null"
+              >{{ cell.day || '' }}</div>
+            }
+          </div>
         </section>
       </div>
 
@@ -125,7 +113,7 @@ const LABELS: Record<string, string> = {
             <article class="rounded-lg border border-[#e8e8e3] px-3 py-2.5 dark:border-zinc-700">
               <div class="flex items-start justify-between gap-3">
                 <p class="line-clamp-2 text-[13px] leading-snug dark:text-zinc-100">{{ r.body.trim() || 'No caption' }}</p>
-                <span class="shrink-0 rounded-full bg-[#f7f7f4] px-2 py-0.5 font-mono text-[10px] uppercase text-[#63676c] dark:bg-zinc-800 dark:text-zinc-300">{{ statusLabel(r.status) }}</span>
+                <span class="shrink-0 rounded-full bg-[#f7f7f4] px-2 py-0.5 text-[10px] font-semibold text-[#63676c] dark:bg-zinc-800 dark:text-zinc-300">{{ labelStatus(r.status) }}</span>
               </div>
               <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 @for (ch of r.channels; track ch.network + ch.handle) {
@@ -137,7 +125,7 @@ const LABELS: Record<string, string> = {
                 <span class="text-[11px] text-[#a1a1aa]">{{ formatWhen(r.at) }}</span>
               </div>
               @for (ch of problems(r); track ch.network + ch.handle) {
-                <p class="mt-1 text-[12px] text-amber-800 dark:text-amber-200">{{ label(ch.network) }}: {{ ch.error || statusLabel(ch.status) }}</p>
+                <p class="mt-1 text-[12px] text-amber-800 dark:text-amber-200">{{ labelNetwork(ch.network) }}: {{ ch.error || labelStatus(ch.status) }}</p>
               }
             </article>
           } @empty {
@@ -149,13 +137,16 @@ const LABELS: Record<string, string> = {
   `,
 })
 export class AnalyticsPage implements OnInit {
+  readonly labelStatus = labelStatus;
+  readonly label = labelNetwork;
   totals = signal<{ posts: number; published: number; byStatus: Record<string, number> }>({
     posts: 0,
     published: 0,
     byStatus: {},
   });
   channels = signal<ChannelStat[]>([]);
-  days = signal<{ day: string; count: number; pct: number }[]>([]);
+  days = signal<{ day: string; count: number }[]>([]);
+  readonly dow = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
   recent = signal<Recent[]>([]);
   engagement = signal<{ network: string; handle: string; likes?: number; comments?: number; reach?: number }[]>([]);
   error = signal("");
@@ -187,28 +178,12 @@ export class AnalyticsPage implements OnInit {
       }>(`/v1/org/analytics?${q}`);
       this.totals.set(data.totals);
       this.channels.set(data.channels || []);
-      this.days.set(this.dayBars(data.byDay || {}));
+      this.days.set(Object.entries(data.byDay || {}).map(([day, count]) => ({ day, count })));
       this.recent.set(data.recent || []);
       this.engagement.set(data.engagement || []);
     } catch {
       this.error.set("Could not load analytics.");
     }
-  }
-
-  label(network: string) {
-    return LABELS[network] || network;
-  }
-
-  statusLabel(status: string) {
-    const words: Record<string, string> = {
-      published: "Published",
-      queued: "Queued",
-      failed: "Failed",
-      draft: "Draft",
-      scheduled: "Scheduled",
-      pending: "Waiting",
-    };
-    return words[status] || status;
   }
 
   channelLine(ch: ChannelStat) {
@@ -224,20 +199,31 @@ export class AnalyticsPage implements OnInit {
     return post.channels.filter((ch) => ch.error);
   }
 
-  formatDay(iso: string) {
-    const [year, month, day] = iso.split("-").map(Number);
-    if (!year || !month || !day) return iso;
-    return new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  }
-
   formatWhen(at: number | null) {
     if (!at) return "No time";
     return new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   }
 
-  private dayBars(byDay: Record<string, number>) {
-    const entries = Object.entries(byDay).slice(0, 14);
-    const max = Math.max(1, ...entries.map(([, count]) => count));
-    return entries.map(([day, count]) => ({ day, count, pct: Math.round((count / max) * 100) }));
+  monthLabel() {
+    const anchor = this.from || this.days()[0]?.day || new Date().toISOString().slice(0, 10);
+    const [y, m] = anchor.split("-").map(Number);
+    return new Date(y || 2026, (m || 1) - 1, 1).toLocaleString("en", { month: "long", year: "numeric" });
+  }
+
+  monthCells() {
+    const anchor = this.from || this.days()[0]?.day || new Date().toISOString().slice(0, 10);
+    const [y, m] = anchor.split("-").map(Number);
+    const year = y || new Date().getFullYear();
+    const month = (m || new Date().getMonth() + 1) - 1;
+    const counts = new Map(this.days().map((d) => [d.day, d.count]));
+    const first = new Date(year, month, 1).getDay();
+    const total = new Date(year, month + 1, 0).getDate();
+    const cells: { key: string; day: number; count: number }[] = [];
+    for (let i = 0; i < first; i++) cells.push({ key: `p${i}`, day: 0, count: 0 });
+    for (let day = 1; day <= total; day++) {
+      const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      cells.push({ key: iso, day, count: counts.get(iso) || 0 });
+    }
+    return cells;
   }
 }

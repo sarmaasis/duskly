@@ -3,7 +3,7 @@ import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from "@angular/f
 
 /** Shared paper-desk field chrome (slid-aligned, Tailwind only). */
 export const FIELD =
-  "h-10 w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm text-[#121417] outline-none transition-colors focus:border-[#121417] focus:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100";
+  "h-10 w-full rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm normal-case text-[#121417] outline-none transition-colors focus:border-[#121417] focus:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:bg-zinc-800 dark:[color-scheme:dark]";
 
 export type DkOption = { value: string; label: string };
 
@@ -15,7 +15,7 @@ export type DkOption = { value: string; label: string };
   template: `
     <div class="relative">
       <select
-        class="h-10 w-full appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] py-0 pl-3 pr-9 text-sm text-[#121417] outline-none transition-colors focus:border-[#121417] focus:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+        class="h-10 w-full appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] py-0 pl-3 pr-9 text-sm normal-case text-[#121417] outline-none transition-colors focus:border-[#121417] focus:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:focus:bg-zinc-800 dark:[color-scheme:dark]"
         [disabled]="isDisabled"
         [value]="value"
         (change)="set($any($event.target).value)"
@@ -166,7 +166,7 @@ export class DkSeg {
     <div class="relative" #wrap>
       <button
         type="button"
-        class="flex h-10 w-full items-center justify-between rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-left text-sm outline-none transition-colors focus:border-[#121417] focus:bg-white disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+        class="flex h-10 w-full items-center justify-between rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-left text-sm normal-case outline-none transition-colors focus:border-[#121417] disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
         [disabled]="isDisabled"
         (click)="open = !open"
       >
@@ -199,6 +199,7 @@ export class DkSeg {
                 [class.text-[#121417]]="!!cell && cell !== value"
                 [class.hover:bg-[#f7f7f4]]="!!cell && cell !== value"
                 [class.dark:text-zinc-100]="!!cell && cell !== value"
+                [class.dark:hover:bg-zinc-800]="!!cell && cell !== value"
                 (click)="cell && choose(cell)"
               >
                 {{ cell ? +cell.slice(8) : "" }}
@@ -299,7 +300,7 @@ export class DkDate implements ControlValueAccessor {
       <dk-date [(ngModel)]="datePart" (ngModelChange)="sync()" [placeholder]="placeholder" />
       <input
         type="time"
-        class="h-10 w-full appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm outline-none focus:border-[#121417] focus:bg-white dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+        class="h-10 w-full appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-3 text-sm outline-none focus:border-[#121417] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]"
         [(ngModel)]="timePart"
         (ngModelChange)="sync()"
       />

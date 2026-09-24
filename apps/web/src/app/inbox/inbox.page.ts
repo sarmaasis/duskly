@@ -1,6 +1,7 @@
 import { Component, OnInit, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { api } from "../lib/api";
+import { labelNetwork } from "../lib/labels";
 
 type Item = { id: string; network: string; handle: string; text: string; accountId: string };
 
@@ -20,7 +21,7 @@ type Item = { id: string; network: string; handle: string; text: string; account
           <article class="rounded-xl border border-[#e8e8e3] bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <p class="inline-flex items-center gap-1.5 text-[12px] font-semibold">
               <img [src]="'/assets/logos/' + item.network + '.svg'" alt="" width="14" height="14" class="size-3.5 object-contain" />
-              {{ item.network }} · {{ item.handle }}
+              {{ labelNetwork(item.network) }} · {{ item.handle }}
             </p>
             <p class="mt-2 text-sm dark:text-zinc-100">{{ item.text }}</p>
             <form class="mt-3 flex gap-2" (ngSubmit)="reply(item)">
@@ -39,6 +40,7 @@ type Item = { id: string; network: string; handle: string; text: string; account
   `,
 })
 export class InboxPage implements OnInit {
+  readonly labelNetwork = labelNetwork;
   items = signal<Item[]>([]);
   next = signal<number | null>(null);
   error = signal("");

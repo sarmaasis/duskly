@@ -1,6 +1,7 @@
 import { Component, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { api, type PlanSnapshot } from "../lib/api";
+import { labelStatus } from "../lib/labels";
 
 @Component({
   standalone: true,
@@ -30,7 +31,7 @@ import { api, type PlanSnapshot } from "../lib/api";
         <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">Members</p>
         @for (m of members(); track m.userId) {
           <div class="flex justify-between rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-            <span>{{ m.name || m.email }} · {{ m.role }}</span>
+            <span>{{ m.name || m.email }} · {{ labelStatus(m.role) }}</span>
             <button type="button" (click)="remove(m.userId)" class="text-xs font-semibold text-red-600">Remove</button>
           </div>
         } @empty {
@@ -41,7 +42,7 @@ import { api, type PlanSnapshot } from "../lib/api";
         <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">Pending invites</p>
         @for (i of invites(); track i.id) {
           <div class="flex justify-between rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-            <span>{{ i.email }} · {{ i.role || "member" }}</span>
+            <span>{{ i.email }} · {{ labelStatus(i.role || "member") }}</span>
             <button type="button" (click)="revoke(i.id)" class="text-xs font-semibold text-red-600">Revoke</button>
           </div>
         } @empty {
@@ -56,6 +57,7 @@ import { api, type PlanSnapshot } from "../lib/api";
   `,
 })
 export class TeamPage implements OnInit {
+  readonly labelStatus = labelStatus;
   members = signal<{ userId: string; role: string; email?: string; name?: string }[]>([]);
   invites = signal<{ id: string; email: string; role?: string }[]>([]);
   email = "";

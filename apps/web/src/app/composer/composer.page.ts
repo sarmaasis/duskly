@@ -46,7 +46,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               [(ngModel)]="body"
               rows="6"
               placeholder="What are you posting?"
-              class="w-full resize-y border-0 bg-transparent p-0 font-sans text-sm text-[#121417] outline-none placeholder:text-zinc-400 focus:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              class="w-full resize-y border-0 bg-transparent p-0 font-sans text-sm text-[#121417] outline-none placeholder:text-zinc-400 focus:ring-0 dark:bg-transparent dark:text-zinc-100 dark:placeholder:text-zinc-500"
             ></textarea>
             @if (previews().length) {
               <div class="mt-3 grid gap-3 sm:grid-cols-2">
@@ -200,9 +200,8 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </div>
           </section>
 
-          <details class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
-            <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-zinc-400">Repeat, comment, and sets</summary>
-            <div class="mt-4 space-y-5">
+          <section class="space-y-5 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Repeat and first comment</h2>
             <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Post delay (seconds)
               <input type="number" [(ngModel)]="delaySeconds" min="0" [class]="fieldMt" />
             </label>
@@ -233,8 +232,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                 <input type="number" [(ngModel)]="commentDelaySeconds" min="0" [disabled]="!commentBody" [class]="fieldMt" />
               </label>
             </div>
-            </div>
-          </details>
+          </section>
 
           <details class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
             <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-zinc-400">Adjust a picture</summary>
@@ -280,7 +278,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               </label>
             </div>
             <div>
-              <button type="button" (click)="exportEdited()" class="rounded-xl bg-[#121417] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">Export to media library</button>
+              <button type="button" (click)="exportEdited()" class="rounded-xl bg-[#121417] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200">Export to media library</button>
             </div>
             </div>
           </details>
@@ -379,6 +377,9 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               <div class="mt-1.5"><dk-datetime [(ngModel)]="when" placeholder="Pick date and time" /></div>
             </label>
             <button type="button" (click)="useNextSlot()" class="text-xs font-semibold text-cta">Next open slot</button>
+            <details class="rounded-xl border border-[#e8e8e3] p-3 dark:border-zinc-700">
+              <summary class="cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-300">Poll, thread, tags, import</summary>
+              <div class="mt-3 space-y-3">
             @if (needsPoll()) {
               <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Poll question
                 <input [(ngModel)]="pollQuestion" name="pollQuestion" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
@@ -394,7 +395,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             }
             @if (needsType()) {
               <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Post type
-                <select [(ngModel)]="postType" name="postType" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] bg-white px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                <select [(ngModel)]="postType" name="postType" class="mt-1 h-10 w-full rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-sm normal-case text-[#121417] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]">
                   <option value="post">Feed post</option>
                   @if (hasNetwork('instagram')) {
                     <option value="story">Instagram story</option>
@@ -407,7 +408,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                 </select>
               </label>
               <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Cover frame
-                <select [(ngModel)]="coverId" name="coverId" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] bg-white px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                <select [(ngModel)]="coverId" name="coverId" class="mt-1 h-10 w-full rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-sm normal-case text-[#121417] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]">
                   <option value="">First image</option>
                   @for (m of imageAttachments(); track m.id) { <option [value]="m.id">Image {{ m.id.slice(0, 6) }}</option> }
                 </select>
@@ -418,7 +419,7 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </label>
             @if (hashtags().length) {
               <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Hashtag group
-                <select class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] bg-white px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" (change)="applyHashtags($any($event.target).value)">
+                <select class="mt-1 h-10 w-full rounded-lg border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-sm normal-case text-[#121417] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:[color-scheme:dark]" (change)="applyHashtags($any($event.target).value)">
                   <option value="">Add a group</option>
                   @for (group of hashtags(); track group.id) { <option [value]="group.tags">{{ group.name }}</option> }
                 </select>
@@ -434,6 +435,8 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
               <textarea [(ngModel)]="csvText" name="csvText" rows="3" placeholder="Hello | 2026-09-25T09:00" class="mt-1 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800"></textarea>
             </label>
             <button type="button" (click)="importCsv()" class="text-xs font-semibold text-[#121417] dark:text-zinc-100">Import rows</button>
+              </div>
+            </details>
             <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-cta-hover">Schedule post</button>
           </section>
 

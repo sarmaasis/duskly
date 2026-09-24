@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from "@angular/core";
 import { ActivatedRoute } from "@angular/router";
 import { api } from "../lib/api";
+import { labelStatus } from "../lib/labels";
 
 @Component({
   standalone: true,
@@ -15,12 +16,13 @@ import { api } from "../lib/api";
           <img [src]="shot.url" alt="" class="mt-4 w-full rounded-xl object-cover" />
         }
         <p class="mt-4 whitespace-pre-wrap text-sm">{{ body() }}</p>
-        <p class="mt-3 font-mono text-[11px] uppercase text-[#a1a1aa]">{{ status() }}</p>
+        <p class="mt-3 text-[11px] font-semibold text-[#a1a1aa]">{{ labelStatus(status()) }}</p>
       }
     </main>
   `,
 })
 export class PreviewPage implements OnInit {
+  readonly labelStatus = labelStatus;
   private readonly route = inject(ActivatedRoute);
   body = signal("");
   status = signal("");

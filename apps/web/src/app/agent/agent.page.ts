@@ -1,6 +1,7 @@
 import { Component, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { api } from "../lib/api";
+import { labelStatus } from "../lib/labels";
 
 @Component({
   standalone: true,
@@ -27,7 +28,7 @@ import { api } from "../lib/api";
         <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">Recent runs</p>
         @for (r of runs(); track r.id) {
           <article class="rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-            <p class="font-mono text-[11px] text-[#a1a1aa]">{{ r.status }} · {{ r.id }}</p>
+            <p class="text-[11px] font-semibold text-[#a1a1aa]">{{ labelStatus(r.status) }} · {{ r.id }}</p>
             <p class="mt-1 dark:text-zinc-200">{{ r.prompt }}</p>
           </article>
         } @empty {
@@ -42,6 +43,7 @@ import { api } from "../lib/api";
   `,
 })
 export class AgentPage implements OnInit {
+  readonly labelStatus = labelStatus;
   prompt = "";
   workspaceId = "";
   result = signal("");

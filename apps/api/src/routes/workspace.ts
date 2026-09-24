@@ -160,13 +160,21 @@ accountRoutes.get("/", async (c) => {
     .offset(offset);
   const { rows, next } = pageNext(selected, limit, offset);
   const problems = await db
-    .select({ accountId: postDestination.socialAccountId, error: postDestination.error })
+    .select({
+      accountId: postDestination.socialAccountId,
+      error: postDestination.error,
+      status: postDestination.status,
+    })
     .from(postDestination)
     .innerJoin(posts, eq(postDestination.postId, posts.id))
-    .where(and(eq(posts.workspaceId, workspaceId), inArray(postDestination.status, ["failed", "queued"])));
+    .where(eq(posts.workspaceId, workspaceId))
+    .orderBy(desc(posts.updatedAt));
   const lastError = new Map<string, string>();
+  const seenAccount = new Set<string>();
   for (const problem of problems) {
-    if (problem.error && !lastError.has(problem.accountId)) lastError.set(problem.accountId, problem.error);
+    if (seenAccount.has(problem.accountId)) continue;
+    seenAccount.add(problem.accountId);
+    if (problem.status === "failed" && problem.error) lastError.set(problem.accountId, problem.error);
   }
   const accounts = await Promise.all(rows.map(async (row) => {
     let handle = row.handle;

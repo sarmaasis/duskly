@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterOutlet } from "@angular/router";
 import { filter } from "rxjs/operators";
 import { api, isOnboarded, spaceName, type PlanSnapshot, type Workspace } from "../lib/api";
 import { lsSet, setDarkClass } from "../lib/browser";
+import { labelNetwork, labelStatus } from "../lib/labels";
 import { Notices } from "../lib/notices";
 import { SessionService } from "../lib/session";
 
@@ -225,10 +226,10 @@ const NAV = [
           <div class="max-h-80 overflow-y-auto">
             @for (post of alerts(); track post.id) {
               <a href="/app" (click)="go($event, '/app')" class="block border-b border-[#e8e8e3] px-3 py-2.5 last:border-0 hover:bg-[#f7f7f4] dark:border-zinc-800 dark:hover:bg-zinc-800">
-                <p class="font-mono text-[10px] uppercase tracking-wider text-cta">{{ post.status }}</p>
+                <p class="text-[10px] font-semibold tracking-wide text-cta">{{ labelStatus(post.status) }}</p>
                 <p class="mt-1 line-clamp-2 text-[13px] font-medium dark:text-zinc-100">{{ post.body }}</p>
                 @for (issue of post.issues || []; track issue.network + issue.handle) {
-                  <p class="mt-1 text-[12px] leading-snug text-[#63676c] dark:text-zinc-400">{{ issue.network }} · {{ issue.handle }} — {{ issue.error || issue.status }}</p>
+                  <p class="mt-1 text-[12px] leading-snug text-[#63676c] dark:text-zinc-400">{{ labelNetwork(issue.network) }} · {{ issue.handle }} — {{ issue.error || labelStatus(issue.status) }}</p>
                 }
               </a>
             } @empty {
@@ -261,6 +262,8 @@ const NAV = [
   `,
 })
 export class AppShell implements OnInit {
+  readonly labelStatus = labelStatus;
+  readonly labelNetwork = labelNetwork;
   readonly nav = NAV;
   readonly groups = ["Schedule", "Account"] as const;
   readonly mobileNav = [

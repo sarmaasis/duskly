@@ -2,6 +2,7 @@ import { Component, computed, inject, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
+import { labelStatus } from "../lib/labels";
 import { Notices } from "../lib/notices";
 import { DkChoice, DkSelect, FIELD } from "../ui/forms";
 
@@ -262,7 +263,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
                   <p class="truncate text-sm font-semibold dark:text-zinc-100">{{ a.handle }}</p>
                   <p class="text-[12px] text-[#63676c] dark:text-zinc-400">{{ labelOf(a.network) }}</p>
                 </div>
-                <span class="rounded-full bg-white px-2 py-0.5 font-mono text-[10px] uppercase text-[#71717a] dark:bg-zinc-800 dark:text-zinc-300">{{ a.tokenExpired ? 'expired' : a.status }}</span>
+                <span class="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[#71717a] dark:bg-zinc-800 dark:text-zinc-300">{{ a.tokenExpired ? 'Expired' : statusLabel(a.status) }}</span>
               </div>
               @if (companies().length) {
                 <select
@@ -310,7 +311,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
               @if (a.tokenExpired || a.status !== 'active') {
                 <button type="button" (click)="reconnect(a)" class="self-start text-xs font-semibold text-cta">Reconnect</button>
               }
-              <button type="button" (click)="remove(a.id)" class="self-start text-xs font-semibold text-red-600">Remove</button>
+              <button type="button" (click)="remove(a.id)" class="inline-flex h-8 items-center self-start rounded-full border border-red-200 px-3 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950">Remove</button>
             </article>
           } @empty {
             <div class="col-span-full px-2 py-8 text-center">
@@ -409,6 +410,10 @@ export class AccountsPage implements OnInit {
 
   labelOf(n: string) {
     return this.meta()[n]?.label || FALLBACK_META[n]?.label || n;
+  }
+
+  statusLabel(status: string) {
+    return labelStatus(status);
   }
 
   isToken() {

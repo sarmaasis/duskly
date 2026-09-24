@@ -2,6 +2,7 @@ import { Component, inject, signal, OnInit } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { api, apiAll } from "../lib/api";
 import { lsSet } from "../lib/browser";
+import { labelNetwork, labelStatus } from "../lib/labels";
 
 type Channel = { accountId?: string; network: string; handle: string; status: string };
 type Preview = { url: string; kind: string };
@@ -41,13 +42,13 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
       </div>
 
       <div class="mb-4 flex flex-wrap gap-2">
-        <select class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900" [value]="filterNetwork()" (change)="filterNetwork.set($any($event.target).value); rebuild()">
+        <select class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-sm normal-case dark:border-zinc-700 dark:bg-zinc-900" [value]="filterNetwork()" (change)="filterNetwork.set($any($event.target).value); rebuild()">
           <option value="">All channels</option>
-          @for (n of networks(); track n) { <option [value]="n">{{ n }}</option> }
+          @for (n of networks(); track n) { <option [value]="n">{{ labelNetwork(n) }}</option> }
         </select>
-        <select class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900" [value]="filterStatus()" (change)="filterStatus.set($any($event.target).value); rebuild()">
+        <select class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-sm normal-case dark:border-zinc-700 dark:bg-zinc-900" [value]="filterStatus()" (change)="filterStatus.set($any($event.target).value); rebuild()">
           <option value="">All statuses</option>
-          @for (s of statuses; track s) { <option [value]="s">{{ s }}</option> }
+          @for (s of statuses; track s) { <option [value]="s">{{ labelStatus(s) }}</option> }
         </select>
         <input class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900" placeholder="Tag" [value]="filterTag()" (change)="filterTag.set($any($event.target).value); rebuild()" />
       </div>
@@ -113,7 +114,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                     <div class="min-w-0 flex-1">
                       <div class="flex items-start justify-between gap-3">
                         <p class="line-clamp-2 text-[13px] leading-snug dark:text-zinc-100">{{ p.body }}</p>
-                        <span class="shrink-0 rounded-full bg-[#f7f7f4] px-2 py-0.5 font-mono text-[10px] uppercase text-[#63676c] dark:bg-zinc-800 dark:text-zinc-300">{{ p.status }}</span>
+                        <span class="shrink-0 rounded-full bg-[#f7f7f4] px-2 py-0.5 text-[10px] font-semibold text-[#63676c] dark:bg-zinc-800 dark:text-zinc-300">{{ labelStatus(p.status) }}</span>
                       </div>
                       <div class="mt-2 flex flex-wrap items-center gap-2">
                         @for (ch of p.channels || []; track ch.network + ch.handle) {
@@ -170,7 +171,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
               }
               <p class="text-[13px] leading-snug dark:text-zinc-100">{{ p.body }}</p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <span class="font-mono text-[10px] uppercase text-[#a1a1aa]">{{ p.status }} · {{ formatTime(p.scheduledAt) }}</span>
+                <span class="text-[10px] font-semibold text-[#a1a1aa]">{{ labelStatus(p.status) }} · {{ formatTime(p.scheduledAt) }}</span>
                 @for (ch of p.channels || []; track ch.network + ch.handle) {
                   <img [src]="'/assets/logos/' + ch.network + '.svg'" [alt]="ch.network" width="14" height="14" class="size-3.5 object-contain" />
                 }
@@ -191,7 +192,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                 <input type="date" class="h-7 rounded-md border border-[#e8e8e3] bg-white px-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900" (click)="$event.stopPropagation()" (change)="dupOn(p, $any($event.target).value)" />
               </div>
               @for (issue of p.issues || []; track issue.network + issue.handle) {
-                <p class="mt-1 text-[12px] text-amber-800 dark:text-amber-200">{{ issue.network }}: {{ issue.error || issue.status }}</p>
+                <p class="mt-1 text-[12px] text-amber-800 dark:text-amber-200">{{ labelNetwork(issue.network) }}: {{ issue.error || labelStatus(issue.status) }}</p>
               }
             </article>
           }
@@ -201,6 +202,8 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
   `,
 })
 export class CalendarPage implements OnInit {
+  readonly labelStatus = labelStatus;
+  readonly labelNetwork = labelNetwork;
   private readonly router = inject(Router);
   view = signal<"month" | "week" | "agenda">("month");
   tabs = [
