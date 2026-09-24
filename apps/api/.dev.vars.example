@@ -42,7 +42,7 @@ LINKEDIN_CLIENT_SECRET=
 MASTODON_CLIENT_ID=
 MASTODON_CLIENT_SECRET=
 MASTODON_INSTANCE=https://mastodon.social
-# Meta — Instagram + Facebook Login, Threads app id/secret
+# Meta — Facebook Login + Threads app id/secret (Page-linked Instagram fallback)
 # Callbacks:
 #   https://api.duskly.site/v1/accounts/oauth/instagram/callback
 #   https://api.duskly.site/v1/accounts/oauth/facebook/callback
@@ -51,6 +51,15 @@ MASTODON_INSTANCE=https://mastodon.social
 # Public Instagram media: GET https://api.duskly.site/v1/media/{id}/public?exp=&sig=
 META_APP_ID=
 META_APP_SECRET=
+# Instagram API with Instagram Login — Instagram App ID + App Secret from the Meta app
+# (Instagram → API setup with Instagram login). Not META_APP_ID, not the Threads app id,
+# not the user's Instagram password. When both are set, Instagram connect uses this path
+# (no Facebook Page required). When unset, Instagram falls back to Facebook Login + Page.
+# Paste the callback under Instagram → API setup with Instagram login → OAuth redirect URIs
+# (not only under Facebook Login):
+#   https://api.duskly.site/v1/accounts/oauth/instagram/callback
+INSTAGRAM_APP_ID=
+INSTAGRAM_APP_SECRET=
 # Google OAuth — YouTube upload only. Consent screen scope: https://www.googleapis.com/auth/youtube.upload
 # Callback https://api.duskly.site/v1/accounts/oauth/youtube/callback
 GOOGLE_CLIENT_ID=

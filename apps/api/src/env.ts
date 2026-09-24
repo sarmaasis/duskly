@@ -50,6 +50,9 @@ export type Env = {
   MASTODON_INSTANCE?: string;
   META_APP_ID?: string;
   META_APP_SECRET?: string;
+  /** Instagram app id/secret from Meta → Instagram → API setup with Instagram login. */
+  INSTAGRAM_APP_ID?: string;
+  INSTAGRAM_APP_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   REDDIT_CLIENT_ID?: string;

@@ -29,6 +29,7 @@ import {
   usageSnapshot,
 } from "../lib/entitlements";
 import { NETWORKS, NETWORK_META } from "../lib/networks";
+import { instagramAccountLabel } from "../lib/oauth-providers";
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
@@ -112,10 +113,21 @@ accountRoutes.get("/", async (c) => {
         channelName = creds.channelName || null;
         if (creds.pendingPagesJson) {
           try {
-            const raw = JSON.parse(creds.pendingPagesJson) as Array<{ id?: string; name?: string }>;
+            const raw = JSON.parse(creds.pendingPagesJson) as Array<{
+              id?: string;
+              name?: string;
+              igUserId?: string;
+              igUsername?: string;
+            }>;
             pendingPages = raw
               .filter((p) => p.id)
-              .map((p) => ({ id: p.id!, name: p.name || p.id! }));
+              .map((p) => ({
+                id: p.id!,
+                name:
+                  r.network === "instagram"
+                    ? instagramAccountLabel(p) || p.id!
+                    : p.name || p.id!,
+              }));
           } catch {
             pendingPages = [];
           }
@@ -310,7 +322,13 @@ accountRoutes.patch("/:id", async (c) => {
         creds = {};
       }
     }
-    let pages: Array<{ id: string; name: string; accessToken: string; igUserId?: string }> = [];
+    let pages: Array<{
+      id: string;
+      name: string;
+      accessToken: string;
+      igUserId?: string;
+      igUsername?: string;
+    }> = [];
     try {
       pages = creds.pendingPagesJson ? JSON.parse(creds.pendingPagesJson) : [];
     } catch {
@@ -321,18 +339,28 @@ accountRoutes.patch("/:id", async (c) => {
     if (row.network === "instagram" && !picked.igUserId) {
       return c.json({ error: "no_instagram_account", message: "That Page has no Instagram professional account" }, 400);
     }
+    const handle =
+      row.network === "instagram"
+        ? instagramAccountLabel(picked) || picked.igUserId || "instagram-account"
+        : picked.name;
     creds.accessToken = picked.accessToken;
     creds.pageId = picked.id;
     creds.pageName = picked.name;
     if (picked.igUserId) creds.igUserId = picked.igUserId;
+    if (picked.igUsername) creds.igUsername = picked.igUsername;
     delete creds.pendingPagesJson;
     patch.credentialsJson = (await encryptCredentials(c.env, creds)) ?? undefined;
     patch.status = "active";
     await db
       .update(socialAccount)
-      .set({ ...patch, handle: picked.name, externalId: picked.id, tokenCipher: await encryptSecret(c.env, picked.accessToken) })
+      .set({
+        ...patch,
+        handle,
+        externalId: row.network === "instagram" ? picked.igUserId || picked.id : picked.id,
+        tokenCipher: await encryptSecret(c.env, picked.accessToken),
+      })
       .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, body.workspaceId)));
-    return c.json({ ok: true, pageId: picked.id, handle: picked.name });
+    return c.json({ ok: true, pageId: picked.id, handle });
   }
 
   if (!Object.keys(patch).length) return c.json({ error: "nothing_to_update" }, 400);

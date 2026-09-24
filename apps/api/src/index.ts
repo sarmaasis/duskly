@@ -20,7 +20,7 @@ import type { Env } from "./env";
 import { drizzle } from "drizzle-orm/d1";
 import { and, eq, inArray, lte } from "drizzle-orm";
 import { posts, postDestination, socialAccount, rssFeed, workspace, media, apiToken } from "./db/schema";
-import { adapters, firstPublishMedia, isVideoMedia, type Network } from "./lib/networks";
+import { adapters, firstPublishMedia, isImageMedia, isVideoMedia, type Network } from "./lib/networks";
 import { signPublicMediaUrl } from "./lib/media-signed-url";
 import { dispatchWebhooks } from "./lib/webhooks-out";
 import { sha256Hex } from "./lib/workspace";
@@ -225,8 +225,11 @@ async function publishPost(env: Env, postId: string) {
   let videoBytes: ArrayBuffer | undefined;
   let videoContentType: string | undefined;
   let imageUrl: string | undefined;
+  let imageBytes: ArrayBuffer | undefined;
+  let imageContentType: string | undefined;
+  let mediaIds: string[] = [];
   try {
-    const mediaIds = post.mediaIds ? (JSON.parse(post.mediaIds) as string[]) : [];
+    mediaIds = post.mediaIds ? (JSON.parse(post.mediaIds) as string[]) : [];
     if (mediaIds.length) {
       const mediaRows = await db.select().from(media).where(inArray(media.id, mediaIds));
       const first = firstPublishMedia(mediaIds, mediaRows);
@@ -236,13 +239,19 @@ async function publishPost(env: Env, postId: string) {
           videoBytes = await obj.arrayBuffer();
           videoContentType = first.contentType;
         }
-      } else if (first?.contentType.startsWith("image/")) {
+      } else if (first && isImageMedia(first)) {
         imageUrl = await signPublicMediaUrl(env, first.id);
+        const obj = await env.MEDIA.get(first.r2Key);
+        if (obj) {
+          imageBytes = await obj.arrayBuffer();
+          imageContentType = first.contentType;
+        }
       }
     }
   } catch {
-    /* media lookup is optional */
+    /* lookup failure is treated as missing media below */
   }
+  const mediaMissing = mediaIds.length > 0 && !imageUrl && !imageBytes && !videoBytes;
 
   for (const d of rows) {
     const adapter = adapters[d.network as Network];
@@ -264,6 +273,14 @@ async function publishPost(env: Env, postId: string) {
         })
         .where(eq(socialAccount.id, d.socialAccountId));
     }
+    if (mediaMissing) {
+      anyQueued = true;
+      await db
+        .update(postDestination)
+        .set({ status: "queued", error: "attached media could not be loaded for publish" })
+        .where(eq(postDestination.id, d.id));
+      continue;
+    }
     if (imageUrl && !creds.imageUrl) creds = { ...creds, imageUrl };
     const result = await adapter.publish({
       body: post.body,
@@ -274,6 +291,8 @@ async function publishPost(env: Env, postId: string) {
       skipComment: deferComment,
       videoBytes,
       videoContentType,
+      imageBytes,
+      imageContentType,
     });
     if ("remoteId" in result) {
       anyPublished = true;

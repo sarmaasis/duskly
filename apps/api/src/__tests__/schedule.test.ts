@@ -59,6 +59,17 @@ describe("repeat series", () => {
     });
     expect(parsed.mediaIds).toEqual(["img-1", "clip-2", "img-3"]);
   });
+
+  it("composer schedules mediaIds and the worker signs a public URL then passes image bytes", () => {
+    const composer = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../web/src/app/composer/composer.page.ts"), "utf8");
+    expect(composer).toContain("mediaIds: this.attachments().map((a) => a.id)");
+    const posts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../routes/posts.ts"), "utf8");
+    expect(posts).toContain("mediaIds: body.mediaIds?.length ? JSON.stringify(body.mediaIds) : null");
+    const publisher = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../index.ts"), "utf8");
+    expect(publisher).toContain("signPublicMediaUrl");
+    expect(publisher).toContain("imageBytes");
+    expect(publisher).toContain("JSON.parse(post.mediaIds)");
+  });
 });
 
 describe("first-comment delay", () => {

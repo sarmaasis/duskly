@@ -27,6 +27,8 @@ export type PublishInput = {
   skipComment?: boolean;
   videoBytes?: ArrayBuffer;
   videoContentType?: string;
+  imageBytes?: ArrayBuffer;
+  imageContentType?: string;
 };
 
 export type CommentInput = {
@@ -58,6 +60,42 @@ export function firstPublishMedia<T extends { id: string }>(mediaIds: string[], 
 
 export function isVideoMedia(m: { kind: string; contentType: string }) {
   return m.kind === "clip" || m.contentType.startsWith("video/");
+}
+
+export function isImageMedia(m: { kind: string; contentType: string }) {
+  return m.kind === "image" || m.contentType.startsWith("image/");
+}
+
+export function publishImageUrl(input: PublishInput): string | undefined {
+  const url = input.credentials?.imageUrl?.trim();
+  return url || undefined;
+}
+
+function imageFilename(contentType: string): string {
+  if (contentType.includes("png")) return "image.png";
+  if (contentType.includes("gif")) return "image.gif";
+  if (contentType.includes("webp")) return "image.webp";
+  return "image.jpg";
+}
+
+async function resolvePublishImage(
+  input: PublishInput,
+): Promise<{ bytes: ArrayBuffer; contentType: string } | undefined> {
+  if (input.imageBytes && input.imageBytes.byteLength) {
+    return { bytes: input.imageBytes, contentType: input.imageContentType || "image/jpeg" };
+  }
+  const url = publishImageUrl(input);
+  if (!url) return undefined;
+  const fetched = await fetch(url);
+  if (!fetched.ok) return undefined;
+  return {
+    bytes: await fetched.arrayBuffer(),
+    contentType: fetched.headers.get("content-type") || input.imageContentType || "image/jpeg",
+  };
+}
+
+function imageBlob(bytes: ArrayBuffer, contentType: string): Blob {
+  return new Blob([new Uint8Array(bytes)], { type: contentType });
 }
 
 export type NetworkGroup = "social" | "blogs" | "chat";
@@ -124,13 +162,40 @@ async function blueskyPublish(input: PublishInput): Promise<PublishOk | PublishQ
     });
     if (!sessionRes.ok) return missingCreds(`Bluesky auth failed (${sessionRes.status})`);
     const session = (await sessionRes.json()) as { accessJwt: string; did: string };
+    const wantsImage = !!(publishImageUrl(input) || input.imageBytes);
+    const image = wantsImage ? await resolvePublishImage(input) : undefined;
+    if (wantsImage && !image) {
+      return missingCreds("Bluesky image fetch failed — queued so the photo is not dropped");
+    }
+    const record: Record<string, unknown> = {
+      $type: "app.bsky.feed.post",
+      text: input.body,
+      createdAt: new Date().toISOString(),
+    };
+    if (image) {
+      const blobRes = await fetch(`${service}/xrpc/com.atproto.repo.uploadBlob`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${session.accessJwt}`, "content-type": image.contentType },
+        body: image.bytes,
+      });
+      if (!blobRes.ok) {
+        const err = await blobRes.text();
+        return missingCreds(`Bluesky blob upload failed (${blobRes.status}): ${err.slice(0, 200)}`);
+      }
+      const blob = (await blobRes.json()) as { blob?: unknown };
+      if (!blob.blob) return missingCreds("Bluesky blob upload returned no blob — queued");
+      record.embed = {
+        $type: "app.bsky.embed.images",
+        images: [{ alt: input.body.slice(0, 300), image: blob.blob }],
+      };
+    }
     const postRes = await fetch(`${service}/xrpc/com.atproto.repo.createRecord`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${session.accessJwt}` },
       body: JSON.stringify({
         repo: session.did,
         collection: "app.bsky.feed.post",
-        record: { $type: "app.bsky.feed.post", text: input.body, createdAt: new Date().toISOString() },
+        record,
       }),
     });
     if (!postRes.ok) return missingCreds(`Bluesky publish failed (${postRes.status})`);
@@ -222,10 +287,38 @@ async function xPublish(input: PublishInput): Promise<PublishOk | PublishQueued>
     return missingCreds("X OAuth credentials are not configured — scheduled and queued honestly, not marked published");
   }
   try {
+    const wantsImage = !!(publishImageUrl(input) || input.imageBytes);
+    const image = wantsImage ? await resolvePublishImage(input) : undefined;
+    if (wantsImage && !image) {
+      return missingCreds("X image fetch failed — queued so the photo is not dropped");
+    }
+    let mediaId: string | undefined;
+    if (image) {
+      const form = new FormData();
+      form.append("media", imageBlob(image.bytes, image.contentType), imageFilename(image.contentType));
+      form.append("media_category", "tweet_image");
+      const up = await fetch("https://api.x.com/2/media/upload", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!up.ok) {
+        const err = await up.text();
+        return missingCreds(`X media upload failed (${up.status}): ${err.slice(0, 200)}`);
+      }
+      const uploaded = (await up.json()) as {
+        data?: { id?: string; media_id_string?: string };
+        media_id_string?: string;
+      };
+      mediaId = uploaded.data?.id ?? uploaded.data?.media_id_string ?? uploaded.media_id_string;
+      if (!mediaId) return missingCreds("X media upload returned no media id — queued");
+    }
+    const payload: Record<string, unknown> = { text: input.body.slice(0, 280) };
+    if (mediaId) payload.media = { media_ids: [mediaId] };
     const res = await fetch("https://api.x.com/2/tweets", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ text: input.body.slice(0, 280) }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -266,6 +359,56 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
     return missingCreds("LinkedIn OAuth credentials are not configured — scheduled and queued honestly, not marked published");
   }
   try {
+    const wantsImage = !!(publishImageUrl(input) || input.imageBytes);
+    const image = wantsImage ? await resolvePublishImage(input) : undefined;
+    if (wantsImage && !image) {
+      return missingCreds("LinkedIn image fetch failed — queued so the photo is not dropped");
+    }
+    let imageUrn: string | undefined;
+    if (image) {
+      const init = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "linkedin-version": LINKEDIN_VERSION,
+          "x-restli-protocol-version": "2.0.0",
+        },
+        body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
+      });
+      if (!init.ok) {
+        const err = await init.text();
+        return missingCreds(`LinkedIn image init failed (${init.status}): ${err.slice(0, 200)}`);
+      }
+      const started = (await init.json()) as { value?: { uploadUrl?: string; image?: string } };
+      const uploadUrl = started.value?.uploadUrl;
+      imageUrn = started.value?.image;
+      if (!uploadUrl || !imageUrn) {
+        return missingCreds("LinkedIn image init returned no upload URL — queued");
+      }
+      const put = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}`, "content-type": image.contentType },
+        body: image.bytes,
+      });
+      if (!put.ok) {
+        const err = await put.text();
+        return missingCreds(`LinkedIn image upload failed (${put.status}): ${err.slice(0, 200)}`);
+      }
+    }
+    const postBody: Record<string, unknown> = {
+      author,
+      commentary: input.body,
+      visibility: "PUBLIC",
+      distribution: {
+        feedDistribution: "MAIN_FEED",
+        targetEntities: [],
+        thirdPartyDistributionChannels: [],
+      },
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+    };
+    if (imageUrn) postBody.content = { media: { id: imageUrn } };
     const res = await fetch("https://api.linkedin.com/rest/posts", {
       method: "POST",
       headers: {
@@ -274,18 +417,7 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
         "linkedin-version": LINKEDIN_VERSION,
         "x-restli-protocol-version": "2.0.0",
       },
-      body: JSON.stringify({
-        author,
-        commentary: input.body,
-        visibility: "PUBLIC",
-        distribution: {
-          feedDistribution: "MAIN_FEED",
-          targetEntities: [],
-          thirdPartyDistributionChannels: [],
-        },
-        lifecycleState: "PUBLISHED",
-        isReshareDisabledByAuthor: false,
-      }),
+      body: JSON.stringify(postBody),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -338,10 +470,34 @@ async function mastodonPublish(input: PublishInput): Promise<PublishOk | Publish
     return missingCreds("Mastodon OAuth credentials are not configured — scheduled and queued honestly, not marked published");
   }
   try {
+    const wantsImage = !!(publishImageUrl(input) || input.imageBytes);
+    const image = wantsImage ? await resolvePublishImage(input) : undefined;
+    if (wantsImage && !image) {
+      return missingCreds("Mastodon image fetch failed — queued so the photo is not dropped");
+    }
+    let mediaId: string | undefined;
+    if (image) {
+      const form = new FormData();
+      form.append("file", imageBlob(image.bytes, image.contentType), imageFilename(image.contentType));
+      const up = await fetch(`${instance}/api/v1/media`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!up.ok) {
+        const err = await up.text();
+        return missingCreds(`Mastodon media upload failed (${up.status}): ${err.slice(0, 200)}`);
+      }
+      const uploaded = (await up.json()) as { id?: string };
+      mediaId = uploaded.id;
+      if (!mediaId) return missingCreds("Mastodon media upload returned no id — queued");
+    }
+    const statusBody: Record<string, unknown> = { status: input.body };
+    if (mediaId) statusBody.media_ids = [mediaId];
     const res = await fetch(`${instance}/api/v1/statuses`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ status: input.body }),
+      body: JSON.stringify(statusBody),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -390,9 +546,12 @@ async function metaGraphPublish(
   const igUserId = input.credentials?.igUserId;
   const pageId = input.credentials?.pageId;
   const threadsUserId = input.credentials?.threadsUserId;
+  const instagramLogin = kind === "instagram" && input.credentials?.authKind === "instagram_login";
   if (kind === "instagram" && (!hasToken(token) || !igUserId)) {
     return missingCreds(
-      "Instagram Page token / professional account id are not configured — scheduled and queued honestly, not marked published",
+      instagramLogin
+        ? "Instagram user token / professional account id are not configured — scheduled and queued honestly, not marked published"
+        : "Instagram Page token / professional account id are not configured — scheduled and queued honestly, not marked published",
     );
   }
   if (kind === "facebook" && (!hasToken(token) || !pageId)) {
@@ -407,6 +566,43 @@ async function metaGraphPublish(
   }
   try {
     if (kind === "facebook") {
+      const imageUrl = publishImageUrl(input);
+      if (imageUrl) {
+        const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photos`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: imageUrl, caption: input.body, access_token: token }),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          return missingCreds(`Facebook photo publish failed (${res.status}): ${err.slice(0, 200)}`);
+        }
+        const data = (await res.json()) as { id?: string; post_id?: string };
+        return {
+          remoteId: data.post_id ?? data.id ?? crypto.randomUUID(),
+          commentSkipped: input.commentBody?.trim() ? "Facebook first-comment not implemented for Page feed posts" : undefined,
+        };
+      }
+      if (input.imageBytes) {
+        const form = new FormData();
+        form.append(
+          "source",
+          imageBlob(input.imageBytes, input.imageContentType || "image/jpeg"),
+          imageFilename(input.imageContentType || "image/jpeg"),
+        );
+        form.append("caption", input.body);
+        form.append("access_token", token);
+        const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}/photos`, { method: "POST", body: form });
+        if (!res.ok) {
+          const err = await res.text();
+          return missingCreds(`Facebook photo upload failed (${res.status}): ${err.slice(0, 200)}`);
+        }
+        const data = (await res.json()) as { id?: string; post_id?: string };
+        return {
+          remoteId: data.post_id ?? data.id ?? crypto.randomUUID(),
+          commentSkipped: input.commentBody?.trim() ? "Facebook first-comment not implemented for Page feed posts" : undefined,
+        };
+      }
       const res = await fetch(`https://graph.facebook.com/v21.0/${pageId}/feed`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -423,21 +619,22 @@ async function metaGraphPublish(
       };
     }
     if (kind === "instagram") {
-      // Caption-only requires a media container; without media we queue honestly.
-      if (!input.credentials?.imageUrl) {
+      // Caption-only requires a media container; without a public URL we queue honestly.
+      if (!publishImageUrl(input)) {
         return missingCreds("Instagram Graph API requires an image URL for feed posts — queued until media is attached");
       }
-      const create = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media`, {
+      const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
+      const create = await fetch(`${graphHost}/v21.0/${igUserId}/media`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ image_url: input.credentials.imageUrl, caption: input.body, access_token: token }),
+        body: JSON.stringify({ image_url: publishImageUrl(input), caption: input.body, access_token: token }),
       });
       if (!create.ok) {
         const err = await create.text();
         return missingCreds(`Instagram media create failed (${create.status}): ${err.slice(0, 200)}`);
       }
       const created = (await create.json()) as { id?: string };
-      const pub = await fetch(`https://graph.facebook.com/v21.0/${igUserId}/media_publish`, {
+      const pub = await fetch(`${graphHost}/v21.0/${igUserId}/media_publish`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ creation_id: created.id, access_token: token }),
@@ -452,10 +649,18 @@ async function metaGraphPublish(
         commentSkipped: input.commentBody?.trim() ? "Instagram first-comment requires separate comment API scope" : undefined,
       };
     }
+    const imageUrl = publishImageUrl(input);
+    if (input.imageBytes && !imageUrl) {
+      return missingCreds("Threads image posts need a public image URL — queued so the photo is not dropped");
+    }
     const create = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ media_type: "TEXT", text: input.body, access_token: token }),
+      body: JSON.stringify(
+        imageUrl
+          ? { media_type: "IMAGE", image_url: imageUrl, text: input.body, access_token: token }
+          : { media_type: "TEXT", text: input.body, access_token: token },
+      ),
     });
     if (!create.ok) {
       const err = await create.text();
@@ -565,6 +770,9 @@ async function redditPublish(input: PublishInput): Promise<PublishOk | PublishQu
     return missingCreds("Reddit OAuth credentials / subreddit are not configured — stays queued");
   }
   try {
+    if (publishImageUrl(input) || input.imageBytes) {
+      return missingCreds("Reddit image upload is not wired — stays queued so the photo is not dropped");
+    }
     const body = new URLSearchParams({
       kind: "self",
       sr: subreddit,
@@ -601,6 +809,9 @@ async function hashnodePublish(input: PublishInput): Promise<PublishOk | Publish
   const publicationId = input.credentials?.publicationId;
   if (!hasToken(token) || !publicationId) {
     return missingCreds("Hashnode token / publicationId not configured — stays queued");
+  }
+  if (publishImageUrl(input) || input.imageBytes) {
+    return missingCreds("Hashnode image attach is not wired — stays queued so the photo is not dropped");
   }
   try {
     const res = await fetch("https://gql.hashnode.com", {
@@ -643,6 +854,9 @@ async function devtoPublish(input: PublishInput): Promise<PublishOk | PublishQue
   if (!hasToken(token)) {
     return missingCreds("dev.to API key not configured — stays queued");
   }
+  if (publishImageUrl(input) || input.imageBytes) {
+    return missingCreds("dev.to image attach is not wired — stays queued so the photo is not dropped");
+  }
   try {
     const res = await fetch("https://dev.to/api/articles", {
       method: "POST",
@@ -677,6 +891,43 @@ async function telegramPublish(input: PublishInput): Promise<PublishOk | Publish
     return missingCreds("Telegram bot token / chat id not configured — stays queued");
   }
   try {
+    const imageUrl = publishImageUrl(input);
+    if (imageUrl) {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, photo: imageUrl, caption: input.body.slice(0, 1024) }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        return missingCreds(`Telegram photo send failed (${res.status}): ${err.slice(0, 200)}`);
+      }
+      const data = (await res.json()) as { result?: { message_id?: number } };
+      return {
+        remoteId: String(data.result?.message_id ?? crypto.randomUUID()),
+        commentSkipped: input.commentBody?.trim() ? "Telegram has no first-comment — skipped" : undefined,
+      };
+    }
+    if (input.imageBytes) {
+      const form = new FormData();
+      form.append("chat_id", chatId);
+      form.append(
+        "photo",
+        imageBlob(input.imageBytes, input.imageContentType || "image/jpeg"),
+        imageFilename(input.imageContentType || "image/jpeg"),
+      );
+      form.append("caption", input.body.slice(0, 1024));
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.text();
+        return missingCreds(`Telegram photo upload failed (${res.status}): ${err.slice(0, 200)}`);
+      }
+      const data = (await res.json()) as { result?: { message_id?: number } };
+      return {
+        remoteId: String(data.result?.message_id ?? crypto.randomUUID()),
+        commentSkipped: input.commentBody?.trim() ? "Telegram has no first-comment — skipped" : undefined,
+      };
+    }
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -703,6 +954,46 @@ async function discordPublish(input: PublishInput): Promise<PublishOk | PublishQ
     return missingCreds("Discord webhook URL not configured — stays queued");
   }
   try {
+    const imageUrl = publishImageUrl(input);
+    if (imageUrl) {
+      const res = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: input.body.slice(0, 2000),
+          embeds: [{ image: { url: imageUrl } }],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        return missingCreds(`Discord webhook failed (${res.status}): ${err.slice(0, 200)}`);
+      }
+      return {
+        remoteId: crypto.randomUUID(),
+        commentSkipped: input.commentBody?.trim() ? "Discord webhook has no first-comment — skipped" : undefined,
+      };
+    }
+    if (input.imageBytes) {
+      const form = new FormData();
+      form.append(
+        "payload_json",
+        JSON.stringify({ content: input.body.slice(0, 2000) }),
+      );
+      form.append(
+        "files[0]",
+        imageBlob(input.imageBytes, input.imageContentType || "image/jpeg"),
+        imageFilename(input.imageContentType || "image/jpeg"),
+      );
+      const res = await fetch(webhookUrl, { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.text();
+        return missingCreds(`Discord webhook file failed (${res.status}): ${err.slice(0, 200)}`);
+      }
+      return {
+        remoteId: crypto.randomUUID(),
+        commentSkipped: input.commentBody?.trim() ? "Discord webhook has no first-comment — skipped" : undefined,
+      };
+    }
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -732,13 +1023,24 @@ async function slackPublish(input: PublishInput): Promise<PublishOk | PublishQue
     return missingCreds("Slack channel not selected — stays queued");
   }
   try {
+    const imageUrl = publishImageUrl(input);
+    if (input.imageBytes && !imageUrl) {
+      return missingCreds("Slack image posts need a public image URL — queued so the photo is not dropped");
+    }
+    const slackBody: Record<string, unknown> = { channel: channelId, text: input.body.slice(0, 4000) };
+    if (imageUrl) {
+      slackBody.blocks = [
+        { type: "section", text: { type: "mrkdwn", text: input.body.slice(0, 3000) } },
+        { type: "image", image_url: imageUrl, alt_text: "Post image" },
+      ];
+    }
     const res = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
         "content-type": "application/json; charset=utf-8",
         authorization: `Bearer ${botToken}`,
       },
-      body: JSON.stringify({ channel: channelId, text: input.body.slice(0, 4000) }),
+      body: JSON.stringify(slackBody),
     });
     const data = (await res.json()) as { ok?: boolean; error?: string; ts?: string };
     if (!res.ok || !data.ok) {

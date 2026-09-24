@@ -208,6 +208,9 @@ const FALLBACK_META: Record<string, NetMeta> = {
           @if (network === 'slack') {
             <p class="text-[12px] text-[#63676c] dark:text-zinc-400">The bot posts to the public channel you picked before the bot is invited, which is why chat:write.public is requested.</p>
           }
+          @if (network === 'instagram') {
+            <p class="text-[12px] text-[#63676c] dark:text-zinc-400">Connects a professional Instagram account (Business or Creator). Instagram Login does not need a Facebook Page or shared Facebook login.</p>
+          }
           @if (!oauthReady()[network]) {
             <p class="text-[12px] text-amber-700 dark:text-amber-400">
               @if (network === 'slack') {
@@ -294,7 +297,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
                       </select>
                     } @else if (a.needsPage) {
                       <dk-select [ngModel]="''" (ngModelChange)="pickPage(a.id, $event)" [name]="'page-' + a.id">
-                        <option value="">Pick a Page…</option>
+                        <option value="">{{ a.network === 'instagram' ? 'Pick an Instagram account…' : 'Pick a Page…' }}</option>
                         @for (p of a.pendingPages || []; track p.id) {
                           <option [value]="p.id">{{ p.name }}</option>
                         }
@@ -420,17 +423,27 @@ export class AccountsPage implements OnInit {
   }
 
   oauthFailureMessage(oauth: string, network: string | null, reason: string | null, detail: string | null) {
+    const instagram = network === "instagram";
     const facebook = !network || network === "facebook" || network === "instagram";
+    if (reason === "not_professional") {
+      return "Instagram requires a professional (Business or Creator) account — personal accounts cannot be connected.";
+    }
     if (reason === "access_denied" || reason === "user_denied") {
       return facebook
-        ? "Facebook login was cancelled or permissions were denied."
+        ? instagram
+          ? "Instagram login was cancelled or permissions were denied."
+          : "Facebook login was cancelled or permissions were denied."
         : "OAuth failed — credentials or consent rejected";
     }
     if (reason === "redirect_uri") {
-      return "Facebook rejected the token exchange — the redirect URI must match the authorize URL exactly.";
+      return instagram
+        ? "Instagram rejected the token exchange — add the callback under Instagram → API setup with Instagram login → OAuth redirect URIs."
+        : "Facebook rejected the token exchange — the redirect URI must match the authorize URL exactly.";
     }
     if (reason === "bad_secret" || reason === "missing_secret") {
-      return "Facebook rejected the app secret. Check META_APP_ID and META_APP_SECRET on the API.";
+      return instagram
+        ? "Instagram rejected the app secret. Check INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET on the API."
+        : "Facebook rejected the app secret. Check META_APP_ID and META_APP_SECRET on the API.";
     }
     if (reason === "code_used") return "Facebook authorization code was already used. Connect again from Accounts.";
     if (reason === "code_expired" || reason === "bad_code") {
@@ -453,7 +466,11 @@ export class AccountsPage implements OnInit {
       }
       return `Facebook connected, but Duskly could not encrypt the token (${detail}).`;
     }
-    if (reason === "persist") return "Facebook connected, but Duskly could not save the Page. Try again.";
+    if (reason === "persist") {
+      return network === "instagram"
+        ? "Instagram connected, but Duskly could not save the account. Try again."
+        : "Facebook connected, but Duskly could not save the Page. Try again.";
+    }
     if (reason === "kv" || reason === "bad_state" || reason === "callback") {
       return "OAuth state is invalid — try Facebook connect again.";
     }
@@ -468,7 +485,9 @@ export class AccountsPage implements OnInit {
       return `Facebook OAuth failed — ${reason}.`;
     }
     if (oauth === "token_failed" || reason === "token_failed" || reason === "exchange") {
-      return "Facebook token exchange failed. Check the Meta app id/secret and Valid OAuth Redirect URI.";
+      return instagram
+        ? "Instagram token exchange failed. Check INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET and the Instagram Login OAuth redirect URI."
+        : "Facebook token exchange failed. Check the Meta app id/secret and Valid OAuth Redirect URI.";
     }
     return "OAuth failed — credentials or consent rejected";
   }
@@ -486,13 +505,18 @@ export class AccountsPage implements OnInit {
       const oauthNetwork = this.oauthQuery("network");
       const reason = this.oauthQuery("reason");
       const detail = this.oauthQuery("detail");
+      const accountId = this.oauthQuery("accountId");
       if (oauth === "ok") {
         this.msg.set(
           oauthNetwork === "slack"
             ? "Slack workspace connected — pick a channel on the board to finish."
-            : oauthNetwork === "instagram" || oauthNetwork === "facebook"
-              ? `${oauthNetwork === "instagram" ? "Instagram" : "Facebook"} connected — pick a Page if you have more than one.`
-              : "OAuth connected",
+            : oauthNetwork === "instagram"
+              ? accountId
+                ? "Instagram login succeeded — pick the Instagram account to connect."
+                : "Instagram account connected"
+              : oauthNetwork === "facebook"
+                ? "Facebook connected — pick a Page if you have more than one."
+                : "OAuth connected",
         );
       } else if (oauth === "no_page" || reason === "no_page") {
         this.msg.set(
@@ -511,7 +535,6 @@ export class AccountsPage implements OnInit {
       } catch {
         /* ignore */
       }
-      const accountId = this.oauthQuery("accountId");
       if (oauth === "ok" && oauthNetwork === "slack" && accountId) {
         await this.loadSlackChannels(accountId);
       }
@@ -587,16 +610,17 @@ export class AccountsPage implements OnInit {
 
   async pickPage(accountId: string, pageId: string) {
     if (!pageId) return;
+    const instagram = this.accounts().find((a) => a.id === accountId)?.network === "instagram";
     try {
       await api(`/v1/accounts/${accountId}`, {
         method: "PATCH",
         json: { workspaceId: this.workspaceId, pageId },
       });
-      this.msg.set("Page selected — posts will use that Page token");
+      this.msg.set(instagram ? "Instagram account selected" : "Page selected — posts will use that Page token");
       await this.reload();
     } catch (e: unknown) {
       const err = e as { body?: { message?: string }; message?: string };
-      this.msg.set(err.body?.message || err.message || "Could not save Page");
+      this.msg.set(err.body?.message || err.message || (instagram ? "Could not save Instagram account" : "Could not save Page"));
     }
   }
 

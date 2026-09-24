@@ -5,8 +5,13 @@ import { fileURLToPath } from "node:url";
 import worker from "../index";
 import type { Env } from "../env";
 import {
+  INSTAGRAM_LOGIN_AUTH,
   buildAuthorizeUrl,
+  facebookConnectHandle,
   graphOauthReason,
+  instagramAccountLabel,
+  instagramLoginConfigured,
+  listFacebookPages,
   normalizeSubreddit,
   oauthConfigured,
   parseFacebookTokenPayload,
@@ -68,7 +73,7 @@ describe("OAuth authorize URLs", () => {
     const url = buildAuthorizeUrl({ ...base, network: "x" });
     expect(url.startsWith("https://x.com/i/oauth2/authorize?")).toBe(true);
     const q = new URL(url).searchParams;
-    expect(q.get("scope")).toBe("tweet.read tweet.write users.read offline.access");
+    expect(q.get("scope")).toBe("tweet.read tweet.write media.write users.read offline.access");
     expect(q.get("code_challenge_method")).toBe("S256");
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/x/callback");
   });
@@ -82,6 +87,33 @@ describe("OAuth authorize URLs", () => {
     expect(url).toContain("facebook.com/v21.0/dialog/oauth");
     expect(new URL(url).searchParams.get("scope")).toContain("pages_read_engagement");
     expect(new URL(url).searchParams.get("scope")).toContain("instagram_content_publish");
+  });
+
+  it("Instagram Login uses instagram.com authorize when INSTAGRAM_APP_ID and secret are set", () => {
+    const url = buildAuthorizeUrl({
+      ...base,
+      env: { ...env, INSTAGRAM_APP_ID: "ig-app-id", INSTAGRAM_APP_SECRET: "ig-app-secret" },
+      network: "instagram",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/instagram/callback",
+    });
+    expect(url.startsWith("https://www.instagram.com/oauth/authorize?")).toBe(true);
+    expect(url).not.toContain("facebook.com");
+    const q = new URL(url).searchParams;
+    expect(q.get("client_id")).toBe("ig-app-id");
+    expect(q.get("response_type")).toBe("code");
+    expect(q.get("scope")).toBe("instagram_business_basic,instagram_business_content_publish");
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/instagram/callback");
+    expect(q.get("state")).toBe("st");
+  });
+
+  it("Instagram is configured from Instagram Login secrets even without META_APP_*", () => {
+    expect(instagramLoginConfigured({} as Env)).toBe(false);
+    expect(oauthConfigured({} as Env, "instagram")).toBe(false);
+    expect(oauthConfigured({ META_APP_ID: "m", META_APP_SECRET: "s" } as Env, "instagram")).toBe(true);
+    expect(
+      oauthConfigured({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "ig-s" } as Env, "instagram"),
+    ).toBe(true);
+    expect(oauthConfigured({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "  " } as Env, "instagram")).toBe(false);
   });
 
   it("Threads uses threads.com authorize, not Facebook Login", () => {
@@ -216,6 +248,12 @@ describe("Reddit subreddit", () => {
     expect(web).toContain("Facebook login succeeded but Pages could not be loaded.");
     expect(web).toContain("Set TOKEN_ENCRYPTION_KEY on the API.");
     expect(web).toContain("could not encrypt the token (${detail})");
+    expect(web).toContain("Pick an Instagram account…");
+    expect(web).toContain("Instagram account connected");
+    expect(web).toContain("pick the Instagram account to connect.");
+    expect(web).toContain("INSTAGRAM_APP_ID");
+    expect(web).toContain("professional (Business or Creator)");
+    expect(web).not.toContain("Instagram connected — pick a Page");
   });
 });
 
@@ -331,6 +369,12 @@ describe("tracked legal + callback docs", () => {
     expect(src).toContain("https://api.duskly.site/v1/meta/data-deletion");
     expect(src).toContain("https://www.googleapis.com/auth/youtube.upload");
     expect(src).toContain("https://api.duskly.site/v1/media/{id}/public?exp=&sig=");
+    expect(src).toContain("INSTAGRAM_APP_ID=");
+    expect(src).toContain("INSTAGRAM_APP_SECRET=");
+    expect(src).toContain("API setup with Instagram login");
+    const deploy = readFileSync(join(here, "../../../../docs/DEPLOY.md"), "utf8");
+    expect(deploy).toContain("INSTAGRAM_APP_ID");
+    expect(deploy).toContain("OAuth redirect URIs");
   });
 
   it("docs, privacy, and accounts explain Slack chat:write.public", () => {
@@ -460,6 +504,9 @@ describe("Facebook token payload helpers", () => {
     );
     expect(graphOauthReason({ error: { message: "Error validating application secret", code: 1 } })).toBe("bad_secret");
     expect(graphOauthReason({ error: { message: "This authorization code has been used." } })).toBe("code_used");
+    expect(graphOauthReason({ error: { message: "The Instagram account is not a professional account" } })).toBe(
+      "not_professional",
+    );
     expect(safeOauthReason("EAABsbCS0123456789 leaked")).toBe("");
     expect(safeOauthReason("access_denied")).toBe("access_denied");
     expect(safeOauthDetail("Requires pages_show_list")).toBe("Requires pages_show_list");
@@ -731,5 +778,302 @@ describe("Facebook OAuth callback", () => {
     expectAppRedirect(res, "expired");
     expect(res.headers.get("location") || "").toMatch(/#$/);
     expect(res.headers.get("location") || "").toContain("network=facebook");
+  });
+});
+
+describe("Instagram account labels", () => {
+  it("labels the Instagram username or IG id, never the Facebook Page name", () => {
+    expect(instagramAccountLabel({ igUsername: "dusklycafe", igUserId: "1784" })).toBe("@dusklycafe");
+    expect(instagramAccountLabel({ igUsername: "@dusklycafe" })).toBe("@dusklycafe");
+    expect(instagramAccountLabel({ igUserId: "1784" })).toBe("1784");
+    expect(instagramAccountLabel({})).toBe("");
+    expect(
+      facebookConnectHandle("instagram", [
+        { id: "p1", name: "Cafe Page", accessToken: "t", igUserId: "1784", igUsername: "dusklycafe" },
+      ]),
+    ).toBe("@dusklycafe");
+    expect(
+      facebookConnectHandle("facebook", [{ id: "p1", name: "Cafe Page", accessToken: "t" }]),
+    ).toBe("Cafe Page");
+    expect(
+      facebookConnectHandle("instagram", [
+        { id: "p1", name: "Cafe", accessToken: "t", igUserId: "1", igUsername: "one" },
+        { id: "p2", name: "Shop", accessToken: "t", igUserId: "2", igUsername: "two" },
+      ]),
+    ).toBe("instagram · pick an account");
+    expect(
+      facebookConnectHandle("facebook", [
+        { id: "p1", name: "Cafe", accessToken: "t" },
+        { id: "p2", name: "Shop", accessToken: "t" },
+      ]),
+    ).toBe("facebook · pick a Page");
+  });
+
+  it("lists only Pages with a linked Instagram professional account when requireIg", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes("/me/accounts")) {
+          expect(u).toContain("instagram_business_account");
+          expect(u).toContain("username");
+          return graphRes(true, {
+            data: [
+              { id: "p1", name: "Cafe Page", access_token: "page-1", instagram_business_account: { id: "1784", username: "dusklycafe" } },
+              { id: "p2", name: "Bare Page", access_token: "page-2" },
+            ],
+          });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const listed = await listFacebookPages("user-token", true);
+    expect(listed.error).toBeUndefined();
+    expect(listed.pages).toEqual([
+      { id: "p1", name: "Cafe Page", accessToken: "page-1", igUserId: "1784", igUsername: "dusklycafe" },
+    ]);
+  });
+
+  it("fetches the Instagram username when /me/accounts only returns the IG id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, {
+            data: [{ id: "p1", name: "Cafe Page", access_token: "page-1", instagram_business_account: { id: "1784" } }],
+          });
+        }
+        if (u.includes("/1784") && u.includes("username")) {
+          return graphRes(true, { username: "dusklycafe" });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const listed = await listFacebookPages("user-token", true);
+    expect(listed.pages[0]?.igUsername).toBe("dusklycafe");
+    expect(instagramAccountLabel(listed.pages[0]!)).toBe("@dusklycafe");
+  });
+});
+
+async function instagramCallback(env: Env, search = `code=test-code&state=${FB_STATE}`) {
+  return worker.fetch(
+    new Request(`https://api.duskly.site/v1/accounts/oauth/instagram/callback?${search}`),
+    env,
+    {} as ExecutionContext,
+  );
+}
+
+function instagramCallbackEnv(overrides: Record<string, unknown> = {}) {
+  return callbackEnv({
+    KV: memoryKv({ [`oauth:${FB_STATE}`]: fbStored("instagram") }),
+    ...overrides,
+  });
+}
+
+describe("Instagram OAuth callback", () => {
+  it("redirects no_page when Pages exist but none have a linked Instagram professional account", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const { url: u, body } = fetchUrlAndBody(url, init);
+        if (isCodeExchange(u, body)) return graphRes(true, { access_token: "short-token" });
+        if (isLongLived(u, body)) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me?") && u.includes("fields=id")) return graphRes(true, { id: "99" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, { data: [{ id: "p1", name: "Cafe Page", access_token: "page-token" }] });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramCallbackEnv());
+    expectAppRedirect(res, "no_page");
+    expect(res.headers.get("location") || "").toContain("reason=no_page");
+    expect(res.headers.get("location") || "").toContain("network=instagram");
+  });
+
+  it("connects a single Instagram account without asking the user to pick a Page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const { url: u, body } = fetchUrlAndBody(url, init);
+        if (isCodeExchange(u, body)) return graphRes(true, { access_token: "short-token" });
+        if (isLongLived(u, body)) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me?") && u.includes("fields=id")) return graphRes(true, { id: "99" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, {
+            data: [
+              { id: "p1", name: "Cafe Page", access_token: "page-token", instagram_business_account: { id: "1784", username: "dusklycafe" } },
+              { id: "p2", name: "Bare Page", access_token: "other-token" },
+            ],
+          });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramCallbackEnv({ DB: mockD1() }));
+    expectAppRedirect(res, "ok");
+    const loc = res.headers.get("location") || "";
+    expect(loc).toContain("network=instagram");
+    expect(loc).not.toContain("accountId=");
+  });
+
+  it("asks the user to pick among Instagram usernames when several Pages have IG accounts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const { url: u, body } = fetchUrlAndBody(url, init);
+        if (isCodeExchange(u, body)) return graphRes(true, { access_token: "short-token" });
+        if (isLongLived(u, body)) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me?") && u.includes("fields=id")) return graphRes(true, { id: "99" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, {
+            data: [
+              { id: "p1", name: "Cafe Page", access_token: "page-1", instagram_business_account: { id: "1784", username: "dusklycafe" } },
+              { id: "p2", name: "Shop Page", access_token: "page-2", instagram_business_account: { id: "1785", username: "dusklyshop" } },
+            ],
+          });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramCallbackEnv({ DB: mockD1() }));
+    expectAppRedirect(res, "ok");
+    const loc = res.headers.get("location") || "";
+    expect(loc).toContain("network=instagram");
+    expect(loc).toContain("accountId=");
+  });
+});
+
+function instagramLoginEnv(overrides: Record<string, unknown> = {}) {
+  return instagramCallbackEnv({
+    INSTAGRAM_APP_ID: "ig-app-id",
+    INSTAGRAM_APP_SECRET: "ig-app-secret",
+    ...overrides,
+  });
+}
+
+function isInstagramCodeExchange(url: string) {
+  return url.includes("https://api.instagram.com/oauth/access_token");
+}
+
+function isInstagramLongLived(url: string) {
+  return url.includes("https://graph.instagram.com/access_token") && url.includes("ig_exchange_token");
+}
+
+function isInstagramLoginMe(url: string) {
+  return url.includes("https://graph.instagram.com/v21.0/me") && url.includes("user_id");
+}
+
+describe("Instagram Login OAuth callback", () => {
+  it("POSTs client_id, secret, grant_type, redirect_uri, and code to api.instagram.com", async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      graphRes(false, { error: { message: "redirect_uri mismatch", type: "OAuthException" } }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const res = await instagramCallback(instagramLoginEnv());
+    expectAppRedirect(res, "token_failed");
+    expect(String(fetch.mock.calls[0][0])).toBe("https://api.instagram.com/oauth/access_token");
+    const init = fetch.mock.calls[0][1] as { method?: string; body?: URLSearchParams };
+    expect(init.method).toBe("POST");
+    const q = new URLSearchParams(String(init.body));
+    expect(q.get("client_id")).toBe("ig-app-id");
+    expect(q.get("client_secret")).toBe("ig-app-secret");
+    expect(q.get("grant_type")).toBe("authorization_code");
+    expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/instagram/callback");
+    expect(q.get("code")).toBe("test-code");
+    expect(res.headers.get("location") || "").toContain("reason=redirect_uri");
+  });
+
+  it("connects a professional account without a Facebook Page after long-lived token and /me", async () => {
+    const fetch = vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+      const u = String(url);
+      if (isInstagramCodeExchange(u)) return graphRes(true, { access_token: "ig-short", user_id: "1784" });
+      if (isInstagramLongLived(u)) return graphRes(true, { access_token: "ig-long", expires_in: 5184000 });
+      if (isInstagramLoginMe(u)) return graphRes(true, { user_id: "1784", username: "dusklycafe" });
+      return graphRes(false, { url: u, body: init?.body != null ? String(init.body) : "" });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const res = await instagramCallback(instagramLoginEnv({ DB: mockD1() }));
+    expectAppRedirect(res, "ok");
+    const loc = res.headers.get("location") || "";
+    expect(loc).toContain("network=instagram");
+    expect(loc).not.toContain("accountId=");
+    expect(fetch.mock.calls.some(([u]) => String(u).includes("/me/accounts"))).toBe(false);
+    expect(fetch.mock.calls.some(([u]) => String(u).includes("graph.facebook.com"))).toBe(false);
+    expect(fetch.mock.calls.some(([u]) => isInstagramLongLived(String(u)))).toBe(true);
+    expect(fetch.mock.calls.some(([u]) => isInstagramLoginMe(String(u)))).toBe(true);
+  });
+
+  it("accepts the Instagram data[] token payload shape", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (isInstagramCodeExchange(u)) {
+          return graphRes(true, { data: [{ access_token: "ig-short", user_id: "1784" }] });
+        }
+        if (isInstagramLongLived(u)) return graphRes(true, { access_token: "ig-long" });
+        if (isInstagramLoginMe(u)) return graphRes(true, { user_id: "1784", username: "dusklycafe" });
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramLoginEnv({ DB: mockD1() }));
+    expectAppRedirect(res, "ok");
+  });
+
+  it("surfaces not_professional when Meta rejects a personal account", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (isInstagramCodeExchange(u)) return graphRes(true, { access_token: "ig-short" });
+        if (isInstagramLongLived(u)) return graphRes(true, { access_token: "ig-long" });
+        if (isInstagramLoginMe(u)) {
+          return graphRes(false, {
+            error: { message: "The Instagram account is not a professional account", type: "OAuthException" },
+          });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramLoginEnv());
+    expectAppRedirect(res, "error");
+    const loc = res.headers.get("location") || "";
+    expect(loc).toContain("reason=not_professional");
+    expect(loc).toContain("network=instagram");
+  });
+
+  it("falls back to Facebook Login + Pages when INSTAGRAM_APP_SECRET is unset", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { body?: URLSearchParams | string }) => {
+        const { url: u, body } = fetchUrlAndBody(url, init);
+        expect(u).not.toContain("api.instagram.com");
+        expect(u).not.toContain("graph.instagram.com");
+        if (isCodeExchange(u, body)) return graphRes(true, { access_token: "short-token" });
+        if (isLongLived(u, body)) return graphRes(true, { access_token: "long-token" });
+        if (u.includes("/me?") && u.includes("fields=id")) return graphRes(true, { id: "99" });
+        if (u.includes("/me/accounts")) {
+          return graphRes(true, {
+            data: [
+              { id: "p1", name: "Cafe Page", access_token: "page-token", instagram_business_account: { id: "1784", username: "dusklycafe" } },
+            ],
+          });
+        }
+        return graphRes(false, {});
+      }),
+    );
+    const res = await instagramCallback(instagramLoginEnv({ INSTAGRAM_APP_SECRET: "", DB: mockD1() }));
+    expectAppRedirect(res, "ok");
+    expect(res.headers.get("location") || "").toContain("network=instagram");
+  });
+
+  it("credentials persisted from Instagram Login record authKind instagram_login", () => {
+    expect(INSTAGRAM_LOGIN_AUTH).toBe("instagram_login");
+    const src = readFileSync(join(here, "../routes/oauth.ts"), "utf8");
+    expect(src).toContain("authKind: INSTAGRAM_LOGIN_AUTH");
+    expect(src).toContain("exchangeInstagramUserToken");
+    expect(src).toContain("instagramLoginConfigured");
   });
 });

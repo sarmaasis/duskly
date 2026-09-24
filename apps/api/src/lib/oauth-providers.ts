@@ -17,13 +17,46 @@ export type FacebookPage = {
   name: string;
   accessToken: string;
   igUserId?: string;
+  igUsername?: string;
 };
+
+/** User-facing Instagram label — username when Graph has it, otherwise the IG id. Never the Facebook Page name. */
+export function instagramAccountLabel(page: { igUsername?: string; igUserId?: string }): string {
+  const user = page.igUsername?.replace(/^@/, "").trim();
+  if (user) return `@${user}`;
+  return page.igUserId || "";
+}
+
+export function facebookConnectHandle(network: "instagram" | "facebook", pages: FacebookPage[]): string {
+  if (pages.length === 1) {
+    return network === "instagram" ? instagramAccountLabel(pages[0]) || "instagram-account" : pages[0].name;
+  }
+  return network === "instagram" ? "instagram · pick an account" : `${network} · pick a Page`;
+}
+
+/** Stored on Instagram Login credentials so publish uses graph.instagram.com, not a Page token. */
+export const INSTAGRAM_LOGIN_AUTH = "instagram_login";
+
+export function isInstagramLoginCreds(creds?: Record<string, string> | null): boolean {
+  return creds?.authKind === INSTAGRAM_LOGIN_AUTH;
+}
+
+export function instagramLoginConfigured(env: Env): boolean {
+  return !!(env.INSTAGRAM_APP_ID?.trim() && env.INSTAGRAM_APP_SECRET?.trim());
+}
+
+export function instagramAppCreds(env: Env): { appId: string; appSecret: string } {
+  return { appId: (env.INSTAGRAM_APP_ID || "").trim(), appSecret: (env.INSTAGRAM_APP_SECRET || "").trim() };
+}
 
 export function oauthConfigured(env: Env, network: Network): boolean {
   if (network === "x") return !!(env.X_CLIENT_ID && env.X_CLIENT_SECRET);
   if (network === "linkedin") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
   if (network === "mastodon") return true;
-  if (network === "instagram" || network === "threads" || network === "facebook") {
+  if (network === "instagram") {
+    return instagramLoginConfigured(env) || !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
+  }
+  if (network === "threads" || network === "facebook") {
     return !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
   }
   if (network === "youtube") return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
@@ -39,7 +72,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
       response_type: "code",
       client_id: env.X_CLIENT_ID!,
       redirect_uri: redirectUri,
-      scope: "tweet.read tweet.write users.read offline.access",
+      scope: "tweet.read tweet.write media.write users.read offline.access",
       state,
       code_challenge: challenge,
       code_challenge_method: "S256",
@@ -75,6 +108,17 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
       state,
     });
     return `https://threads.com/oauth/authorize?${params}`;
+  }
+  if (network === "instagram" && instagramLoginConfigured(env)) {
+    const { appId } = instagramAppCreds(env);
+    const params = new URLSearchParams({
+      client_id: appId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "instagram_business_basic,instagram_business_content_publish",
+      state,
+    });
+    return `https://www.instagram.com/oauth/authorize?${params}`;
   }
   if (network === "instagram" || network === "facebook") {
     const scope =
@@ -181,6 +225,15 @@ export function safeOauthDetail(raw: string | undefined | null, max = 160): stri
 export function classifyGraphOauthMessage(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("redirect_uri")) return "redirect_uri";
+  if (
+    m.includes("professional") ||
+    m.includes("business or creator") ||
+    m.includes("not a business") ||
+    m.includes("personal account") ||
+    m.includes("creator account required")
+  ) {
+    return "not_professional";
+  }
   if (m.includes("application secret") || m.includes("app secret") || m.includes("client secret") || m.includes("invalid client")) {
     return "bad_secret";
   }
@@ -304,17 +357,130 @@ export async function exchangeLongLivedFacebookToken(env: Env, shortLived: strin
   }
 }
 
+function instagramAccessTokenFromPayload(tok: Record<string, unknown>): string {
+  if (typeof tok.access_token === "string" && tok.access_token) return tok.access_token;
+  const data = tok.data;
+  if (Array.isArray(data) && data[0] && typeof data[0] === "object") {
+    const first = data[0] as { access_token?: unknown };
+    if (typeof first.access_token === "string") return first.access_token;
+  }
+  return "";
+}
+
+/** POST https://api.instagram.com/oauth/access_token — Instagram Login short-lived user token. */
+export async function exchangeInstagramUserToken(
+  env: Env,
+  code: string,
+  redirectUri: string,
+): Promise<FacebookTokenResult> {
+  const { appId, appSecret } = instagramAppCreds(env);
+  if (!appId || !appSecret) return { ok: false, reason: "missing_secret" };
+  try {
+    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: appId,
+        client_secret: appSecret,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri,
+        code,
+      }),
+    });
+    const tok = parseFacebookTokenPayload(await tokenRes.text());
+    const access = instagramAccessTokenFromPayload(tok);
+    if (!tokenRes.ok || !access || tok.error) {
+      return { ok: false, reason: graphOauthReason(tok), detail: graphOauthDetail(tok) || undefined };
+    }
+    return { ok: true, accessToken: access };
+  } catch {
+    return { ok: false, reason: "exchange" };
+  }
+}
+
+export async function exchangeLongLivedInstagramToken(
+  env: Env,
+  shortLived: string,
+): Promise<{ accessToken: string; expiresIn?: number }> {
+  if (!shortLived) return { accessToken: shortLived };
+  const { appSecret } = instagramAppCreds(env);
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/access_token?${new URLSearchParams({
+        grant_type: "ig_exchange_token",
+        client_secret: appSecret,
+        access_token: shortLived,
+      })}`,
+    );
+    const tok = parseFacebookTokenPayload(await res.text());
+    const next = instagramAccessTokenFromPayload(tok);
+    const expiresRaw = tok.expires_in;
+    const expiresIn = typeof expiresRaw === "number" && expiresRaw > 0 ? expiresRaw : undefined;
+    return { accessToken: next || shortLived, ...(expiresIn ? { expiresIn } : {}) };
+  } catch {
+    return { accessToken: shortLived };
+  }
+}
+
+export type InstagramLoginProfileResult =
+  | { ok: true; userId: string; username?: string }
+  | { ok: false; reason: string; detail?: string };
+
+export async function fetchInstagramLoginProfile(accessToken: string): Promise<InstagramLoginProfileResult> {
+  if (!accessToken) return { ok: false, reason: "profile" };
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/v21.0/me?${new URLSearchParams({
+        fields: "user_id,username",
+        access_token: accessToken,
+      })}`,
+    );
+    const data = parseFacebookTokenPayload(await res.text());
+    if (!res.ok || data.error) {
+      const reason = graphOauthReason(data);
+      return {
+        ok: false,
+        reason: reason === "token_failed" ? "profile" : reason,
+        detail: graphOauthDetail(data) || undefined,
+      };
+    }
+    const userId = String((data as { user_id?: unknown }).user_id || data.id || "").trim();
+    const rawUser = typeof (data as { username?: unknown }).username === "string" ? (data as { username: string }).username : "";
+    const username = rawUser.replace(/^@/, "").trim();
+    if (!userId) return { ok: false, reason: "profile" };
+    return { ok: true, userId, ...(username ? { username } : {}) };
+  } catch {
+    return { ok: false, reason: "profile" };
+  }
+}
+
 export type FacebookPagesResult = {
   pages: FacebookPage[];
   error?: { code?: string; message?: string };
 };
+
+async function fetchInstagramUsername(pageToken: string, igUserId: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${igUserId}?${new URLSearchParams({
+        fields: "username",
+        access_token: pageToken,
+      })}`,
+    );
+    const data = parseFacebookTokenPayload(await res.text()) as { username?: string };
+    const username = data.username?.replace(/^@/, "").trim();
+    return username || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export async function listFacebookPages(userToken: string, requireIg: boolean): Promise<FacebookPagesResult> {
   if (!userToken) return { pages: [] };
   try {
     const res = await fetch(
       `https://graph.facebook.com/v21.0/me/accounts?${new URLSearchParams({
-        fields: "id,name,access_token,instagram_business_account",
+        fields: "id,name,access_token,instagram_business_account{id,username}",
         access_token: userToken,
       })}`,
     );
@@ -324,7 +490,7 @@ export async function listFacebookPages(userToken: string, requireIg: boolean): 
         id?: string;
         name?: string;
         access_token?: string;
-        instagram_business_account?: { id?: string };
+        instagram_business_account?: { id?: string; username?: string };
       }>;
     };
     if (!res.ok || data.error) {
@@ -342,7 +508,17 @@ export async function listFacebookPages(userToken: string, requireIg: boolean): 
       if (!p.id || !p.access_token) continue;
       const igUserId = p.instagram_business_account?.id;
       if (requireIg && !igUserId) continue;
-      pages.push({ id: p.id, name: p.name || p.id, accessToken: p.access_token, igUserId });
+      let igUsername = p.instagram_business_account?.username?.replace(/^@/, "").trim() || undefined;
+      if (requireIg && igUserId && !igUsername) {
+        igUsername = await fetchInstagramUsername(p.access_token, igUserId);
+      }
+      pages.push({
+        id: p.id,
+        name: p.name || p.id,
+        accessToken: p.access_token,
+        ...(igUserId ? { igUserId } : {}),
+        ...(igUsername ? { igUsername } : {}),
+      });
     }
     return { pages };
   } catch {

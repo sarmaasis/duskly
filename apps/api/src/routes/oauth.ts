@@ -7,11 +7,18 @@ import { assertChannelLimit, planErrorResponse } from "../lib/entitlements";
 import { NETWORKS, NETWORK_META, type Network } from "../lib/networks";
 import { encryptCredentials, encryptFailureDetail, encryptSecret, isTokenEncryptError } from "../lib/secrets";
 import {
+  INSTAGRAM_LOGIN_AUTH,
   buildAuthorizeUrl,
   credsFromTokenJson,
   exchangeFacebookUserToken,
+  exchangeInstagramUserToken,
   exchangeLongLivedFacebookToken,
+  exchangeLongLivedInstagramToken,
   exchangeThreadsUserToken,
+  facebookConnectHandle,
+  fetchInstagramLoginProfile,
+  instagramAccountLabel,
+  instagramLoginConfigured,
   listFacebookPages,
   oauthConfigured,
   facebookUserId,
@@ -321,6 +328,36 @@ async function completeOAuthCallback(
         { access_token: th.accessToken, expires_in: th.expiresIn },
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
+    } else if (network === "instagram" && instagramLoginConfigured(c.env)) {
+      const exchanged = await exchangeInstagramUserToken(c.env, code, redirectUri);
+      if (!exchanged.ok) {
+        return fail(oauthFailQs(network, "token_failed", exchanged.reason, exchanged.detail));
+      }
+      const longLived = await exchangeLongLivedInstagramToken(c.env, exchanged.accessToken);
+      const profile = await fetchInstagramLoginProfile(longLived.accessToken);
+      if (!profile.ok) {
+        return fail(oauthFailQs(network, "error", profile.reason, profile.detail));
+      }
+      accessToken = longLived.accessToken;
+      handle = instagramAccountLabel({ igUsername: profile.username, igUserId: profile.userId }) || "instagram-account";
+      credentials = {
+        accessToken: longLived.accessToken,
+        authKind: INSTAGRAM_LOGIN_AUTH,
+        igUserId: profile.userId,
+        ...(profile.username ? { igUsername: profile.username } : {}),
+        metaUserId: profile.userId,
+      };
+      if (longLived.expiresIn) {
+        credentials = applyTokenResponse(credentials, {
+          access_token: longLived.accessToken,
+          expires_in: longLived.expiresIn,
+        });
+      }
+      try {
+        await c.env.KV.put(`meta-user:${profile.userId}`, stored.workspaceId);
+      } catch {
+        /* best-effort map for Meta data-deletion */
+      }
     } else if (network === "instagram" || network === "facebook") {
       const exchanged = await exchangeFacebookUserToken(c.env, code, redirectUri);
       if (!exchanged.ok) {
@@ -346,17 +383,18 @@ async function completeOAuthCallback(
       if (pages.length === 1) {
         const page = pages[0];
         accessToken = page.accessToken;
-        handle = page.name;
+        handle = facebookConnectHandle(network, pages);
         credentials = {
           accessToken: page.accessToken,
           pageId: page.id,
           pageName: page.name,
           ...(page.igUserId ? { igUserId: page.igUserId } : {}),
+          ...(page.igUsername ? { igUsername: page.igUsername } : {}),
           ...(metaUserId ? { metaUserId } : {}),
         };
       } else {
         accessToken = pages[0].accessToken;
-        handle = `${network} · pick a Page`;
+        handle = facebookConnectHandle(network, pages);
         status = "needs_page";
         credentials = {
           accessToken: pages[0].accessToken,
@@ -469,7 +507,7 @@ async function completeOAuthCallback(
       workspaceId: stored.workspaceId,
       network,
       handle,
-      externalId: handle,
+      externalId: network === "instagram" && credentials.igUserId ? credentials.igUserId : handle,
       tokenCipher: await encryptSecret(c.env, accessToken),
       credentialsJson: await encryptCredentials(c.env, credentials),
       groupId: stored.groupId || null,
