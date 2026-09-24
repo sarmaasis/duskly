@@ -1,7 +1,8 @@
-import { Component, ElementRef, OnInit, ViewChild, signal } from "@angular/core";
+import { Component, ElementRef, OnInit, ViewChild, inject, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { RouterLink } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
+import { Notices } from "../lib/notices";
 import { lsSet } from "../lib/browser";
 import { PICTURE_EDITOR_FRAME_MAX, pictureEditorFrameRects } from "../lib/picture-editor";
 import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
@@ -83,19 +84,12 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </div>
           </section>
 
-          <section class="space-y-5 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
-            <div>
-              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Publish Options</h2>
-              <p class="text-xs text-zinc-500 dark:text-zinc-400">When it goes out, and how it repeats.</p>
-            </div>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 md:col-span-2">Schedule
-                <div class="mt-1.5"><dk-datetime [(ngModel)]="when" placeholder="Pick date & time" /></div>
-              </label>
-              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Post delay (seconds)
-                <input type="number" [(ngModel)]="delaySeconds" min="0" [class]="fieldMt" />
-              </label>
-            </div>
+          <details class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-zinc-400">Repeat, comment, and sets</summary>
+            <div class="mt-4 space-y-5">
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Post delay (seconds)
+              <input type="number" [(ngModel)]="delaySeconds" min="0" [class]="fieldMt" />
+            </label>
             <div>
               <p class="mb-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">Repeat</p>
               <div class="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Repeat">
@@ -143,11 +137,8 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                 </div>
               </label>
             </div>
-          </section>
-
-          <section class="space-y-4 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
             <div>
-              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">First Comment</h2>
+              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">First comment</h2>
               <p class="text-xs text-zinc-500 dark:text-zinc-400">Optional reply under the post. Delay waits before sending.</p>
             </div>
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -158,13 +149,12 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                 <input type="number" [(ngModel)]="commentDelaySeconds" min="0" [disabled]="!commentBody" [class]="fieldMt" />
               </label>
             </div>
-          </section>
-
-          <section class="space-y-6 rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
-            <div>
-              <h2 class="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Picture Editor</h2>
-              <p class="text-xs text-zinc-500 dark:text-zinc-400">Upload, adjust, overlay text, export into the media library.</p>
             </div>
+          </details>
+
+          <details class="rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wider text-zinc-400">Adjust a picture</summary>
+            <div class="mt-4 space-y-6">
             <label class="relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#e8e8e3] bg-[#fcfcf9] p-8 text-center transition-colors hover:bg-[#f7f7f4] dark:border-zinc-600 dark:bg-zinc-800 dark:hover:bg-zinc-800/80">
               <span class="text-sm font-medium text-[#121417] dark:text-zinc-100">Choose an image</span>
               <span class="mt-1 text-xs text-zinc-400 dark:text-zinc-400">PNG or JPEG</span>
@@ -208,7 +198,8 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             <div>
               <button type="button" (click)="exportEdited()" class="rounded-xl bg-[#121417] px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">Export to media library</button>
             </div>
-          </section>
+            </div>
+          </details>
 
           <div class="pb-2 lg:hidden">
             <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-cta-hover">Schedule post</button>
@@ -247,8 +238,15 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </div>
           </section>
 
+          <section class="space-y-3 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">When
+              <div class="mt-1.5"><dk-datetime [(ngModel)]="when" placeholder="Pick date and time" /></div>
+            </label>
+            <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-cta-hover">Schedule post</button>
+          </section>
+
           <section class="space-y-4 rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs dark:border-zinc-700 dark:bg-zinc-900">
-            <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Plan Quotas</h2>
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Plan</h2>
             <dl class="space-y-2.5 text-xs">
               <div class="flex items-center justify-between border-b border-[#e8e8e3]/60 pb-2 dark:border-zinc-700">
                 <dt class="text-zinc-600 dark:text-zinc-400">AI images</dt>
@@ -265,17 +263,13 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             </dl>
           </section>
 
-          <section class="hidden rounded-2xl border border-[#e8e8e3] bg-white p-5 shadow-xs lg:block dark:border-zinc-700 dark:bg-zinc-900">
-            <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-all hover:bg-cta-hover">
-              Schedule post
-            </button>
-          </section>
         </aside>
       </div>
     </div>
   `,
 })
 export class ComposerPage implements OnInit {
+  private readonly notices = inject(Notices);
   @ViewChild("canvas") canvasRef?: ElementRef<HTMLCanvasElement>;
   readonly fieldMt =
     "mt-1.5 h-11 w-full rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] px-3.5 text-sm text-[#121417] outline-none transition-colors focus:border-cta focus:ring-1 focus:ring-cta disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100";
@@ -682,12 +676,13 @@ export class ComposerPage implements OnInit {
   flash(m: string) {
     this.err.set(false);
     this.msg.set(m);
+    this.notices.push("ok", m);
   }
   fail(e: unknown) {
     this.err.set(true);
     const body = e as { message?: string; error?: string; body?: { message?: string; error?: string } };
-    this.msg.set(
-      body?.body?.message || body?.body?.error || body?.message || body?.error || "Request failed",
-    );
+    const text = body?.body?.message || body?.body?.error || body?.message || body?.error || "Request failed";
+    this.msg.set(text);
+    this.notices.push("error", text);
   }
 }

@@ -18,9 +18,10 @@ function isLocalAuthHost(env: Env) {
   return url.includes("localhost") || url.includes("127.0.0.1");
 }
 
-async function deliverOtp(env: Env, email: string, otp: string, type: string) {
+async function deliverOtp(env: Env, email: string, otp: string, type: string, logLocal = isLocalAuthHost(env)) {
   const mailer = env.EMAIL;
-  const localAuth = isLocalAuthHost(env);
+  const localAuth = logLocal || isLocalAuthHost(env);
+  if (localAuth) console.info(`[auth] OTP for ${email} (${type}): ${otp}`);
   if (mailer && typeof mailer.send === "function") {
     try {
       await sendViaEmailBinding(mailer, {

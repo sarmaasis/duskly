@@ -15,6 +15,7 @@ import { assertWorkspaceAccess } from "../lib/workspace";
 import { planErrorResponse } from "../lib/entitlements";
 import { expandRepeatTimes } from "../lib/schedule";
 import { isImageMedia } from "../lib/networks";
+import { signPublicMediaUrl } from "../lib/media-signed-url";
 
 export const createPost = z.object({
   workspaceId: z.string(),
@@ -97,7 +98,74 @@ postRoutes.get("/", async (c) => {
     .from(posts)
     .where(eq(posts.workspaceId, workspaceId))
     .orderBy(desc(posts.scheduledAt));
-  return c.json({ posts: rows });
+  const ids = rows.map((row) => row.id);
+  const issuesByPost = new Map<string, { network: string; handle: string; status: string; error: string | null }[]>();
+  const channelsByPost = new Map<string, { network: string; handle: string; status: string }[]>();
+  const mediaIdsByPost = new Map<string, string[]>();
+  const mediaIdSet = new Set<string>();
+  for (const row of rows) {
+    let parsed: string[] = [];
+    try {
+      const value = row.mediaIds ? JSON.parse(row.mediaIds) : [];
+      if (Array.isArray(value)) parsed = value.filter((id): id is string => typeof id === "string");
+    } catch {
+      parsed = [];
+    }
+    mediaIdsByPost.set(row.id, parsed);
+    for (const id of parsed) mediaIdSet.add(id);
+  }
+  if (ids.length) {
+    const dests = await db
+      .select({
+        postId: postDestination.postId,
+        status: postDestination.status,
+        error: postDestination.error,
+        network: socialAccount.network,
+        handle: socialAccount.handle,
+      })
+      .from(postDestination)
+      .innerJoin(socialAccount, eq(postDestination.socialAccountId, socialAccount.id))
+      .where(inArray(postDestination.postId, ids));
+    for (const dest of dests) {
+      const channels = channelsByPost.get(dest.postId) ?? [];
+      channels.push({ network: dest.network, handle: dest.handle, status: dest.status });
+      channelsByPost.set(dest.postId, channels);
+      if (dest.status !== "queued" && dest.status !== "failed") continue;
+      const list = issuesByPost.get(dest.postId) ?? [];
+      list.push({
+        network: dest.network,
+        handle: dest.handle,
+        status: dest.status,
+        error: dest.error,
+      });
+      issuesByPost.set(dest.postId, list);
+    }
+  }
+  const mediaRows = mediaIdSet.size
+    ? await db.select().from(media).where(inArray(media.id, [...mediaIdSet]))
+    : [];
+  const mediaById = new Map(mediaRows.map((row) => [row.id, row]));
+  const postsOut = [];
+  for (const row of rows) {
+    const attached = (mediaIdsByPost.get(row.id) ?? [])
+      .map((id) => mediaById.get(id))
+      .filter((item): item is (typeof mediaRows)[number] => !!item);
+    const previewSource = attached.find((item) => item.kind !== "video") ?? attached[0];
+    const preview = previewSource
+      ? {
+          id: previewSource.id,
+          kind: previewSource.kind,
+          url: await signPublicMediaUrl(c.env, previewSource.id),
+        }
+      : null;
+    postsOut.push({
+      ...row,
+      issues: issuesByPost.get(row.id) ?? [],
+      channels: channelsByPost.get(row.id) ?? [],
+      preview,
+    });
+  }
+  return c.json({ posts: postsOut });
 });
 
 postRoutes.post("/", async (c) => {

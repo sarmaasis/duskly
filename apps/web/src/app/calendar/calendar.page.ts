@@ -1,86 +1,186 @@
 import { Component, signal, OnInit } from "@angular/core";
-import { FormsModule } from "@angular/forms";
 import { RouterLink } from "@angular/router";
 import { api } from "../lib/api";
 import { lsGet, lsSet } from "../lib/browser";
-import { DkSeg } from "../ui/forms";
 
-type Post = { id: string; body: string; status: string; scheduledAt: string | Date | null };
+type Channel = { network: string; handle: string; status: string };
+type Preview = { url: string; kind: string };
+type Post = {
+  id: string;
+  body: string;
+  status: string;
+  scheduledAt: string | Date | null;
+  preview?: Preview | null;
+  channels?: Channel[];
+  issues?: { network: string; handle: string; status: string; error: string | null }[];
+};
+
+type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts: Post[] };
 
 @Component({
   standalone: true,
-  imports: [RouterLink, FormsModule, DkSeg],
+  imports: [RouterLink],
   template: `
-    <div class="mx-auto max-w-5xl">
-      <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Schedule</p>
-          <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Calendar</h1>
-          <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">Month and agenda views of your scheduled posts.</p>
+    <div class="mx-auto max-w-6xl">
+      <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-2">
+          <button type="button" (click)="shiftMonth(-1)" class="inline-flex size-9 items-center justify-center rounded-full border border-[#e8e8e3] bg-white text-[#121417] hover:bg-[#f7f7f4] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" aria-label="Previous month">‹</button>
+          <h1 class="min-w-[10rem] text-center font-display text-xl font-bold tracking-tight dark:text-zinc-50">{{ monthLabel() }}</h1>
+          <button type="button" (click)="shiftMonth(1)" class="inline-flex size-9 items-center justify-center rounded-full border border-[#e8e8e3] bg-white text-[#121417] hover:bg-[#f7f7f4] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" aria-label="Next month">›</button>
+          <button type="button" (click)="goToday()" class="ml-1 h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs font-semibold text-[#52525b] hover:text-[#09090b] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">Today</button>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <dk-seg [options]="viewOpts" [value]="view()" (pick)="view.set($any($event))" />
-          <a routerLink="/app/compose" class="inline-flex h-9 items-center rounded-full bg-cta px-4 font-mono text-xs font-semibold text-white hover:bg-cta-hover">New post</a>
+        <div class="flex items-center gap-2">
+          <div class="inline-flex rounded-full border border-[#e8e8e3] bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900" role="tablist" aria-label="Calendar view">
+            <button type="button" role="tab" (click)="view.set('month')" [attr.aria-selected]="view()==='month'" class="h-8 rounded-full px-3 text-xs font-semibold" [class.bg-[#09090b]]="view()==='month'" [class.text-white]="view()==='month'" [class.text-[#71717a]]="view()!=='month'">Month</button>
+            <button type="button" role="tab" (click)="view.set('agenda')" [attr.aria-selected]="view()==='agenda'" class="h-8 rounded-full px-3 text-xs font-semibold" [class.bg-[#09090b]]="view()==='agenda'" [class.text-white]="view()==='agenda'" [class.text-[#71717a]]="view()!=='agenda'">Agenda</button>
+          </div>
+          <a routerLink="/app/compose" class="inline-flex h-9 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white hover:bg-cta-hover">New post</a>
         </div>
       </div>
 
       @if (error()) {
-        <p class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">{{ error() }}</p>
+        <p class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100" role="alert">{{ error() }}</p>
       }
 
-      @if (view() === 'month') {
-        <div class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
+      @if (loading()) {
+        <div class="grid grid-cols-7 gap-px overflow-hidden rounded-xl border border-[#e8e8e3] bg-[#e8e8e3] dark:border-zinc-700 dark:bg-zinc-800">
+          @for (n of skeleton; track n) {
+            <div class="h-28 animate-pulse bg-[#f7f7f4] dark:bg-zinc-900"></div>
+          }
+        </div>
+      } @else if (view() === 'month') {
+        <div class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white dark:border-zinc-700 dark:bg-zinc-900">
           <div class="grid grid-cols-7 border-b border-[#e8e8e3] bg-[#f7f7f4] dark:border-zinc-700 dark:bg-zinc-800">
             @for (d of dow; track d) {
-              <div class="px-2 py-2.5 text-center font-mono text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">{{ d }}</div>
+              <div class="px-2 py-2 text-center font-mono text-[10px] font-semibold uppercase tracking-wider text-[#a1a1aa]">{{ d }}</div>
             }
           </div>
           <div class="grid grid-cols-7">
             @for (cell of monthCells(); track cell.key) {
-              <div class="min-h-24 border-b border-r border-[#e8e8e3] p-1.5 dark:border-zinc-800" [class.bg-[#f7f7f4]/50]="!cell.inMonth" [class.dark:bg-zinc-950]="!cell.inMonth">
-                <p class="text-[11px] font-semibold dark:text-zinc-200" [class.text-[#a1a1aa]]="!cell.inMonth">{{ cell.day }}</p>
-                <div class="mt-1 space-y-1">
-                  @for (p of cell.posts; track p.id) {
-                    <p class="truncate rounded bg-orange-50 px-1 py-0.5 text-[10px] font-medium text-cta dark:bg-orange-950/40">{{ p.body }}</p>
+              <button type="button" (click)="openDay(cell)" class="flex min-h-32 flex-col border-b border-r border-[#e8e8e3] p-1.5 text-left hover:bg-[#fcfcf9] dark:border-zinc-800 dark:hover:bg-zinc-800/40" [class.bg-[#f7f7f4]/70]="!cell.inMonth" [class.dark:bg-zinc-950]="!cell.inMonth" [class.cursor-pointer]="cell.posts.length">
+                <span class="mb-1 inline-flex size-6 items-center justify-center rounded-full text-[11px] font-semibold" [class.bg-cta]="cell.today" [class.text-white]="cell.today" [class.text-[#a1a1aa]]="!cell.inMonth && !cell.today" [class.dark:text-zinc-200]="cell.inMonth && !cell.today">{{ cell.day }}</span>
+                @if (cell.posts[0]; as p) {
+                  <span class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md bg-[#f7f7f4] dark:bg-zinc-800">
+                    @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
+                      <img [src]="p.preview.url" alt="" class="h-14 w-full object-cover" />
+                    } @else if (p.preview) {
+                      <span class="flex h-10 items-center justify-center text-[9px] font-semibold text-zinc-600 dark:text-zinc-200">VID</span>
+                    }
+                    <span class="flex items-center gap-1 px-1 py-1">
+                      @for (ch of (p.channels || []).slice(0, 3); track ch.network + ch.handle) {
+                        <img [src]="'/assets/logos/' + ch.network + '.svg'" alt="" width="12" height="12" class="size-3 shrink-0 object-contain" />
+                      }
+                      <span class="min-w-0 truncate text-[10px] font-medium text-[#121417] dark:text-zinc-100">{{ p.body }}</span>
+                    </span>
+                  </span>
+                  @if (cell.posts.length > 1) {
+                    <span class="mt-1 text-[10px] font-semibold text-cta">+{{ cell.posts.length - 1 }} more</span>
                   }
-                </div>
-              </div>
+                }
+              </button>
             }
           </div>
         </div>
       } @else {
-        <div class="space-y-3">
-          @for (p of posts(); track p.id) {
-            <article class="rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-              <div class="flex items-center justify-between gap-3">
-                <p class="font-mono text-[11px] text-[#a1a1aa]">{{ formatWhen(p.scheduledAt) }} · {{ p.status }}</p>
-                <button type="button" (click)="queueNow(p.id)" class="text-xs font-bold text-cta hover:underline">Queue now</button>
+        <div class="space-y-6">
+          @for (group of agenda(); track group.key) {
+            <section>
+              <h2 class="mb-2 font-mono text-[11px] font-semibold uppercase tracking-wider text-[#a1a1aa]">{{ group.label }}</h2>
+              <div class="space-y-2">
+                @for (p of group.posts; track p.id) {
+                  <article class="flex gap-3 rounded-xl border border-[#e8e8e3] bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                    @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
+                      <img [src]="p.preview!.url" alt="" class="size-16 shrink-0 rounded-lg object-cover" />
+                    } @else {
+                      <span class="flex size-16 shrink-0 items-center justify-center rounded-lg bg-[#f7f7f4] text-[10px] font-semibold text-[#a1a1aa] dark:bg-zinc-800">{{ p.preview ? 'VID' : 'TXT' }}</span>
+                    }
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-start justify-between gap-3">
+                        <p class="line-clamp-2 text-[13px] leading-snug dark:text-zinc-100">{{ p.body }}</p>
+                        <span class="shrink-0 rounded-full bg-[#f7f7f4] px-2 py-0.5 font-mono text-[10px] uppercase text-[#63676c] dark:bg-zinc-800 dark:text-zinc-300">{{ p.status }}</span>
+                      </div>
+                      <div class="mt-2 flex flex-wrap items-center gap-2">
+                        @for (ch of p.channels || []; track ch.network + ch.handle) {
+                          <span class="inline-flex items-center gap-1 text-[11px] text-[#63676c] dark:text-zinc-400">
+                            <img [src]="'/assets/logos/' + ch.network + '.svg'" alt="" width="12" height="12" class="size-3 object-contain" />
+                            {{ ch.handle }}
+                          </span>
+                        }
+                        <span class="text-[11px] text-[#a1a1aa]">{{ formatTime(p.scheduledAt) }}</span>
+                        @if (canQueue(p)) {
+                          <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta hover:underline">Send now</button>
+                        }
+                      </div>
+                    </div>
+                  </article>
+                }
               </div>
-              <p class="mt-1 text-[13px] leading-relaxed dark:text-zinc-200">{{ p.body }}</p>
-            </article>
+            </section>
           } @empty {
-            <div class="rounded-xl border border-[#e8e8e3] bg-white p-6 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-              <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Empty calendar</p>
-              <h2 class="mt-2 font-display text-lg font-semibold dark:text-zinc-100">No posts yet</h2>
-              <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">Compose a post to fill the month and agenda views.</p>
-              <a routerLink="/app/compose" class="mt-4 inline-flex h-9 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white hover:bg-cta-hover">Compose your first post</a>
+            <div class="rounded-xl border border-[#e8e8e3] bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
+              <h2 class="font-display text-lg font-semibold dark:text-zinc-100">Nothing scheduled</h2>
+              <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">Compose a post and it will land on its day with the picture attached.</p>
+              <a routerLink="/app/compose" class="mt-4 inline-flex h-9 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white hover:bg-cta-hover">Compose a post</a>
             </div>
           }
         </div>
       }
     </div>
+
+    @if (dayOpen()) {
+      <button type="button" class="fixed inset-0 z-30 bg-[#09090b]/20" aria-label="Close day" (click)="dayOpen.set(null)"></button>
+      <aside
+        class="fixed z-40 flex max-h-[min(32rem,calc(100vh-2rem))] w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-[#e8e8e3] bg-white shadow-[0_16px_48px_rgba(15,18,24,0.18)] dark:border-zinc-700 dark:bg-zinc-900"
+        [style.left.px]="panelX()"
+        [style.top.px]="panelY()"
+        role="dialog"
+        aria-label="Posts on this day"
+      >
+        <header class="flex cursor-grab items-center justify-between border-b border-[#e8e8e3] px-3 py-2.5 active:cursor-grabbing dark:border-zinc-800" (pointerdown)="startDrag($event)">
+          <p class="font-display text-sm font-bold dark:text-zinc-50">{{ dayOpen()!.label }}</p>
+          <button type="button" (click)="dayOpen.set(null)" class="text-[12px] font-semibold text-[#63676c]">Close</button>
+        </header>
+        <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+          @for (p of dayOpen()!.posts; track p.id) {
+            <article class="rounded-lg border border-[#e8e8e3] p-2 dark:border-zinc-800">
+              @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
+                <img [src]="p.preview!.url" alt="" class="mb-2 h-36 w-full rounded-md object-cover" />
+              } @else if (p.preview) {
+                <p class="mb-2 rounded-md bg-[#f7f7f4] px-2 py-6 text-center text-[11px] font-semibold text-[#63676c] dark:bg-zinc-800">Video attached</p>
+              }
+              <p class="text-[13px] leading-snug dark:text-zinc-100">{{ p.body }}</p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <span class="font-mono text-[10px] uppercase text-[#a1a1aa]">{{ p.status }} · {{ formatTime(p.scheduledAt) }}</span>
+                @for (ch of p.channels || []; track ch.network + ch.handle) {
+                  <img [src]="'/assets/logos/' + ch.network + '.svg'" [alt]="ch.network" width="14" height="14" class="size-3.5 object-contain" />
+                }
+                @if (canQueue(p)) {
+                  <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta">Send now</button>
+                }
+              </div>
+              @for (issue of p.issues || []; track issue.network + issue.handle) {
+                <p class="mt-1 text-[12px] text-amber-800 dark:text-amber-200">{{ issue.network }}: {{ issue.error || issue.status }}</p>
+              }
+            </article>
+          }
+        </div>
+      </aside>
+    }
   `,
 })
 export class CalendarPage implements OnInit {
   view = signal<"month" | "agenda">("month");
-  viewOpts = [
-    { value: "month", label: "Month" },
-    { value: "agenda", label: "Agenda" },
-  ];
   posts = signal<Post[]>([]);
   error = signal("");
+  loading = signal(true);
+  cursor = signal(startOfMonth(new Date()));
+  dayOpen = signal<{ label: string; posts: Post[] } | null>(null);
+  panelX = signal(24);
+  panelY = signal(88);
   dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  monthCells = signal<{ key: string; day: number; inMonth: boolean; posts: Post[] }[]>([]);
+  skeleton = Array.from({ length: 35 }, (_, i) => i);
+  monthCells = signal<Cell[]>([]);
+  private workspaceId = "";
 
   async ngOnInit() {
     const ws = lsGet("dk-ws");
@@ -91,6 +191,7 @@ export class CalendarPage implements OnInit {
         await this.load(me.workspace.id);
       } catch {
         this.error.set("Sign in to load your calendar.");
+        this.loading.set(false);
         this.buildMonth([]);
       }
       return;
@@ -98,50 +199,130 @@ export class CalendarPage implements OnInit {
     await this.load(ws);
   }
 
+  monthLabel() {
+    return this.cursor().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  }
+
+  shiftMonth(delta: number) {
+    const c = this.cursor();
+    this.cursor.set(new Date(c.getFullYear(), c.getMonth() + delta, 1));
+    this.buildMonth(this.posts());
+    this.dayOpen.set(null);
+  }
+
+  goToday() {
+    this.cursor.set(startOfMonth(new Date()));
+    this.buildMonth(this.posts());
+  }
+
+  openDay(cell: Cell) {
+    if (!cell.posts.length) return;
+    const label = new Date(cell.key).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    this.dayOpen.set({ label, posts: cell.posts });
+    if (typeof window !== "undefined") {
+      this.panelX.set(Math.max(16, window.innerWidth - 420));
+      this.panelY.set(96);
+    }
+  }
+
+  startDrag(event: PointerEvent) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    event.preventDefault();
+    const originX = event.clientX;
+    const originY = event.clientY;
+    const left = this.panelX();
+    const top = this.panelY();
+    const move = (ev: PointerEvent) => {
+      this.panelX.set(Math.max(8, left + ev.clientX - originX));
+      this.panelY.set(Math.max(8, top + ev.clientY - originY));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  agenda() {
+    const cursor = this.cursor();
+    const groups = new Map<string, { key: string; label: string; posts: Post[] }>();
+    for (const post of this.posts()) {
+      const when = post.scheduledAt ? new Date(post.scheduledAt) : null;
+      if (when && (when.getFullYear() !== cursor.getFullYear() || when.getMonth() !== cursor.getMonth())) continue;
+      const key = when ? when.toDateString() : "unscheduled";
+      const label = when
+        ? when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })
+        : "Unscheduled";
+      const group = groups.get(key) ?? { key, label, posts: [] };
+      group.posts.push(post);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }
+
+  canQueue(post: Post) {
+    return post.status === "draft" || post.status === "scheduled";
+  }
+
   async load(workspaceId: string) {
+    this.workspaceId = workspaceId;
+    this.loading.set(true);
+    this.error.set("");
     try {
       const data = await api<{ posts: Post[] }>(`/v1/posts?workspaceId=${workspaceId}`);
-      this.posts.set(data.posts);
-      this.buildMonth(data.posts);
-    } catch {
-      this.error.set("Could not load posts. Is the API running?");
+      this.posts.set(data.posts || []);
+      this.buildMonth(data.posts || []);
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      this.error.set(status === 401 ? "Sign in to load your calendar." : "Could not load posts. Is the API running?");
       this.buildMonth([]);
+    } finally {
+      this.loading.set(false);
     }
   }
 
   buildMonth(list: Post[]) {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const cells: { key: string; day: number; inMonth: boolean; posts: Post[] }[] = [];
+    const cursor = this.cursor();
+    const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const end = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const today = new Date().toDateString();
+    const cells: Cell[] = [];
     const pad = start.getDay();
     for (let i = 0; i < pad; i++) {
       const d = new Date(start);
       d.setDate(d.getDate() - (pad - i));
-      cells.push({ key: d.toISOString(), day: d.getDate(), inMonth: false, posts: [] });
+      cells.push({ key: d.toISOString(), day: d.getDate(), inMonth: false, today: d.toDateString() === today, posts: postsOn(list, d) });
     }
     for (let day = 1; day <= end.getDate(); day++) {
-      const d = new Date(now.getFullYear(), now.getMonth(), day);
-      const key = d.toDateString();
-      const dayPosts = list.filter((p) => p.scheduledAt && new Date(p.scheduledAt).toDateString() === key);
-      cells.push({ key: d.toISOString(), day, inMonth: true, posts: dayPosts });
+      const d = new Date(cursor.getFullYear(), cursor.getMonth(), day);
+      cells.push({ key: d.toISOString(), day, inMonth: true, today: d.toDateString() === today, posts: postsOn(list, d) });
     }
     while (cells.length % 7) {
       const last = new Date(cells[cells.length - 1].key);
       last.setDate(last.getDate() + 1);
-      cells.push({ key: last.toISOString(), day: last.getDate(), inMonth: false, posts: [] });
+      cells.push({ key: last.toISOString(), day: last.getDate(), inMonth: false, today: false, posts: postsOn(list, last) });
     }
     this.monthCells.set(cells);
   }
 
-  formatWhen(v: string | Date | null) {
-    if (!v) return "unscheduled";
-    return new Date(v).toLocaleString();
+  formatTime(v: string | Date | null) {
+    if (!v) return "No time";
+    return new Date(v).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   }
 
   async queueNow(id: string) {
     await api(`/v1/posts/${id}/queue-now`, { method: "POST" });
-    const ws = lsGet("dk-ws");
-    if (ws) await this.load(ws);
+    if (this.workspaceId) await this.load(this.workspaceId);
+    this.dayOpen.set(null);
   }
+}
+
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function postsOn(list: Post[], day: Date) {
+  const key = day.toDateString();
+  return list.filter((post) => post.scheduledAt && new Date(post.scheduledAt).toDateString() === key);
 }

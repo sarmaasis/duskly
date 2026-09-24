@@ -1,7 +1,8 @@
-import { Component, computed, signal, OnInit } from "@angular/core";
+import { Component, computed, inject, signal, OnInit } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { ActivatedRoute } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
+import { Notices } from "../lib/notices";
 import { DkChoice, DkSelect, FIELD } from "../ui/forms";
 
 type NetMeta = { label: string; group: "social" | "blogs" | "chat"; connect: "oauth" | "token" };
@@ -47,15 +48,19 @@ const FALLBACK_META: Record<string, NetMeta> = {
           <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">Account</p>
           <h1 class="mt-1 font-display text-3xl font-bold tracking-tight dark:text-zinc-50">Accounts</h1>
           <p class="mt-1 max-w-xl text-sm text-[#63676c] dark:text-zinc-400">
-            Connect channels, split them by company for agency clients, and stay under your plan cap. Missing credentials keep posts queued.
+            Channels you can schedule to. Group them by company when you post for clients.
           </p>
         </div>
-        <div class="rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-          <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Channels</p>
-          <p class="mt-0.5 font-mono text-lg font-bold tabular-nums dark:text-zinc-50">
-            {{ usage()?.used?.['channels'] ?? accounts().length }}/{{ usage()?.limits?.channels ?? "—" }}
-          </p>
-          <p class="font-mono text-[10px] text-[#a1a1aa]">{{ usage()?.plan || "plan" }} cap</p>
+        <div class="flex items-center gap-3">
+          <div class="rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Channels</p>
+            <p class="mt-0.5 font-mono text-lg font-bold tabular-nums dark:text-zinc-50">
+              {{ usage()?.used?.['channels'] ?? accounts().length }}/{{ usage()?.limits?.channels ?? "—" }}
+            </p>
+          </div>
+          <button type="button" (click)="adding.set(!adding())" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-sm font-semibold text-white hover:bg-cta-hover">
+            {{ adding() ? 'Close' : 'Add channel' }}
+          </button>
         </div>
       </div>
 
@@ -63,15 +68,11 @@ const FALLBACK_META: Record<string, NetMeta> = {
         <p class="mb-4 rounded-xl border border-[#e8e8e3] bg-white px-4 py-3 text-[13px] shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ msg() }}</p>
       }
 
-      <section class="mb-6 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
-        <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Companies</p>
-            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">
-              Agency clients live here — each company owns its channels. Same model on every plan; Ultimate is sized for many clients.
-            </p>
-          </div>
-        </div>
+      <details class="mb-6 rounded-xl border border-[#e8e8e3] bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+        <summary class="cursor-pointer font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Companies</summary>
+        <p class="mt-2 text-[12px] text-[#63676c] dark:text-zinc-400">
+          Each company owns its channels. Filter the board by client.
+        </p>
         <form class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end" (ngSubmit)="createCompany()">
           <label class="min-w-0 flex-1 text-[11px] font-semibold text-[#71717a] dark:text-zinc-400">New company
             <input [(ngModel)]="companyName" name="companyName" placeholder="Acme Co" [class]="'mt-1 ' + field" />
@@ -117,9 +118,10 @@ const FALLBACK_META: Record<string, NetMeta> = {
             >{{ c.name }} · {{ c.accountIds.length }}</button>
           }
         </div>
-      </section>
+      </details>
 
-      <form class="mb-6 space-y-5 rounded-xl border border-[#e8e8e3] bg-white p-4 shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900" (ngSubmit)="connect()">
+      @if (adding()) {
+      <form class="mb-6 space-y-5 rounded-xl border border-[#e8e8e3] bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900" (ngSubmit)="connect()">
         @for (g of netGroups; track g.id) {
           <div>
             <p class="mb-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">{{ g.label }}</p>
@@ -222,12 +224,13 @@ const FALLBACK_META: Record<string, NetMeta> = {
           }
         }
       </form>
+      }
 
-      <section class="rounded-xl border border-[#e8e8e3] bg-white shadow-[0_1px_3px_rgba(15,18,24,0.06)] dark:border-zinc-700 dark:bg-zinc-900">
+      <section class="rounded-xl border border-[#e8e8e3] bg-white dark:border-zinc-700 dark:bg-zinc-900">
         <div class="flex flex-col gap-3 border-b border-[#e8e8e3] p-4 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-700">
           <div>
             <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Channel board</p>
-            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">Dense list for Pro/Ultimate scale — search and filter, no fake publish.</p>
+            <p class="mt-0.5 text-[12px] text-[#63676c] dark:text-zinc-400">Search and filter the channels you can post to.</p>
           </div>
           <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
             <input
@@ -246,81 +249,60 @@ const FALLBACK_META: Record<string, NetMeta> = {
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[36rem] text-left text-[13px]">
-            <thead>
-              <tr class="border-b border-[#e8e8e3] bg-[#f7f7f4] font-mono text-[10px] uppercase tracking-wider text-[#92969b] dark:border-zinc-700 dark:bg-zinc-800/80">
-                <th class="px-3 py-2 font-semibold">Channel</th>
-                <th class="px-3 py-2 font-semibold">Network</th>
-                <th class="px-3 py-2 font-semibold">Company</th>
-                <th class="px-3 py-2 font-semibold">Destination</th>
-                <th class="px-3 py-2 font-semibold">Status</th>
-                <th class="px-3 py-2 font-semibold"></th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (a of filteredAccounts(); track a.id) {
-                <tr class="border-b border-[#e8e8e3] last:border-0 dark:border-zinc-800">
-                  <td class="px-3 py-2">
-                    <div class="flex items-center gap-2.5">
-                      <img [src]="logoSrc(a.network)" [alt]="labelOf(a.network)" width="18" height="18" class="size-[18px] shrink-0 object-contain" />
-                      <span class="font-semibold dark:text-zinc-100">{{ a.handle }}</span>
-                    </div>
-                  </td>
-                  <td class="px-3 py-2 text-[#63676c] dark:text-zinc-400">{{ labelOf(a.network) }}</td>
-                  <td class="px-3 py-2">
-                    <select
-                      class="h-8 max-w-[10rem] appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-[12px] outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                      [ngModel]="a.groupId || ''"
-                      (ngModelChange)="assignCompany(a.id, $event)"
-                      [name]="'co-' + a.id"
-                    >
-                      <option value="">Unassigned</option>
-                      @for (c of companies(); track c.id) {
-                        <option [value]="c.id">{{ c.name }}</option>
-                      }
-                    </select>
-                  </td>
-                  <td class="px-3 py-2">
-                    @if (a.network === 'slack') {
-                      <select
-                        class="h-8 max-w-[12rem] appearance-none rounded-md border border-[#e8e8e3] bg-[#f7f7f4] px-2 text-[12px] outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                        [ngModel]="a.slackChannelId || ''"
-                        (focus)="loadSlackChannels(a.id)"
-                        (ngModelChange)="pickSlackChannel(a.id, $event)"
-                        [name]="'slack-' + a.id"
-                      >
-                        <option value="">{{ a.needsSlackChannel ? 'Pick a channel…' : (a.slackChannelName ? '#' + a.slackChannelName : 'Change channel…') }}</option>
-                        @for (ch of slackChannels()[a.id] || []; track ch.id) {
-                          <option [value]="ch.id">#{{ ch.name }}</option>
-                        }
-                      </select>
-                    } @else if (a.needsPage) {
-                      <dk-select [ngModel]="''" (ngModelChange)="pickPage(a.id, $event)" [name]="'page-' + a.id">
-                        <option value="">{{ a.network === 'instagram' ? 'Pick an Instagram account…' : 'Pick a Page…' }}</option>
-                        @for (p of a.pendingPages || []; track p.id) {
-                          <option [value]="p.id">{{ p.name }}</option>
-                        }
-                      </dk-select>
-                    } @else {
-                      <span class="font-mono text-[11px] text-[#a1a1aa]">—</span>
-                    }
-                  </td>
-                  <td class="px-3 py-2 font-mono text-[11px] text-[#a1a1aa]">{{ a.status }}</td>
-                  <td class="px-3 py-2 text-right">
-                    <button type="button" (click)="remove(a.id)" class="text-xs font-semibold text-red-600">Remove</button>
-                  </td>
-                </tr>
-              } @empty {
-                <tr>
-                  <td colspan="6" class="px-4 py-8 text-center">
-                    <p class="font-mono text-[10px] font-semibold uppercase tracking-wider text-cta">No channels</p>
-                    <p class="mt-2 text-sm text-[#63676c] dark:text-zinc-400">Connect a network above, or clear filters.</p>
-                  </td>
-                </tr>
+        <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          @for (a of filteredAccounts(); track a.id) {
+            <article class="flex flex-col gap-3 rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] p-3 dark:border-zinc-800 dark:bg-zinc-950">
+              <div class="flex items-start gap-3">
+                <img [src]="logoSrc(a.network)" [alt]="labelOf(a.network)" width="28" height="28" class="size-7 shrink-0 object-contain" />
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-semibold dark:text-zinc-100">{{ a.handle }}</p>
+                  <p class="text-[12px] text-[#63676c] dark:text-zinc-400">{{ labelOf(a.network) }}</p>
+                </div>
+                <span class="rounded-full bg-white px-2 py-0.5 font-mono text-[10px] uppercase text-[#71717a] dark:bg-zinc-800 dark:text-zinc-300">{{ a.status }}</span>
+              </div>
+              @if (companies().length) {
+                <select
+                  class="h-8 w-full appearance-none rounded-md border border-[#e8e8e3] bg-white px-2 text-[12px] outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  [ngModel]="a.groupId || ''"
+                  (ngModelChange)="assignCompany(a.id, $event)"
+                  [name]="'co-' + a.id"
+                >
+                  <option value="">Unassigned</option>
+                  @for (c of companies(); track c.id) {
+                    <option [value]="c.id">{{ c.name }}</option>
+                  }
+                </select>
               }
-            </tbody>
-          </table>
+              @if (a.network === 'slack') {
+                <select
+                  class="h-8 w-full appearance-none rounded-md border border-[#e8e8e3] bg-white px-2 text-[12px] outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  [ngModel]="a.slackChannelId || ''"
+                  (focus)="loadSlackChannels(a.id)"
+                  (ngModelChange)="pickSlackChannel(a.id, $event)"
+                  [name]="'slack-' + a.id"
+                >
+                  <option value="">{{ a.needsSlackChannel ? 'Pick a channel…' : (a.slackChannelName ? '#' + a.slackChannelName : 'Change channel…') }}</option>
+                  @for (ch of slackChannels()[a.id] || []; track ch.id) {
+                    <option [value]="ch.id">#{{ ch.name }}</option>
+                  }
+                </select>
+              } @else if (a.needsPage) {
+                <dk-select [ngModel]="''" (ngModelChange)="pickPage(a.id, $event)" [name]="'page-' + a.id">
+                  <option value="">{{ a.network === 'instagram' ? 'Pick an Instagram account…' : 'Pick a Page…' }}</option>
+                  @for (p of a.pendingPages || []; track p.id) {
+                    <option [value]="p.id">{{ p.name }}</option>
+                  }
+                </dk-select>
+              }
+              <button type="button" (click)="remove(a.id)" class="self-start text-xs font-semibold text-red-600">Remove</button>
+            </article>
+          } @empty {
+            <div class="col-span-full px-2 py-8 text-center">
+              <p class="font-display text-lg font-semibold dark:text-zinc-100">No channels yet</p>
+              <p class="mt-1 text-sm text-[#63676c] dark:text-zinc-400">Add a channel to start scheduling.</p>
+              <button type="button" (click)="adding.set(true)" class="mt-4 inline-flex h-9 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white">Add channel</button>
+            </div>
+          }
         </div>
         <p class="border-t border-[#e8e8e3] px-4 py-2 font-mono text-[10px] text-[#a1a1aa] dark:border-zinc-700">
           Showing {{ filteredAccounts().length }} of {{ accounts().length }}
@@ -330,6 +312,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
   `,
 })
 export class AccountsPage implements OnInit {
+  private readonly notices = inject(Notices);
   readonly field = FIELD;
   readonly netGroups = [
     { id: "social" as const, label: "Social" },
@@ -355,6 +338,7 @@ export class AccountsPage implements OnInit {
   mastodonInstance = "https://mastodon.social";
   connectCompanyId = "";
   companyName = "";
+  adding = signal(false);
   boardQuery = signal("");
   filterNetwork = signal("");
   filterCompany = signal("");
@@ -531,6 +515,7 @@ export class AccountsPage implements OnInit {
       else if (oauth === "error" || oauth === "token_failed") {
         this.msg.set(this.oauthFailureMessage(oauth, oauthNetwork, reason, detail));
       } else if (oauth === "expired") this.msg.set("OAuth state expired — try again");
+      if (oauth && this.msg()) this.notices.push(oauth === "ok" ? "ok" : "error", this.msg());
       await this.reload();
       try {
         const st = await api<Record<string, boolean>>(`/v1/accounts/oauth/status?workspaceId=${this.workspaceId}`);
@@ -700,10 +685,13 @@ export class AccountsPage implements OnInit {
       this.webhookUrl = "";
       this.publicationId = "";
       this.msg.set("Channel connected");
+      this.notices.push("ok", "Channel connected");
       await this.reload();
     } catch (e: unknown) {
       const err = e as { body?: { message?: string }; message?: string };
-      this.msg.set(err.body?.message || err.message || "Failed");
+      const text = err.body?.message || err.message || "Failed";
+      this.msg.set(text);
+      this.notices.push("error", text);
     }
   }
 
