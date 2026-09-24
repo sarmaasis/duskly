@@ -84,7 +84,7 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/x/callback");
   });
 
-  it("LinkedIn asks for OIDC identity, email, and member posting scopes", () => {
+  it("LinkedIn asks for OIDC identity and member posting scopes", () => {
     const url = buildAuthorizeUrl({
       ...base,
       network: "linkedin",
@@ -93,9 +93,10 @@ describe("OAuth authorize URLs", () => {
     expect(url.startsWith("https://www.linkedin.com/oauth/v2/authorization?")).toBe(true);
     const q = new URL(url).searchParams;
     expect(q.get("client_id")).toBe("li-id");
+    expect(q.get("prompt")).toBe("none");
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin/callback");
-    expect(q.get("scope")).toBe("openid profile email w_member_social");
-    expect(url).toContain("scope=openid%20profile%20email%20w_member_social");
+    expect(q.get("scope")).toBe("openid profile w_member_social");
+    expect(url).toContain("scope=openid%20profile%20w_member_social");
   });
 
   it("LinkedIn Page uses the Page OAuth app when configured", () => {
@@ -106,8 +107,9 @@ describe("OAuth authorize URLs", () => {
     });
     const q = new URL(url).searchParams;
     expect(q.get("client_id")).toBe("li-page-id");
+    expect(q.get("prompt")).toBe("none");
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin-page/callback");
-    expect(q.get("scope")).toBe("openid profile email w_member_social w_organization_social");
+    expect(q.get("scope")).toBe("openid profile w_member_social w_organization_social");
   });
 
   it("LinkedIn Page falls back to the member OAuth app for self-host installs", () => {

@@ -141,11 +141,12 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     const params = new URLSearchParams({
       response_type: "code",
       client_id: clientId,
+      prompt: "none",
       redirect_uri: redirectUri,
       scope:
         network === "linkedin-page"
-          ? "openid profile email w_member_social w_organization_social"
-          : "openid profile email w_member_social",
+          ? "openid profile w_member_social w_organization_social"
+          : "openid profile w_member_social",
       state,
     });
     return `https://www.linkedin.com/oauth/v2/authorization?${params.toString().replace(/\+/g, "%20")}`;
