@@ -28,6 +28,8 @@ import { ToolsIndexPage } from "./pages/tools/tools-index.page";
 import { CaptionCounterPage } from "./pages/tools/caption-counter.page";
 import { ImageSizePage } from "./pages/tools/image-size.page";
 import { PostPreviewPage } from "./pages/tools/post-preview.page";
+import { InboxPage } from "./inbox/inbox.page";
+import { PreviewPage } from "./preview/preview.page";
 
 export const routes: Routes = [
   { path: "", component: LandingPage },
@@ -52,6 +54,7 @@ export const routes: Routes = [
   { path: "signup", component: SignupPage },
   { path: "onboarding", component: OnboardingPage },
   { path: "invite/:id", component: InvitePage },
+  { path: "p/:token", component: PreviewPage },
   {
     path: "docs",
     component: DocsShell,
@@ -69,6 +72,7 @@ export const routes: Routes = [
       { path: "", component: CalendarPage },
       { path: "compose", component: ComposerPage },
       { path: "library", component: MediaPage },
+      { path: "inbox", component: InboxPage },
       { path: "accounts", component: AccountsPage },
       { path: "team", component: TeamPage },
       { path: "agent", component: AgentPage },

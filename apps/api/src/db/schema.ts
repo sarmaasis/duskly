@@ -55,6 +55,7 @@ export const workspace = sqliteTable("workspace", {
   theme: text("theme").notNull().default("light"),
   accountKind: text("account_kind"),
   onboardingCompleted: integer("onboarding_completed", { mode: "boolean" }).notNull().default(false),
+  extrasJson: text("extras_json"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -86,6 +87,7 @@ export const socialAccount = sqliteTable(
     tokenCipher: text("token_cipher").notNull(),
     credentialsJson: text("credentials_json"),
     groupId: text("group_id"),
+    queueSlots: text("queue_slots"),
     status: text("status").notNull().default("active"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -112,6 +114,7 @@ export const posts = sqliteTable(
     commentBody: text("comment_body"),
     commentDelaySeconds: integer("comment_delay_seconds").notNull().default(0),
     variantsJson: text("variants_json"),
+    extrasJson: text("extras_json"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

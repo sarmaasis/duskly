@@ -7,9 +7,33 @@ import {
   commentQueueDelay,
   expandRepeatTimes,
   mergeRssChannelIds,
+  pickMetrics,
   rssHasPublishTarget,
+  scheduleStatus,
   shouldDeferFirstComment,
 } from "../lib/schedule";
+import { nextSlotMs } from "../../../web/src/app/lib/slots";
+
+describe("approvals, slots, and metrics", () => {
+  it("keeps a member post pending until an admin approves it", () => {
+    expect(scheduleStatus("member", "scheduled")).toBe("pending_approval");
+    expect(scheduleStatus("admin", "scheduled")).toBe("scheduled");
+    expect(scheduleStatus("member", "draft")).toBe("draft");
+  });
+
+  it("fills the next clock slot and skips a taken minute", () => {
+    const from = Date.parse("2026-09-24T10:00:00");
+    const next = nextSlotMs(["09:00", "13:00", "18:00"], from);
+    expect(new Date(next || 0).getHours()).toBe(13);
+    const taken = nextSlotMs(["13:00"], from, [Date.parse("2026-09-24T13:00:00")]);
+    expect(new Date(taken || 0).getDate()).toBe(25);
+  });
+
+  it("drops engagement fields the network did not return", () => {
+    expect(pickMetrics({ likes: 3, comments: "nope" })).toEqual({ likes: 3 });
+    expect(pickMetrics({ reach: Number.NaN })).toBeNull();
+  });
+});
 
 describe("repeat series", () => {
   it("emits daily follow-ups up to repeatUntil, excluding the original time", () => {

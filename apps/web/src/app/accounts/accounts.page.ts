@@ -20,6 +20,7 @@ type AccountRow = {
   tokenExpiresAt?: number | null;
   tokenExpired?: boolean;
   lastError?: string | null;
+  queueSlots?: string | null;
 };
 type Company = { id: string; name: string; accountIds: string[] };
 type SlackChannel = { id: string; name: string; isPrivate: boolean };
@@ -72,7 +73,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
       }
 
       <details class="mb-6 rounded-xl border border-[#e8e8e3] bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-        <summary class="cursor-pointer font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Companies</summary>
+        <summary class="cursor-pointer font-mono text-[10px] font-semibold uppercase tracking-wider text-[#92969b]">Client brands</summary>
         <p class="mt-2 text-[12px] text-[#63676c] dark:text-zinc-400">
           Each company owns its channels. Filter the board by client.
         </p>
@@ -297,6 +298,9 @@ const FALLBACK_META: Record<string, NetMeta> = {
                   }
                 </dk-select>
               }
+              <label class="block text-[11px] text-[#71717a]">Queue slots
+                <input [value]="a.queueSlots || ''" (change)="saveSlots(a.id, $any($event.target).value)" placeholder="09:00,13:00,18:00" class="mt-1 h-8 w-full rounded-md border border-[#e8e8e3] bg-white px-2 text-[12px] dark:border-zinc-600 dark:bg-zinc-800" />
+              </label>
               @if (a.tokenExpiresAt) {
                 <p class="text-[11px] text-[#71717a]">Token until {{ tokenWhen(a.tokenExpiresAt) }}</p>
               }
@@ -568,6 +572,7 @@ export class AccountsPage implements OnInit {
         tokenExpiresAt: a.tokenExpiresAt ?? null,
         tokenExpired: !!a.tokenExpired,
         lastError: a.lastError ?? null,
+        queueSlots: a.queueSlots ?? "",
       })),
     );
     this.networks.set(data.networks?.length ? data.networks : Object.keys(FALLBACK_META));
@@ -580,6 +585,11 @@ export class AccountsPage implements OnInit {
       })),
     );
     if (me?.usage) this.usage.set(me.usage);
+  }
+
+  async saveSlots(id: string, queueSlots: string) {
+    await api(`/v1/accounts/${id}`, { method: "PATCH", json: { workspaceId: this.workspaceId, queueSlots } });
+    this.accounts.update((rows) => rows.map((row) => (row.id === id ? { ...row, queueSlots } : row)));
   }
 
   tokenWhen(ms: number) {

@@ -33,3 +33,17 @@ export function rssHasPublishTarget(channelIds: string[], groupId?: string | nul
 export function mergeRssChannelIds(channelIds: string[], groupMemberIds: string[]) {
   return [...new Set([...channelIds, ...groupMemberIds])];
 }
+
+export function scheduleStatus(role: string, requested: "draft" | "scheduled") {
+  if (requested === "scheduled" && role === "member") return "pending_approval" as const;
+  return requested;
+}
+
+export function pickMetrics(raw: Record<string, unknown>) {
+  const out: { likes?: number; comments?: number; reach?: number } = {};
+  for (const key of ["likes", "comments", "reach"] as const) {
+    const n = raw[key];
+    if (typeof n === "number" && Number.isFinite(n)) out[key] = n;
+  }
+  return Object.keys(out).length ? out : null;
+}

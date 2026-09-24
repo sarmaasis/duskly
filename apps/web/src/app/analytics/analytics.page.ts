@@ -43,7 +43,21 @@ const LABELS: Record<string, string> = {
         </label>
         <button type="submit" class="h-9 rounded-full bg-cta px-3 text-xs font-semibold text-white">Apply</button>
       </form>
-      <p class="mb-4 text-[12px] text-[#71717a]">Counts are publish outcomes. Likes, comments, and reach stay off until a network returns them for this app.</p>
+      <p class="mb-4 text-[12px] text-[#71717a]">Likes, comments, and reach show only when X, Instagram, or Facebook returns a number.</p>
+      @if (engagement().length) {
+        <div class="mb-6 grid gap-3 sm:grid-cols-2">
+          @for (row of engagement(); track row.network + row.handle + (row.likes ?? '') + (row.comments ?? '')) {
+            <div class="rounded-xl border border-[#e8e8e3] bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+              <p class="text-sm font-semibold dark:text-zinc-100">{{ label(row.network) }} · {{ row.handle }}</p>
+              <p class="mt-1 text-[12px] text-[#71717a]">
+                @if (row.likes != null) { <span>{{ row.likes }} likes</span> }
+                @if (row.comments != null) { <span> · {{ row.comments }} comments</span> }
+                @if (row.reach != null) { <span> · {{ row.reach }} reach</span> }
+              </p>
+            </div>
+          }
+        </div>
+      }
 
       @if (error()) {
         <p class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100" role="alert">{{ error() }}</p>
@@ -143,6 +157,7 @@ export class AnalyticsPage implements OnInit {
   channels = signal<ChannelStat[]>([]);
   days = signal<{ day: string; count: number; pct: number }[]>([]);
   recent = signal<Recent[]>([]);
+  engagement = signal<{ network: string; handle: string; likes?: number; comments?: number; reach?: number }[]>([]);
   error = signal("");
   from = "";
   to = "";
@@ -168,11 +183,13 @@ export class AnalyticsPage implements OnInit {
         byDay: Record<string, number>;
         channels: ChannelStat[];
         recent: Recent[];
+        engagement?: { network: string; handle: string; likes?: number; comments?: number; reach?: number }[];
       }>(`/v1/org/analytics?${q}`);
       this.totals.set(data.totals);
       this.channels.set(data.channels || []);
       this.days.set(this.dayBars(data.byDay || {}));
       this.recent.set(data.recent || []);
+      this.engagement.set(data.engagement || []);
     } catch {
       this.error.set("Could not load analytics.");
     }

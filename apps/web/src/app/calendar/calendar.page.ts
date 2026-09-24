@@ -10,6 +10,7 @@ type Post = {
   body: string;
   status: string;
   scheduledAt: string | Date | null;
+  extrasJson?: string | null;
   preview?: Preview | null;
   channels?: Channel[];
   issues?: { network: string; handle: string; status: string; error: string | null }[];
@@ -48,6 +49,7 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
           <option value="">All statuses</option>
           @for (s of statuses; track s) { <option [value]="s">{{ s }}</option> }
         </select>
+        <input class="h-9 rounded-full border border-[#e8e8e3] bg-white px-3 text-xs dark:border-zinc-700 dark:bg-zinc-900" placeholder="Tag" [value]="filterTag()" (change)="filterTag.set($any($event.target).value); rebuild()" />
       </div>
 
       @if (error()) {
@@ -69,21 +71,28 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
           </div>
           <div class="grid grid-cols-7">
             @for (cell of monthCells(); track cell.key) {
-              <button type="button" (click)="openDay(cell)" (dragover)="$event.preventDefault()" (drop)="dropOn($event, cell)" class="flex min-h-32 flex-col border-b border-r border-[#e8e8e3] p-1.5 text-left hover:bg-[#fcfcf9] dark:border-zinc-800 dark:hover:bg-zinc-800/40" [class.bg-[#f7f7f4]/70]="!cell.inMonth" [class.dark:bg-zinc-950]="!cell.inMonth" [class.cursor-pointer]="cell.posts.length">
-                <span class="mb-1 inline-flex size-6 items-center justify-center rounded-full text-[11px] font-semibold" [class.bg-cta]="cell.today" [class.text-white]="cell.today" [class.text-[#a1a1aa]]="!cell.inMonth && !cell.today" [class.dark:text-zinc-200]="cell.inMonth && !cell.today">{{ cell.day }}</span>
-                @for (p of cell.posts; track p.id) {
-                  <span draggable="true" (dragstart)="dragPost($event, p)" (click)="$event.stopPropagation(); edit(p)" class="flex min-h-0 cursor-grab flex-col overflow-hidden rounded-md bg-[#f7f7f4] active:cursor-grabbing dark:bg-zinc-800">
-                    @if ($first && p.preview && p.preview.url && p.preview.kind !== 'video') {
-                      <img [src]="p.preview.url" alt="" class="h-14 w-full object-cover" />
-                    }
-                    <span class="flex items-center gap-1 px-1 py-1">
-                      @for (ch of (p.channels || []).slice(0, 2); track ch.network + ch.handle) {
-                        <img [src]="'/assets/logos/' + ch.network + '.svg'" alt="" width="12" height="12" class="size-3 shrink-0 object-contain" />
+              <button type="button" (click)="openDay(cell)" (dragover)="$event.preventDefault()" (drop)="dropOn($event, cell)" class="flex h-36 flex-col overflow-hidden border-b border-r border-[#e8e8e3] p-1.5 text-left hover:bg-[#fcfcf9] dark:border-zinc-800 dark:hover:bg-zinc-800/40" [class.bg-[#f7f7f4]/70]="!cell.inMonth" [class.dark:bg-zinc-950]="!cell.inMonth" [class.cursor-pointer]="cell.posts.length">
+                <span class="mb-1 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold" [class.bg-cta]="cell.today" [class.text-white]="cell.today" [class.text-[#a1a1aa]]="!cell.inMonth && !cell.today" [class.dark:text-zinc-200]="cell.inMonth && !cell.today">{{ cell.day }}</span>
+                <span class="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
+                  @for (p of cell.posts.slice(0, view() === 'week' ? 3 : 2); track p.id) {
+                    <span draggable="true" (dragstart)="dragPost($event, p)" (click)="$event.stopPropagation(); edit(p)" class="flex min-h-0 cursor-grab items-center gap-1 overflow-hidden rounded-md bg-[#f7f7f4] active:cursor-grabbing dark:bg-zinc-800">
+                      @if (p.preview && p.preview.url && p.preview.kind !== 'video') {
+                        <img [src]="p.preview.url" alt="" class="size-8 shrink-0 object-cover" />
+                      } @else {
+                        <span class="flex size-8 shrink-0 items-center justify-center bg-white text-[9px] font-semibold text-[#a1a1aa] dark:bg-zinc-900">{{ p.preview ? 'VID' : 'Aa' }}</span>
                       }
-                      <span class="min-w-0 truncate text-[10px] font-medium text-[#121417] dark:text-zinc-100">{{ p.body }}</span>
+                      <span class="flex min-w-0 flex-1 items-center gap-1 pr-1">
+                        @for (ch of (p.channels || []).slice(0, 2); track ch.network + ch.handle) {
+                          <img [src]="'/assets/logos/' + ch.network + '.svg'" alt="" width="12" height="12" class="size-3 shrink-0 object-contain" />
+                        }
+                        <span class="min-w-0 truncate text-[10px] font-medium text-[#121417] dark:text-zinc-100">{{ p.body }}</span>
+                      </span>
                     </span>
-                  </span>
-                }
+                  }
+                  @if (cell.posts.length > (view() === 'week' ? 3 : 2)) {
+                    <span class="px-1 text-[10px] font-semibold text-cta">+{{ cell.posts.length - (view() === 'week' ? 3 : 2) }} more</span>
+                  }
+                </span>
               </button>
             }
           </div>
@@ -116,8 +125,11 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                         <span class="text-[11px] text-[#a1a1aa]">{{ formatTime(p.scheduledAt) }}</span>
                         @if (canQueue(p)) {
                           <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta hover:underline">Send now</button>
-                          <button type="button" (click)="edit(p)" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Edit</button>
                         }
+                        @if (p.status === 'failed') {
+                          <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta">Retry</button>
+                        }
+                        <button type="button" (click)="edit(p)" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Edit</button>
                       </div>
                     </div>
                   </article>
@@ -164,8 +176,19 @@ type Cell = { key: string; day: number; inMonth: boolean; today: boolean; posts:
                 }
                 @if (canQueue(p)) {
                   <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta">Send now</button>
-                  <button type="button" (click)="edit(p)" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Edit</button>
                 }
+                @if (p.status === 'failed') {
+                  <button type="button" (click)="queueNow(p.id)" class="text-[11px] font-semibold text-cta">Retry</button>
+                }
+                @if (canReview() && p.status === 'pending_approval') {
+                  <button type="button" (click)="decide(p.id, 'approve')" class="text-[11px] font-semibold text-cta">Approve</button>
+                  <button type="button" (click)="decide(p.id, 'return')" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Send back</button>
+                }
+                <button type="button" (click)="edit(p)" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Edit</button>
+                @if (previewHref(p); as href) {
+                  <a [href]="href" target="_blank" class="text-[11px] font-semibold text-[#121417] dark:text-zinc-100">Preview</a>
+                }
+                <input type="date" class="h-7 rounded-md border border-[#e8e8e3] bg-white px-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900" (click)="$event.stopPropagation()" (change)="dupOn(p, $any($event.target).value)" />
               </div>
               @for (issue of p.issues || []; track issue.network + issue.handle) {
                 <p class="mt-1 text-[12px] text-amber-800 dark:text-amber-200">{{ issue.network }}: {{ issue.error || issue.status }}</p>
@@ -187,7 +210,9 @@ export class CalendarPage implements OnInit {
   ];
   filterNetwork = signal("");
   filterStatus = signal("");
-  statuses = ["draft", "scheduled", "queued", "published", "failed"];
+  statuses = ["draft", "pending_approval", "scheduled", "queued", "published", "failed"];
+  role = signal("");
+  filterTag = signal("");
   private dragId = "";
   posts = signal<Post[]>([]);
   error = signal("");
@@ -203,7 +228,8 @@ export class CalendarPage implements OnInit {
 
   async ngOnInit() {
     try {
-      const me = await api<{ workspace: { id: string } }>("/v1/workspaces/me");
+      const me = await api<{ workspace: { id: string; role?: string } }>("/v1/workspaces/me");
+      this.role.set(me.workspace.role || "");
       lsSet("dk-ws", me.workspace.id);
       await this.load(me.workspace.id);
     } catch {
@@ -243,6 +269,15 @@ export class CalendarPage implements OnInit {
     return this.posts().filter((post) => {
       if (this.filterStatus() && post.status !== this.filterStatus()) return false;
       if (this.filterNetwork() && !(post.channels || []).some((c) => c.network === this.filterNetwork())) return false;
+      const tag = this.filterTag().trim().toLowerCase();
+      if (tag) {
+        try {
+          const tags = (JSON.parse(post.extrasJson || "{}").tags || []) as string[];
+          if (!tags.some((item) => item.toLowerCase().includes(tag))) return false;
+        } catch {
+          return false;
+        }
+      }
       return true;
     });
   }
@@ -335,6 +370,34 @@ export class CalendarPage implements OnInit {
 
   canQueue(post: Post) {
     return post.status === "draft" || post.status === "scheduled";
+  }
+
+  canReview() {
+    return this.role() === "owner" || this.role() === "admin";
+  }
+
+  previewHref(post: Post) {
+    try {
+      const token = (JSON.parse(post.extrasJson || "{}") as { previewToken?: string }).previewToken;
+      return token ? `/p/${token}` : "";
+    } catch {
+      return "";
+    }
+  }
+
+  async decide(id: string, action: "approve" | "return") {
+    await api(`/v1/posts/${id}/decide`, { method: "POST", json: { action } });
+    if (this.workspaceId) await this.load(this.workspaceId);
+    this.dayOpen.set(null);
+  }
+
+  async dupOn(post: Post, day: string) {
+    if (!day) return;
+    const when = post.scheduledAt ? new Date(post.scheduledAt) : new Date();
+    const next = new Date(`${day}T00:00:00`);
+    next.setHours(when.getHours(), when.getMinutes(), 0, 0);
+    await api(`/v1/posts/${post.id}/duplicate`, { method: "POST", json: { scheduledAt: next.getTime() } });
+    if (this.workspaceId) await this.load(this.workspaceId);
   }
 
   async load(workspaceId: string) {

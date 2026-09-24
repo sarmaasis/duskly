@@ -3,6 +3,7 @@ import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, RouterLink } from "@angular/router";
 import { api, apiBase, type PlanSnapshot } from "../lib/api";
 import { CAPTION_LIMITS, countCaptionChars } from "../lib/caption-limits";
+import { nextSlotMs } from "../lib/slots";
 import { Notices } from "../lib/notices";
 import { lsSet } from "../lib/browser";
 import { PICTURE_EDITOR_FRAME_MAX, pictureEditorFrameRects } from "../lib/picture-editor";
@@ -50,18 +51,33 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             @if (previews().length) {
               <div class="mt-3 grid gap-2 sm:grid-cols-2">
                 @for (card of previews(); track card.id) {
-                  <div class="rounded-xl border border-[#e8e8e3] bg-[#fcfcf9] p-3 dark:border-zinc-700 dark:bg-zinc-800">
-                    <div class="flex items-center justify-between gap-2">
-                      <p class="inline-flex items-center gap-1.5 text-[12px] font-semibold dark:text-zinc-100">
-                        <img [src]="'/assets/logos/' + card.network + '.svg'" alt="" width="14" height="14" class="size-3.5 object-contain" />
-                        {{ card.handle }}
-                      </p>
-                      <span class="font-mono text-[10px]" [class.text-red-600]="card.over" [class.text-zinc-400]="!card.over">{{ card.used }}/{{ card.limit }}</span>
-                    </div>
-                    @if (imageAttachments()[0]; as img) {
-                      <img [src]="img.url" alt="" class="mt-2 h-24 w-full rounded-lg object-cover" />
+                  <div class="overflow-hidden rounded-xl border border-[#e8e8e3] bg-white dark:border-zinc-700 dark:bg-zinc-900" [class.rounded-none]="card.layout === 'ig'">
+                    @if (card.layout === 'ig' && imageAttachments()[0]; as img) {
+                      <img [src]="img.url" alt="" class="aspect-square w-full object-cover" />
                     }
-                    <p class="mt-2 line-clamp-5 whitespace-pre-wrap text-[13px] dark:text-zinc-100">{{ card.text || 'Empty caption' }}</p>
+                    @if (card.layout === 'yt' && imageAttachments()[0]; as img) {
+                      <img [src]="img.url" alt="" class="aspect-video w-full object-cover" />
+                    }
+                    <div class="p-3">
+                      <div class="flex items-center justify-between gap-2">
+                        <p class="inline-flex items-center gap-1.5 text-[12px] font-semibold dark:text-zinc-100">
+                          <img [src]="'/assets/logos/' + card.network + '.svg'" alt="" width="14" height="14" class="size-3.5 object-contain" />
+                          {{ card.handle }}
+                        </p>
+                        <span class="font-mono text-[10px]" [class.text-red-600]="card.over" [class.text-zinc-400]="!card.over">{{ card.used }}/{{ card.limit }}</span>
+                      </div>
+                      <p class="mt-2 line-clamp-5 whitespace-pre-wrap text-[13px] dark:text-zinc-100">{{ card.text || 'Empty caption' }}</p>
+                      @if (card.layout !== 'ig' && card.layout !== 'yt' && imageAttachments()[0]; as shot) {
+                        <img [src]="shot.url" alt="" class="mt-2 h-24 w-full rounded-lg object-cover" />
+                      }
+                      @if (pollQuestion && pollOptions().length > 1 && (card.network === 'x' || card.network === 'linkedin')) {
+                        <ul class="mt-2 space-y-1">
+                          @for (option of pollOptions(); track option) {
+                            <li class="rounded-full border border-[#e8e8e3] px-2 py-1 text-[11px] dark:border-zinc-700">{{ option }}</li>
+                          }
+                        </ul>
+                      }
+                    </div>
                   </div>
                 }
               </div>
@@ -85,8 +101,9 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
                   <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     @for (m of imageAttachments(); track m.id) {
                       <div class="relative overflow-hidden rounded-xl border border-[#e8e8e3] dark:border-zinc-700">
-                        <img [src]="m.url" alt="Attached image" class="h-28 w-full object-cover" />
+                        <img [src]="m.url" [alt]="alts[m.id] || 'Attached image'" class="h-28 w-full object-cover" />
                         <button type="button" (click)="removeAttachment(m.id)" class="absolute right-1.5 top-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white">Remove</button>
+                        <input [ngModel]="alts[m.id] || ''" (ngModelChange)="setAlt(m.id, $event)" [name]="'alt-' + m.id" placeholder="Alt text" class="w-full border-t border-[#e8e8e3] bg-white px-2 py-1 text-[11px] dark:border-zinc-700 dark:bg-zinc-900" />
                       </div>
                     }
                   </div>
@@ -282,6 +299,62 @@ import { DkChoice, DkDate, DkDateTime, DkPill, DkSelect } from "../ui/forms";
             <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">When
               <div class="mt-1.5"><dk-datetime [(ngModel)]="when" placeholder="Pick date and time" /></div>
             </label>
+            <button type="button" (click)="useNextSlot()" class="text-xs font-semibold text-cta">Next open slot</button>
+            @if (needsPoll()) {
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Poll question
+                <input [(ngModel)]="pollQuestion" name="pollQuestion" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+              </label>
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Options, one per line
+                <textarea [(ngModel)]="pollOptionsText" name="pollOptions" rows="3" class="mt-1 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800"></textarea>
+              </label>
+            }
+            @if (needsThread()) {
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Thread, one post per line
+                <textarea [(ngModel)]="threadText" name="threadText" rows="3" class="mt-1 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800"></textarea>
+              </label>
+            }
+            @if (needsType()) {
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Post type
+                <select [(ngModel)]="postType" name="postType" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] bg-white px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                  <option value="post">Feed post</option>
+                  @if (hasNetwork('instagram')) {
+                    <option value="story">Instagram story</option>
+                    <option value="reel">Instagram reel</option>
+                  }
+                  @if (hasNetwork('youtube')) {
+                    <option value="short">YouTube short</option>
+                    <option value="video">YouTube video</option>
+                  }
+                </select>
+              </label>
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Cover frame
+                <select [(ngModel)]="coverId" name="coverId" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] bg-white px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800">
+                  <option value="">First image</option>
+                  @for (m of imageAttachments(); track m.id) { <option [value]="m.id">Image {{ m.id.slice(0, 6) }}</option> }
+                </select>
+              </label>
+            }
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Tags
+              <input [(ngModel)]="tagsText" name="tagsText" placeholder="launch, client" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+            </label>
+            @if (hashtags().length) {
+              <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Hashtag group
+                <select class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] bg-white px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" (change)="applyHashtags($any($event.target).value)">
+                  <option value="">Add a group</option>
+                  @for (group of hashtags(); track group.id) { <option [value]="group.tags">{{ group.name }}</option> }
+                </select>
+              </label>
+            }
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Mention
+              <input [(ngModel)]="mentionQ" name="mentionQ" placeholder="@handle" (ngModelChange)="findMentions()" class="mt-1 h-9 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800" />
+            </label>
+            @for (hit of mentions(); track hit.network + hit.handle) {
+              <button type="button" (click)="insertMention(hit.handle)" class="text-xs font-semibold text-cta">@{{ hit.handle }}</button>
+            }
+            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">CSV import, caption | time
+              <textarea [(ngModel)]="csvText" name="csvText" rows="3" placeholder="Hello | 2026-09-25T09:00" class="mt-1 w-full rounded-lg border border-[#e8e8e3] px-2 text-xs dark:border-zinc-600 dark:bg-zinc-800"></textarea>
+            </label>
+            <button type="button" (click)="importCsv()" class="text-xs font-semibold text-[#121417] dark:text-zinc-100">Import rows</button>
             <button type="button" (click)="schedule()" class="w-full rounded-xl bg-cta px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-cta-hover">Schedule post</button>
           </section>
 
@@ -361,7 +434,18 @@ export class ComposerPage implements OnInit {
   private sourceImg: HTMLImageElement | null = null;
   attachments = signal<{ id: string; url: string; kind: "image" | "video" }[]>([]);
   aiBusy = signal<null | "copilot" | "image" | "video">(null);
-  accounts = signal<{ id: string; network: string; handle: string }[]>([]);
+  accounts = signal<{ id: string; network: string; handle: string; queueSlots?: string | null }[]>([]);
+  alts: Record<string, string> = {};
+  pollQuestion = "";
+  pollOptionsText = "";
+  threadText = "";
+  postType = "post";
+  coverId = "";
+  tagsText = "";
+  csvText = "";
+  mentionQ = "";
+  mentions = signal<{ handle: string; network: string }[]>([]);
+  hashtags = signal<{ id: string; name: string; tags: string }[]>([]);
   signatures = signal<{ id: string; name: string; body: string; isDefault: boolean }[]>([]);
   sets = signal<{ id: string; name: string; channelIds: string; templateBody: string | null }[]>([]);
   groups = signal<{ id: string; name: string; accountIds: string[] }[]>([]);
@@ -381,12 +465,18 @@ export class ComposerPage implements OnInit {
 
   async ngOnInit() {
     try {
-      const me = await api<{ workspace: { id: string }; usage: PlanSnapshot }>("/v1/workspaces/me");
+      const me = await api<{ workspace: { id: string; extrasJson?: string | null }; usage: PlanSnapshot }>("/v1/workspaces/me");
       this.workspaceId = me.workspace.id;
+      try {
+        const extras = JSON.parse(me.workspace.extrasJson || "{}") as { hashtags?: { id: string; name: string; tags: string }[] };
+        this.hashtags.set(extras.hashtags || []);
+      } catch {
+        this.hashtags.set([]);
+      }
       lsSet("dk-ws", me.workspace.id);
       this.usage.set(me.usage);
       const [ac, sigs, sets, groups, feeds, plugs] = await Promise.all([
-        api<{ accounts: { id: string; network: string; handle: string }[] }>(`/v1/accounts?workspaceId=${me.workspace.id}`),
+        api<{ accounts: { id: string; network: string; handle: string; queueSlots?: string | null }[] }>(`/v1/accounts?workspaceId=${me.workspace.id}`),
         api<{ signatures: { id: string; name: string; body: string; isDefault: boolean }[] }>(
           `/v1/org/signatures?workspaceId=${me.workspace.id}`,
         ),
@@ -427,12 +517,99 @@ export class ComposerPage implements OnInit {
     this.variants = { ...this.variants, [id]: value };
   }
 
+  setAlt(id: string, value: string) {
+    this.alts = { ...this.alts, [id]: value };
+  }
+
+  hasNetwork(network: string) {
+    return this.selectedAccounts().some((account) => account.network === network);
+  }
+
+  needsPoll() {
+    return this.hasNetwork("x") || this.hasNetwork("linkedin");
+  }
+
+  needsThread() {
+    return this.hasNetwork("x") || this.hasNetwork("threads");
+  }
+
+  needsType() {
+    return this.hasNetwork("instagram") || this.hasNetwork("youtube");
+  }
+
+  pollOptions() {
+    return this.pollOptionsText.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 4);
+  }
+
+  extrasPayload() {
+    const tags = this.tagsText.split(",").map((tag) => tag.trim()).filter(Boolean);
+    const thread = this.threadText.split("\n").map((line) => line.trim()).filter(Boolean);
+    const options = this.pollOptions();
+    const alts = Object.fromEntries(Object.entries(this.alts).filter(([, text]) => text.trim()));
+    return {
+      postType: this.postType === "post" ? undefined : this.postType,
+      coverId: this.coverId || undefined,
+      tags: tags.length ? tags : undefined,
+      thread: thread.length ? thread : undefined,
+      poll: this.pollQuestion.trim() && options.length >= 2 ? { question: this.pollQuestion.trim(), options } : undefined,
+      alts: Object.keys(alts).length ? alts : undefined,
+    };
+  }
+
+  applyHashtags(tags: string) {
+    if (!tags) return;
+    this.body = `${this.body.trim()}\n\n${tags}`.trim();
+  }
+
+  useNextSlot() {
+    const slots = this.selectedAccounts().flatMap((account) => (account.queueSlots || "09:00,13:00,18:00").split(","));
+    const ms = nextSlotMs(slots, Date.now());
+    if (!ms) return;
+    const d = new Date(ms);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    this.when = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  async findMentions() {
+    const q = this.mentionQ.trim();
+    if (q.length < 2 || !this.workspaceId) {
+      this.mentions.set([]);
+      return;
+    }
+    const network = this.selectedAccounts()[0]?.network || "";
+    const data = await api<{ handles: { handle: string; network: string }[] }>(
+      `/v1/accounts/mentions?workspaceId=${this.workspaceId}&q=${encodeURIComponent(q)}&network=${network}`,
+    );
+    this.mentions.set(data.handles || []);
+  }
+
+  insertMention(handle: string) {
+    this.body = `${this.body.trim()} @${handle}`.trim();
+    this.mentionQ = "";
+    this.mentions.set([]);
+  }
+
+  async importCsv() {
+    if (!this.csvText.trim() || !this.selected().length) return this.fail({ message: "Add rows and pick a channel" });
+    try {
+      const data = await api<{ ids: string[] }>("/v1/posts/import", {
+        method: "POST",
+        json: { workspaceId: this.workspaceId, csv: this.csvText, destinations: this.selected() },
+      });
+      this.csvText = "";
+      this.flash(`Imported ${data.ids.length} posts`);
+    } catch (e: unknown) {
+      this.fail(e);
+    }
+  }
+
   previews() {
     return this.selectedAccounts().map((account) => {
       const text = this.variants[account.id]?.trim() || this.body;
       const cap = CAPTION_LIMITS.find((n) => n.id === account.network);
       const used = countCaptionChars(text);
-      return { ...account, text, used, limit: cap?.limit ?? 0, over: !!cap && used > cap.limit };
+      const layout = account.network === "instagram" ? "ig" : account.network === "youtube" ? "yt" : account.network === "linkedin" ? "in" : "x";
+      return { ...account, text, used, limit: cap?.limit ?? 0, over: !!cap && used > cap.limit, layout };
     });
   }
 
@@ -453,11 +630,11 @@ export class ComposerPage implements OnInit {
 
   private async loadEditing(id: string | null) {
     if (!id) return;
-    const data = await api<{ posts: { id: string; body: string; status: string; scheduledAt: string | number | null; mediaIds: string | null; variantsJson: string | null; channels?: { accountId?: string }[] }[] }>(
+    const data = await api<{ posts: { id: string; body: string; status: string; scheduledAt: string | number | null; mediaIds: string | null; variantsJson: string | null; extrasJson?: string | null; channels?: { accountId?: string }[] }[] }>(
       `/v1/posts?workspaceId=${this.workspaceId}`,
     );
     const post = data.posts.find((p) => p.id === id);
-    if (!post || (post.status !== "draft" && post.status !== "scheduled")) return;
+    if (!post || (post.status !== "draft" && post.status !== "scheduled" && post.status !== "pending_approval")) return;
     this.editingId = post.id;
     this.body = post.body;
     this.selected.set((post.channels || []).map((c) => c.accountId).filter((x): x is string => !!x));
@@ -471,6 +648,25 @@ export class ComposerPage implements OnInit {
       if (parsed && typeof parsed === "object") this.variants = parsed;
     } catch {
       this.variants = {};
+    }
+    try {
+      const extras = JSON.parse(post.extrasJson || "{}") as {
+        poll?: { question?: string; options?: string[] };
+        thread?: string[];
+        postType?: string;
+        coverId?: string;
+        tags?: string[];
+        alts?: Record<string, string>;
+      };
+      this.pollQuestion = extras.poll?.question || "";
+      this.pollOptionsText = (extras.poll?.options || []).join("\n");
+      this.threadText = (extras.thread || []).join("\n");
+      this.postType = extras.postType || "post";
+      this.coverId = extras.coverId || "";
+      this.tagsText = (extras.tags || []).join(", ");
+      this.alts = extras.alts || {};
+    } catch {
+      /* extras are optional */
     }
     try {
       const ids: string[] = post.mediaIds ? JSON.parse(post.mediaIds) : [];
@@ -750,7 +946,7 @@ export class ComposerPage implements OnInit {
 
   async schedule() {
     if (!this.selected().length && !this.postingSetId) return this.fail({ message: "Pick at least one channel or a posting set" });
-    if (this.instagramSelected() && !this.imageAttachments().length) {
+    if (this.instagramSelected() && !this.imageAttachments().length && this.postType !== "reel" && this.postType !== "story") {
       return this.fail({ message: "Instagram feed posts need an attached image." });
     }
     if (this.repeatRule !== "none" && !this.repeatUntil) {
@@ -772,6 +968,7 @@ export class ComposerPage implements OnInit {
         commentDelaySeconds: this.commentBody ? this.commentDelaySeconds : 0,
         mediaIds: this.attachments().map((a) => a.id),
         variants: Object.fromEntries(Object.entries(this.variants).filter(([, text]) => text.trim())),
+        extras: this.extrasPayload(),
       };
       if (this.editingId) {
         await api(`/v1/posts/${this.editingId}`, { method: "PATCH", json: payload });

@@ -228,7 +228,7 @@ async function blueskyPublish(input: PublishInput): Promise<PublishOk | PublishQ
       const aspect = imageAspect(image.bytes);
       record.embed = {
         $type: "app.bsky.embed.images",
-        images: [{ alt: input.body.slice(0, 300), image: blob.blob, aspectRatio: aspect }],
+        images: [{ alt: input.credentials?.altText || input.body.slice(0, 300), image: blob.blob, aspectRatio: aspect }],
       };
     }
     const postRes = await fetch(`${service}/xrpc/com.atproto.repo.createRecord`, {
@@ -385,6 +385,15 @@ async function xPublish(input: PublishInput): Promise<PublishOk | PublishQueued>
     }
     const payload: Record<string, unknown> = { text: input.body.slice(0, 280) };
     if (mediaId) payload.media = { media_ids: [mediaId] };
+    else if (input.credentials?.pollJson) {
+      try {
+        const poll = JSON.parse(input.credentials.pollJson) as { options?: string[] };
+        const options = (poll.options || []).map((option) => option.trim()).filter(Boolean).slice(0, 4);
+        if (options.length >= 2) payload.poll = { options, duration_minutes: 1440 };
+      } catch {
+        /* text-only if the poll payload is bad */
+      }
+    }
     const res = await fetch("https://api.x.com/2/tweets", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -402,6 +411,19 @@ async function xPublish(input: PublishInput): Promise<PublishOk | PublishQueued>
       const c = await xComment({ remoteId, commentBody: input.commentBody, handle: input.handle, token, credentials: input.credentials });
       commentRemoteId = c.commentRemoteId;
       commentSkipped = c.commentSkipped;
+    }
+    let parent = remoteId;
+    if (input.credentials?.threadJson) {
+      try {
+        const parts = JSON.parse(input.credentials.threadJson) as string[];
+        for (const part of parts) {
+          const reply = await xComment({ remoteId: parent, commentBody: part, handle: input.handle, token, credentials: input.credentials });
+          if (!reply.commentRemoteId) break;
+          parent = reply.commentRemoteId;
+        }
+      } catch {
+        /* root tweet already published */
+      }
     }
     return { remoteId, commentRemoteId, commentSkipped };
   } catch (e) {
@@ -479,6 +501,23 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
       isReshareDisabledByAuthor: false,
     };
     if (imageUrn) postBody.content = { media: { id: imageUrn } };
+    else if (input.credentials?.pollJson) {
+      try {
+        const poll = JSON.parse(input.credentials.pollJson) as { question?: string; options?: string[] };
+        const options = (poll.options || []).map((option) => option.trim()).filter(Boolean).slice(0, 4);
+        if (options.length >= 2) {
+          postBody.content = {
+            poll: {
+              question: (poll.question || input.body).slice(0, 140),
+              options: options.map((text) => ({ text })),
+              settings: { duration: "THREE_DAYS" },
+            },
+          };
+        }
+      } catch {
+        /* commentary-only if the poll payload is bad */
+      }
+    }
     const res = await fetch("https://api.linkedin.com/rest/posts", {
       method: "POST",
       headers: {
@@ -774,14 +813,24 @@ async function metaGraphPublish(
     }
     if (kind === "instagram") {
       const imageUrl = publishImageUrl(input);
-      if (!imageUrl) {
+      const postType = input.credentials?.postType || "post";
+      const videoUrl = input.credentials?.videoUrl;
+      if (!imageUrl && postType !== "reel" && !(postType === "story" && videoUrl)) {
         return missingCreds("Instagram Graph API requires an image URL for feed posts — queued until media is attached");
       }
       const graphHost = instagramLogin ? "https://graph.instagram.com" : "https://graph.facebook.com";
       const graphVersion = instagramLogin ? "v26.0" : "v21.0";
       const igPost = (path: string, fields: Record<string, string>) =>
         instagramGraph(graphHost, graphVersion, path, token, instagramLogin, "POST", fields);
-      const created = await igPost(`${igUserId}/media`, { image_url: imageUrl, caption: input.body });
+      const igFields: Record<string, string> =
+        postType === "reel" && videoUrl
+          ? { media_type: "REELS", video_url: videoUrl, caption: input.body }
+          : postType === "story"
+            ? videoUrl
+              ? { media_type: "STORIES", video_url: videoUrl }
+              : { media_type: "STORIES", image_url: imageUrl || "" }
+            : { image_url: imageUrl || "", caption: input.body };
+      const created = await igPost(`${igUserId}/media`, igFields);
       if (!created.ok || !created.data.id) {
         if (instagramLogin && instagramPostAccessDenied(created.detail)) {
           return missingCreds(
@@ -842,6 +891,35 @@ async function metaGraphPublish(
     if (!data.id || data.error) {
       return missingCreds(`Threads publish failed: ${(data.error?.message || "no post id").slice(0, 200)}`);
     }
+    let parent = data.id;
+    if (input.credentials?.threadJson) {
+      try {
+        const parts = JSON.parse(input.credentials.threadJson) as string[];
+        for (const part of parts) {
+          const replyParams = new URLSearchParams({
+            media_type: "TEXT",
+            text: part.slice(0, 500),
+            reply_to_id: parent,
+            access_token: token,
+          });
+          const replyCreate = await fetch(`https://graph.threads.net/v1.0/${threadsUserId}/threads?${replyParams}`, { method: "POST" });
+          const replyCreated = (await replyCreate.json()) as { id?: string };
+          if (!replyCreate.ok || !replyCreated.id) break;
+          const replyPub = await fetch(
+            `https://graph.threads.net/v1.0/${threadsUserId}/threads_publish?${new URLSearchParams({
+              creation_id: replyCreated.id,
+              access_token: token,
+            })}`,
+            { method: "POST" },
+          );
+          const replyData = (await replyPub.json()) as { id?: string };
+          if (!replyPub.ok || !replyData.id) break;
+          parent = replyData.id;
+        }
+      } catch {
+        /* root post already published */
+      }
+    }
     return {
       remoteId: data.id ?? crypto.randomUUID(),
       commentSkipped: input.commentBody?.trim() ? "Threads reply API not wired — first comment skipped" : undefined,
@@ -870,7 +948,10 @@ async function youtubeUploadVideo(
       },
       body: JSON.stringify({
         snippet: {
-          title: input.body.slice(0, 100) || "Untitled",
+          title:
+            input.credentials?.postType === "short" && !input.body.includes("#Shorts")
+              ? `${input.body.slice(0, 90)} #Shorts`
+              : input.body.slice(0, 100) || "Untitled",
           description: input.body,
         },
         status: { privacyStatus: "public" },
@@ -896,8 +977,26 @@ async function youtubeUploadVideo(
     return missingCreds(`YouTube video upload failed (${put.status}): ${err.slice(0, 200)}`);
   }
   const data = (await put.json()) as { id?: string };
+  const remoteId = data.id ?? crypto.randomUUID();
+  if (input.credentials?.coverUrl && data.id) {
+    try {
+      const cover = await fetch(input.credentials.coverUrl);
+      if (cover.ok) {
+        const bytes = await cover.arrayBuffer();
+        const form = new FormData();
+        form.append("thumbnail", new Blob([bytes], { type: cover.headers.get("content-type") || "image/jpeg" }));
+        await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${data.id}`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+          body: form,
+        });
+      }
+    } catch {
+      /* video is up; cover is best-effort */
+    }
+  }
   return {
-    remoteId: data.id ?? crypto.randomUUID(),
+    remoteId,
     commentSkipped: input.commentBody?.trim() ? "YouTube first-comment nested replies skipped" : undefined,
   };
 }
@@ -1239,7 +1338,7 @@ async function slackPublish(input: PublishInput): Promise<PublishOk | PublishQue
     if (imageUrl) {
       slackBody.blocks = [
         { type: "section", text: { type: "mrkdwn", text: input.body.slice(0, 3000) } },
-        { type: "image", image_url: imageUrl, alt_text: "Post image" },
+        { type: "image", image_url: imageUrl, alt_text: input.credentials?.altText || "Post image" },
       ];
     }
     const res = await fetch("https://slack.com/api/chat.postMessage", {

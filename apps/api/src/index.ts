@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createAuth } from "./auth";
 import { postRoutes } from "./routes/posts";
+import { inboxRoutes } from "./routes/inbox";
 import { billingRoutes, handleDodoWebhook } from "./routes/billing";
 import { mediaRoutes } from "./routes/media";
 import { aiRoutes } from "./routes/ai";
@@ -27,6 +28,7 @@ import { dispatchWebhooks } from "./lib/webhooks-out";
 import { sha256Hex } from "./lib/workspace";
 import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "./lib/secrets";
+import { parseEmailSender, sendViaEmailBinding } from "./lib/email-sender";
 import { commentQueueDelay, mergeRssChannelIds, shouldDeferFirstComment } from "./lib/schedule";
 
 export { SchedulerLock };
@@ -85,6 +87,10 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
+  if (c.req.method === "GET" && c.req.path.match(/^\/v1\/posts\/public\/[^/]+$/)) {
+    await next();
+    return;
+  }
   const token = c.req.header("x-api-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token && MUTATING.has(c.req.method)) {
     const origin = c.req.header("origin");
@@ -115,6 +121,7 @@ app.use("/v1/*", async (c, next) => {
 });
 
 app.route("/v1/posts", postRoutes);
+app.route("/v1/inbox", inboxRoutes);
 app.route("/v1/billing", billingRoutes);
 app.route("/v1/media", mediaRoutes);
 app.route("/v1/ai", aiRoutes);
@@ -234,6 +241,9 @@ async function publishPost(env: Env, postId: string) {
   let imageUrl: string | undefined;
   let imageBytes: ArrayBuffer | undefined;
   let imageContentType: string | undefined;
+  let firstImageId = "";
+  let videoUrl = "";
+  let coverUrl = "";
   let mediaIds: string[] = [];
   try {
     mediaIds = post.mediaIds ? (JSON.parse(post.mediaIds) as string[]) : [];
@@ -242,6 +252,7 @@ async function publishPost(env: Env, postId: string) {
       const first = firstPublishMedia(mediaIds, mediaRows);
       const firstImage = firstPublishMedia(mediaIds, mediaRows.filter(isImageMedia));
       if (first && isVideoMedia(first)) {
+        videoUrl = await signPublicMediaUrl(env, first.id);
         const obj = await env.MEDIA.get(first.r2Key);
         if (obj) {
           videoBytes = await obj.arrayBuffer();
@@ -249,6 +260,7 @@ async function publishPost(env: Env, postId: string) {
         }
       }
       if (firstImage) {
+        firstImageId = firstImage.id;
         imageUrl = await signPublicMediaUrl(env, firstImage.id);
         const obj = await env.MEDIA.get(firstImage.r2Key);
         if (obj) {
@@ -262,7 +274,31 @@ async function publishPost(env: Env, postId: string) {
   }
   const mediaMissing = mediaIds.length > 0 && !imageUrl && !imageBytes && !videoBytes;
 
+  let extras: {
+    poll?: { question: string; options: string[] };
+    thread?: string[];
+    postType?: string;
+    coverId?: string;
+    alts?: Record<string, string>;
+  } = {};
+  try {
+    extras = post.extrasJson ? JSON.parse(post.extrasJson) : {};
+  } catch {
+    extras = {};
+  }
+  if (extras.coverId) {
+    try {
+      coverUrl = await signPublicMediaUrl(env, extras.coverId);
+    } catch {
+      coverUrl = "";
+    }
+  }
+
   for (const d of rows) {
+    if (d.status === "published" && d.remoteId) {
+      anyPublished = true;
+      continue;
+    }
     const adapter = adapters[d.network as Network];
     if (!adapter) {
       await db.update(postDestination).set({ status: "failed", error: "unknown network" }).where(eq(postDestination.id, d.id));
@@ -272,6 +308,9 @@ async function publishPost(env: Env, postId: string) {
     let token = await decryptSecret(env, d.tokenCipher);
     let handle = d.handle;
     const refreshed = await refreshAccessToken(env, d.network as Network, creds);
+    if (!refreshed.ok) {
+      await alertWorkspace(env, post.workspaceId, "token.dead", `${d.network} @${handle}: ${refreshed.reason}`);
+    }
     if (refreshed.ok && !("skipped" in refreshed && refreshed.skipped)) {
       creds = refreshed.creds;
       token = refreshed.accessToken;
@@ -292,6 +331,13 @@ async function publishPost(env: Env, postId: string) {
       continue;
     }
     if (imageUrl && !creds.imageUrl) creds = { ...creds, imageUrl };
+    if (extras.poll) creds = { ...creds, pollJson: JSON.stringify(extras.poll) };
+    if (extras.thread?.length) creds = { ...creds, threadJson: JSON.stringify(extras.thread) };
+    if (extras.postType) creds = { ...creds, postType: extras.postType };
+    const alt = extras.alts?.[firstImageId];
+    if (alt) creds = { ...creds, altText: alt };
+    if (coverUrl) creds = { ...creds, coverUrl };
+    if (videoUrl) creds = { ...creds, videoUrl };
     let variants: Record<string, string> = {};
     try {
       const parsed = post.variantsJson ? JSON.parse(post.variantsJson) : {};
@@ -353,6 +399,10 @@ async function publishPost(env: Env, postId: string) {
     );
   }
 
+  if (anyQueued) {
+    await alertWorkspace(env, post.workspaceId, "post.failed", `Post ${postId} did not fully publish.`);
+  }
+
   if (anyPublished) {
     await dispatchWebhooks(env, post.workspaceId, "post.published", {
       postId,
@@ -407,6 +457,29 @@ async function publishComments(env: Env, postId: string) {
       .update(postDestination)
       .set({ error: noteParts.length ? noteParts.join("; ") : null })
       .where(eq(postDestination.id, d.id));
+  }
+}
+
+async function alertWorkspace(env: Env, workspaceId: string, event: string, text: string) {
+  await dispatchWebhooks(env, workspaceId, event, { message: text });
+  const db = drizzle(env.DB);
+  const [ws] = await db.select({ extrasJson: workspace.extrasJson }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
+  let to = "";
+  try {
+    to = ((JSON.parse(ws?.extrasJson || "{}") as { alertEmail?: string }).alertEmail || "").trim();
+  } catch {
+    to = "";
+  }
+  if (!to || !env.EMAIL) return;
+  try {
+    await sendViaEmailBinding(env.EMAIL, {
+      to,
+      from: parseEmailSender(env.EMAIL_FROM),
+      subject: `Duskly ${event}`,
+      text,
+    });
+  } catch {
+    /* email is best-effort */
   }
 }
 

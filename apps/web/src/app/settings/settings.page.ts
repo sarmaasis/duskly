@@ -40,6 +40,22 @@ import { DkChoice, DkPill, DkSelect } from "../ui/forms";
               <button type="button" (click)="copyWorkspaceId()" class="shrink-0 rounded-xl border border-[#e8e8e3] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#121417] hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800">{{ idCopied() ? 'Copied' : 'Copy' }}</button>
             }
           </div>
+          <form class="mt-4 grid gap-3 sm:grid-cols-2" (ngSubmit)="saveStudio()">
+            <label class="text-xs font-medium text-zinc-600 dark:text-zinc-400">Custom domain
+              <input [(ngModel)]="customDomain" name="customDomain" placeholder="clients.example.com" [class]="fieldMt" />
+            </label>
+            <label class="text-xs font-medium text-zinc-600 dark:text-zinc-400">Failure email
+              <input [(ngModel)]="alertEmail" name="alertEmail" type="email" placeholder="you@studio.com" [class]="fieldMt" />
+            </label>
+            <label class="text-xs font-medium text-zinc-600 dark:text-zinc-400">Hashtag group
+              <input [(ngModel)]="hashName" name="hashName" placeholder="Launch" [class]="fieldMt" />
+            </label>
+            <label class="text-xs font-medium text-zinc-600 dark:text-zinc-400">Tags
+              <input [(ngModel)]="hashTags" name="hashTags" placeholder="#launch #duskly" [class]="fieldMt" />
+            </label>
+            <button type="submit" class="h-10 rounded-full bg-cta px-4 text-xs font-semibold text-white sm:col-span-2">Save studio</button>
+            <p class="text-[11px] text-zinc-500 sm:col-span-2">Point the domain at this web app. Preview links use it. Webhooks include post.failed and token.dead. Client brands live under Accounts.</p>
+          </form>
           <div class="mt-8 flex flex-wrap items-center gap-6 border-t border-[#e8e8e3] pt-6 dark:border-zinc-700">
             <div>
               <p class="text-[11px] font-semibold uppercase text-zinc-400">Signatures</p>
@@ -347,6 +363,11 @@ export class SettingsPage implements OnInit {
     "h-11 w-full rounded-xl border border-[#e8e8e3] bg-[#fbfbfa] px-3.5 text-sm text-[#121417] outline-none transition-colors focus:border-cta disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100";
   readonly fieldMt = `mt-1.5 ${this.field}`;
   workspaceId = "";
+  customDomain = "";
+  alertEmail = "";
+  hashName = "";
+  hashTags = "";
+  private hashtags: { id: string; name: string; tags: string }[] = [];
   channelId = "";
   rssChannelId = "";
   rssGroupId = "";
@@ -381,8 +402,20 @@ export class SettingsPage implements OnInit {
 
   async ngOnInit() {
     try {
-      const me = await api<{ workspace: { id: string; theme?: string } }>("/v1/workspaces/me");
+      const me = await api<{ workspace: { id: string; theme?: string; extrasJson?: string | null } }>("/v1/workspaces/me");
       this.workspaceId = me.workspace.id;
+      try {
+        const extras = JSON.parse(me.workspace.extrasJson || "{}") as {
+          customDomain?: string;
+          alertEmail?: string;
+          hashtags?: { id: string; name: string; tags: string }[];
+        };
+        this.customDomain = extras.customDomain || "";
+        this.alertEmail = extras.alertEmail || "";
+        this.hashtags = extras.hashtags || [];
+      } catch {
+        this.hashtags = [];
+      }
       const t = me.workspace.theme === "dark" ? "dark" : "light";
       this.theme.set(t);
       setDarkClass(t === "dark");
@@ -398,6 +431,19 @@ export class SettingsPage implements OnInit {
     } finally {
       this.sessionReady.set(true);
     }
+  }
+
+  async saveStudio() {
+    const hashtags = this.hashName.trim()
+      ? [...this.hashtags, { id: crypto.randomUUID(), name: this.hashName.trim(), tags: this.hashTags.trim() }]
+      : this.hashtags;
+    await api(`/v1/workspaces/${this.workspaceId}`, {
+      method: "PATCH",
+      json: { customDomain: this.customDomain, alertEmail: this.alertEmail, hashtags },
+    });
+    this.hashtags = hashtags;
+    this.hashName = "";
+    this.hashTags = "";
   }
 
   async copyWorkspaceId() {

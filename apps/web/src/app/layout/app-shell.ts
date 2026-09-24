@@ -14,6 +14,7 @@ const NAV = [
   { name: "Calendar", href: "/app", group: "Schedule", exact: true },
   { name: "Compose", href: "/app/compose", group: "Schedule", exact: false },
   { name: "Library", href: "/app/library", group: "Schedule", exact: false },
+  { name: "Inbox", href: "/app/inbox", group: "Schedule", exact: false },
   { name: "Smart agent", href: "/app/agent", group: "Schedule", exact: false },
   { name: "Accounts", href: "/app/accounts", group: "Account", exact: false },
   { name: "Team", href: "/app/team", group: "Account", exact: false },
@@ -75,6 +76,9 @@ const NAV = [
                           }
                           @case ('/app/library') {
                             <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" />
+                          }
+                          @case ('/app/inbox') {
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                           }
                           @case ('/app/agent') {
                             <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
@@ -215,6 +219,7 @@ const NAV = [
         <section class="fixed right-3 top-16 z-40 w-[min(22rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-[#e8e8e3] bg-white shadow-[0_12px_40px_rgba(15,18,24,0.12)] dark:border-zinc-700 dark:bg-zinc-900 md:right-5 md:top-[4.25rem]" aria-label="Notifications">
           <div class="flex items-center justify-between border-b border-[#e8e8e3] px-3 py-2.5 dark:border-zinc-800">
             <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#a1a1aa]">Needs attention</p>
+            <a href="/app/inbox" (click)="go($event, '/app/inbox')" class="text-[12px] font-semibold text-cta">Comments</a>
             <button type="button" (click)="inboxOpen.set(false)" class="text-[12px] font-medium text-[#63676c] hover:text-[#09090b] dark:text-zinc-400 dark:hover:text-zinc-100">Close</button>
           </div>
           <div class="max-h-80 overflow-y-auto">
@@ -266,6 +271,7 @@ export class AppShell implements OnInit {
   ] as const;
   readonly moreNav = [
     { name: "Library", href: "/app/library" },
+    { name: "Inbox", href: "/app/inbox" },
     { name: "Smart agent", href: "/app/agent" },
     { name: "Analytics", href: "/app/analytics" },
     { name: "Team", href: "/app/team" },
@@ -338,6 +344,7 @@ export class AppShell implements OnInit {
       "/app": "Calendar",
       "/app/compose": "Compose",
       "/app/library": "Library",
+      "/app/inbox": "Inbox",
       "/app/agent": "Smart agent",
       "/app/accounts": "Accounts",
       "/app/team": "Team",

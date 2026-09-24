@@ -33,6 +33,7 @@ import { fetchInstagramLoginUsername, instagramAccountLabel } from "../lib/oauth
 import { isPlanId } from "../lib/plans";
 import { isCloud } from "../lib/dodo";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "../lib/secrets";
+import { pickMetrics } from "../lib/schedule";
 import { rssHasPublishTarget } from "../lib/schedule";
 
 export const workspaceRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
@@ -76,6 +77,9 @@ workspaceRoutes.patch("/:id", async (c) => {
       plan: z.string().optional(),
       accountKind: z.enum(["solo", "agency"]).nullable().optional(),
       onboardingCompleted: z.boolean().optional(),
+      customDomain: z.string().max(200).optional(),
+      alertEmail: z.string().max(200).optional(),
+      hashtags: z.array(z.object({ id: z.string(), name: z.string().max(80), tags: z.string().max(500) })).max(30).optional(),
     })
     .parse(await c.req.json());
   const db = drizzle(c.env.DB);
@@ -86,6 +90,18 @@ workspaceRoutes.patch("/:id", async (c) => {
   if (body.plan && isPlanId(body.plan) && !isCloud(c.env)) patch.plan = body.plan;
   if (body.accountKind !== undefined) patch.accountKind = body.accountKind;
   if (body.onboardingCompleted !== undefined) patch.onboardingCompleted = body.onboardingCompleted;
+  if (body.customDomain !== undefined || body.alertEmail !== undefined || body.hashtags) {
+    let extras: { customDomain?: string; alertEmail?: string; hashtags?: { id: string; name: string; tags: string }[] } = {};
+    try {
+      extras = JSON.parse(ws.extrasJson || "{}");
+    } catch {
+      extras = {};
+    }
+    if (body.customDomain !== undefined) extras.customDomain = body.customDomain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    if (body.alertEmail !== undefined) extras.alertEmail = body.alertEmail.trim();
+    if (body.hashtags) extras.hashtags = body.hashtags;
+    patch.extrasJson = JSON.stringify(extras);
+  }
   if (Object.keys(patch).length) await db.update(workspace).set(patch).where(eq(workspace.id, id));
   const [next] = await db.select().from(workspace).where(eq(workspace.id, id)).limit(1);
   return c.json({ workspace: next });
@@ -99,6 +115,39 @@ workspaceRoutes.get("/:id/usage", async (c) => {
 });
 
 export const accountRoutes = new Hono<{ Bindings: Env; Variables: { userId: string } }>();
+
+accountRoutes.get("/mentions", async (c) => {
+  const workspaceId = c.req.query("workspaceId") || "";
+  const q = (c.req.query("q") || "").replace(/^@/, "").trim();
+  const network = c.req.query("network") || "";
+  if (!workspaceId || q.length < 2) return c.json({ handles: [] as { handle: string; network: string }[] });
+  const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
+  if (!ws) return c.json({ error: "forbidden" }, 403);
+  const db = drizzle(c.env.DB);
+  const rows = await db.select().from(socialAccount).where(eq(socialAccount.workspaceId, workspaceId));
+  const handles = rows
+    .filter((row) => row.handle.toLowerCase().includes(q.toLowerCase()) && (!network || row.network === network))
+    .map((row) => ({ handle: row.handle.replace(/^@/, ""), network: row.network }));
+  const x = rows.find((row) => row.network === "x");
+  if (x && (!network || network === "x")) {
+    try {
+      const creds = (await decryptCredentials(c.env, x.credentialsJson)) || {};
+      const token = creds.accessToken || (await decryptSecret(c.env, x.tokenCipher));
+      const res = await fetch(`https://api.x.com/2/users/by/username/${encodeURIComponent(q)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { data?: { username?: string } };
+        if (data.data?.username && !handles.some((item) => item.handle.toLowerCase() === data.data!.username!.toLowerCase())) {
+          handles.unshift({ handle: data.data.username, network: "x" });
+        }
+      }
+    } catch {
+      /* local handles still return */
+    }
+  }
+  return c.json({ handles: handles.slice(0, 8) });
+});
 
 accountRoutes.get("/", async (c) => {
   const workspaceId = c.req.query("workspaceId");
@@ -193,6 +242,7 @@ accountRoutes.get("/", async (c) => {
       tokenExpiresAt,
       tokenExpired: tokenExpiresAt != null && tokenExpiresAt <= Date.now(),
       lastError: lastError.get(row.id) || null,
+      queueSlots: row.queueSlots,
       slackChannelId: row.network === "slack" ? channelId : undefined,
       slackChannelName: row.network === "slack" ? channelName : undefined,
       needsSlackChannel: row.network === "slack" && !channelId,
@@ -333,6 +383,7 @@ accountRoutes.patch("/:id", async (c) => {
       slackChannelId: z.string().optional(),
       slackChannelName: z.string().optional(),
       pageId: z.string().optional(),
+      queueSlots: z.string().max(80).optional(),
     })
     .parse(await c.req.json());
   const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));
@@ -354,8 +405,9 @@ accountRoutes.patch("/:id", async (c) => {
     if (!g) return c.json({ error: "company_not_found" }, 404);
   }
 
-  const patch: { groupId?: string | null; credentialsJson?: string; status?: string } = {};
+  const patch: { groupId?: string | null; credentialsJson?: string; status?: string; queueSlots?: string } = {};
   if (body.groupId !== undefined) patch.groupId = body.groupId;
+  if (body.queueSlots !== undefined) patch.queueSlots = body.queueSlots;
 
   if (body.slackChannelId) {
     if (row.network !== "slack") return c.json({ error: "not_slack" }, 400);
@@ -1027,6 +1079,68 @@ orgRoutes.get("/analytics", async (c) => {
   }
   const channels = [...channelMap.values()].sort((a, b) => b.published + b.queued + b.failed + b.pending - (a.published + a.queued + a.failed + a.pending));
 
+  const engagement: { network: string; handle: string; likes?: number; comments?: number; reach?: number }[] = [];
+  const publishedRows = await db
+    .select({
+      remoteId: postDestination.remoteId,
+      network: socialAccount.network,
+      handle: socialAccount.handle,
+      tokenCipher: socialAccount.tokenCipher,
+      credentialsJson: socialAccount.credentialsJson,
+    })
+    .from(postDestination)
+    .innerJoin(socialAccount, eq(postDestination.socialAccountId, socialAccount.id))
+    .innerJoin(posts, eq(postDestination.postId, posts.id))
+    .where(and(eq(posts.workspaceId, workspaceId), eq(postDestination.status, "published")))
+    .limit(8);
+  for (const row of publishedRows) {
+    if (!row.remoteId) continue;
+    if (row.network !== "x" && row.network !== "instagram" && row.network !== "facebook") continue;
+    try {
+      const creds = (await decryptCredentials(c.env, row.credentialsJson)) || {};
+      const token = creds.accessToken || (await decryptSecret(c.env, row.tokenCipher));
+      const raw: Record<string, unknown> = {};
+      if (row.network === "x") {
+        const res = await fetch(`https://api.x.com/2/tweets/${row.remoteId}?tweet.fields=public_metrics`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) continue;
+        const data = (await res.json()) as { data?: { public_metrics?: { like_count?: number; reply_count?: number; impression_count?: number } } };
+        const metrics = data.data?.public_metrics;
+        if (metrics) {
+          raw.likes = metrics.like_count;
+          raw.comments = metrics.reply_count;
+          raw.reach = metrics.impression_count;
+        }
+      } else {
+        const host = creds.authKind === "instagram_login" ? "https://graph.instagram.com" : "https://graph.facebook.com/v21.0";
+        const fields = row.network === "instagram" ? "like_count,comments_count" : "likes.summary(true),comments.summary(true)";
+        const res = await fetch(`${host}/${row.remoteId}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`);
+        if (!res.ok) continue;
+        const data = (await res.json()) as {
+          like_count?: number;
+          comments_count?: number;
+          likes?: { summary?: { total_count?: number } };
+          comments?: { summary?: { total_count?: number } };
+        };
+        if (typeof data.like_count === "number") raw.likes = data.like_count;
+        if (typeof data.comments_count === "number") raw.comments = data.comments_count;
+        if (typeof data.likes?.summary?.total_count === "number") raw.likes = data.likes.summary.total_count;
+        if (typeof data.comments?.summary?.total_count === "number") raw.comments = data.comments.summary.total_count;
+        const reachRes = await fetch(`${host}/${row.remoteId}/insights?metric=reach&access_token=${encodeURIComponent(token)}`);
+        if (reachRes.ok) {
+          const insight = (await reachRes.json()) as { data?: { values?: { value?: number }[] }[] };
+          const value = insight.data?.[0]?.values?.[0]?.value;
+          if (typeof value === "number") raw.reach = value;
+        }
+      }
+      const metrics = pickMetrics(raw);
+      if (metrics) engagement.push({ network: row.network, handle: row.handle, ...metrics });
+    } catch {
+      /* leave the number off when the network does not return it */
+    }
+  }
+
   // Network insights only when credentials exist; never invent numbers.
   const networkInsights: { network: string; note: string }[] = [];
   const connected = await db
@@ -1057,6 +1171,7 @@ orgRoutes.get("/analytics", async (c) => {
     channels,
     breakdown: breakdown.results || [],
     networkInsights,
+    engagement,
     recent: (recentRows.results || []).map((row) => ({
       id: row.id,
       body: row.body,
@@ -1114,7 +1229,7 @@ orgRoutes.post("/integrations", async (c) => {
       workspaceId: z.string(),
       name: z.string(),
       url: z.string().url(),
-      events: z.array(z.string()).default(["post.published"]),
+      events: z.array(z.string()).default(["post.published", "post.failed", "token.dead"]),
     })
     .parse(await c.req.json());
   const ws = await assertWorkspaceAccess(c.env, body.workspaceId, c.get("userId"));

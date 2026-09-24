@@ -69,6 +69,7 @@ export async function ensureDefaultWorkspace(env: Env, userId: string, name = ""
     theme: "light",
     accountKind: null,
     onboardingCompleted: false,
+    extrasJson: null,
     createdAt: now,
   });
   await db.insert(workspaceMember).values({ workspaceId: id, userId, role: "owner" });
@@ -81,6 +82,7 @@ export async function ensureDefaultWorkspace(env: Env, userId: string, name = ""
     theme: "light",
     accountKind: null,
     onboardingCompleted: false,
+    extrasJson: null,
     createdAt: now,
   };
 }
@@ -99,6 +101,21 @@ export async function assertWorkspaceAccess(env: Env, workspaceId: string, userI
     .where(and(eq(workspaceMember.workspaceId, workspaceId), eq(workspaceMember.userId, userId)))
     .limit(1);
   return m ? ws : null;
+}
+
+export async function workspaceRole(env: Env, workspaceId: string, userId: string) {
+  const db = drizzle(env.DB);
+  const [ws] = await db.select({ ownerId: workspace.ownerId }).from(workspace).where(eq(workspace.id, workspaceId)).limit(1);
+  if (!ws) return null;
+  if (ws.ownerId === userId || userId === `token:${workspaceId}`) return "owner" as const;
+  const [m] = await db
+    .select({ role: workspaceMember.role })
+    .from(workspaceMember)
+    .where(and(eq(workspaceMember.workspaceId, workspaceId), eq(workspaceMember.userId, userId)))
+    .limit(1);
+  if (!m) return null;
+  if (m.role === "admin" || m.role === "owner") return m.role as "admin" | "owner";
+  return "member" as const;
 }
 
 export async function sha256Hex(input: string) {
