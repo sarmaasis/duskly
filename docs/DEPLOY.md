@@ -18,6 +18,8 @@ Put the D1 database id and KV namespace id in GitHub Actions secrets or variable
 
 GitHub secrets/vars the workflow needs: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, plus `D1_DATABASE_ID` and `KV_NAMESPACE_ID` (secret or variable). Optional for `wrangler.jsonc` vars only: `WEB_ORIGIN` and `API_ORIGIN`.
 
+The web Worker SSR host allowlist follows `WEB_ORIGIN` at runtime (the origin hostname plus `www`/apex; always `localhost` and `127.0.0.1`). Unset or `https://duskly.site` allows `duskly.site` and `www.duskly.site`. Set `WEB_ORIGIN` to your site when self-hosting.
+
 Worker secrets are not in the workflow. Set them once with `wrangler secret bulk` (or `wrangler secret put`); they persist across `wrangler deploy`. Required: `BETTER_AUTH_SECRET`, `TOKEN_ENCRYPTION_KEY` (`openssl rand -hex 32`), `BETTER_AUTH_URL`, `WEB_ORIGIN`, `EMAIL_FROM`. Optional: OAuth client ids/secrets, Dodo billing keys, `DUSKLY_MODE` (`selfhost` default; set `cloud` only for paid hosted SaaS).
 
 Push to `main` or run **deploy** via `workflow_dispatch`. The workflow installs, applies D1 migrations, then deploys `duskly-api` and `duskly-web`.

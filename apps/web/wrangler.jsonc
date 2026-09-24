@@ -12,5 +12,8 @@
     "not_found_handling": "single-page-application"
   },
   "observability": { "enabled": true },
-  "vars": { "API_ORIGIN": "https://api.duskly.site" }
+  "vars": {
+    "API_ORIGIN": "https://api.duskly.site",
+    "WEB_ORIGIN": "https://duskly.site"
+  }
 }

@@ -63,10 +63,18 @@ jobs:
           if origin:
               text = replace_string_field(text, "WEB_ORIGIN", origin)
           api.write_text(text)
+          web = pathlib.Path("apps/web/wrangler.jsonc")
+          web_text = web.read_text()
+          web_changed = False
           api_origin = os.environ.get("API_ORIGIN")
           if api_origin:
-              web = pathlib.Path("apps/web/wrangler.jsonc")
-              web.write_text(replace_string_field(web.read_text(), "API_ORIGIN", api_origin))
+              web_text = replace_string_field(web_text, "API_ORIGIN", api_origin)
+              web_changed = True
+          if origin:
+              web_text = replace_string_field(web_text, "WEB_ORIGIN", origin)
+              web_changed = True
+          if web_changed:
+              web.write_text(web_text)
           PY
 
       - name: Apply D1 migrations

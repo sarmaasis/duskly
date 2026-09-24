@@ -1,11 +1,22 @@
 import { AngularAppEngine, createRequestHandler } from "@angular/ssr";
+import { allowedHostsFromWebOrigin } from "./allowed-hosts";
 
 type Env = {
   API_ORIGIN?: string;
+  WEB_ORIGIN?: string;
 };
 
-const angularApp = new AngularAppEngine();
-const handleAngular = createRequestHandler((req: Request) => angularApp.handle(req));
+let angularApp: AngularAppEngine | undefined;
+let cachedOriginKey: string | undefined;
+
+function appEngine(origin: string | undefined): AngularAppEngine {
+  const key = origin ?? "";
+  if (!angularApp || cachedOriginKey !== key) {
+    angularApp = new AngularAppEngine({ allowedHosts: allowedHostsFromWebOrigin(origin) });
+    cachedOriginKey = key;
+  }
+  return angularApp;
+}
 
 function withSecurityHeaders(res: Response) {
   const next = new Response(res.body, res);
@@ -17,6 +28,7 @@ function withSecurityHeaders(res: Response) {
 
 export default {
   async fetch(req: Request, env: Env) {
+    const handleAngular = createRequestHandler((r) => appEngine(env.WEB_ORIGIN).handle(r));
     const res = await handleAngular(req);
     if (!res) return withSecurityHeaders(new Response("Not Found", { status: 404 }));
     const contentType = res.headers.get("content-type") || "";

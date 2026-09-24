@@ -21,7 +21,10 @@
             "styles": ["src/styles.css"],
             "outputMode": "server",
             "server": "src/main.server.ts",
-            "ssr": { "entry": "src/server.ts", "platform": "neutral" }
+            "ssr": { "entry": "src/server.ts", "platform": "neutral" },
+            "security": {
+              "allowedHosts": ["localhost", "127.0.0.1"]
+            }
           }
         },
         "serve": {
