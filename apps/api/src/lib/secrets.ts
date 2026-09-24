@@ -18,7 +18,9 @@ function base64ToBytes(value: string) {
 }
 
 function toArrayBuffer(bytes: Uint8Array) {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return copy;
 }
 
 /** 32-byte AES material: 64-hex, 32-byte base64, or SHA-256 of any other secret. */

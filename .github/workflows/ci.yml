@@ -3,8 +3,35 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: DCO
+        if: github.event_name == 'pull_request'
+        run: |
+          missing="$(git log --format='%H%x09%B%x1e' \
+            "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" |
+            awk 'BEGIN { RS = "\036"; FS = "\t" } NF && $0 !~ /Signed-off-by:/ { print $1 }')"
+          if [ -n "$missing" ]; then
+            echo "::error::Every commit must include a Signed-off-by line. Run: git commit --amend -s"
+            echo "$missing"
+            exit 1
+          fi
+      - run: pnpm typecheck
+      - run: pnpm test
+  e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -13,5 +40,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile || pnpm install
-      - run: pnpm typecheck || true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @duskly/web exec playwright install --with-deps chromium
+      - run: pnpm e2e

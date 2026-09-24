@@ -15,9 +15,13 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
+    "e2e": "pnpm --filter @duskly/web e2e",
     "duskly": "node scripts/duskly.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
   }
 }

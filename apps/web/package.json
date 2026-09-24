@@ -9,6 +9,8 @@
     "deploy:prod": "ng build && wrangler deploy",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "node --experimental-strip-types scripts/check-allowed-hosts.mts",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
     "lint": "echo ok"
   },
   "dependencies": {
@@ -29,6 +31,7 @@
     "@angular/build": "22.1.8",
     "@angular/cli": "22.1.8",
     "@angular/compiler-cli": "22.1.7",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
