@@ -12,6 +12,7 @@ import {
   orgRoutes,
 } from "./routes/workspace";
 import { oauthRoutes } from "./routes/oauth";
+import { instagramWebhookRoutes } from "./routes/instagram-webhook";
 import { metaDeletionRoutes } from "./routes/meta-deletion";
 import { mcpRoutes } from "./routes/mcp";
 import { refreshAccessToken } from "./lib/oauth-tokens";
@@ -74,6 +75,11 @@ app.use("/v1/*", async (c, next) => {
     await next();
     return;
   }
+  // Instagram webhook challenge + event delivery (not the OAuth callback).
+  if (c.req.path === "/v1/instagram/webhook") {
+    await next();
+    return;
+  }
   // Signed, time-limited media URLs for providers (Instagram) that fetch the file themselves.
   if (c.req.path.match(/^\/v1\/media\/[^/]+\/public$/)) {
     await next();
@@ -114,6 +120,7 @@ app.route("/v1/media", mediaRoutes);
 app.route("/v1/ai", aiRoutes);
 app.route("/v1/workspaces", workspaceRoutes);
 app.route("/v1/accounts/oauth", oauthRoutes);
+app.route("/v1/instagram/webhook", instagramWebhookRoutes);
 app.route("/v1/meta/data-deletion", metaDeletionRoutes);
 app.route("/v1/meta-deletion", metaDeletionRoutes);
 app.route("/v1/accounts", accountRoutes);

@@ -60,6 +60,10 @@ META_APP_SECRET=
 #   https://api.duskly.site/v1/accounts/oauth/instagram/callback
 INSTAGRAM_APP_ID=
 INSTAGRAM_APP_SECRET=
+# Instagram webhook verify token (Worker secret, not INSTAGRAM_APP_SECRET).
+# Meta webhook Callback URL (not the OAuth redirect):
+#   https://api.duskly.site/v1/instagram/webhook
+INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
 # Google OAuth — YouTube upload only. Consent screen scope: https://www.googleapis.com/auth/youtube.upload
 # Callback https://api.duskly.site/v1/accounts/oauth/youtube/callback
 GOOGLE_CLIENT_ID=

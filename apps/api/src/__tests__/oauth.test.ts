@@ -371,10 +371,14 @@ describe("tracked legal + callback docs", () => {
     expect(src).toContain("https://api.duskly.site/v1/media/{id}/public?exp=&sig=");
     expect(src).toContain("INSTAGRAM_APP_ID=");
     expect(src).toContain("INSTAGRAM_APP_SECRET=");
+    expect(src).toContain("INSTAGRAM_WEBHOOK_VERIFY_TOKEN=");
+    expect(src).toContain("https://api.duskly.site/v1/instagram/webhook");
     expect(src).toContain("API setup with Instagram login");
     const deploy = readFileSync(join(here, "../../../../docs/DEPLOY.md"), "utf8");
     expect(deploy).toContain("INSTAGRAM_APP_ID");
     expect(deploy).toContain("OAuth redirect URIs");
+    expect(deploy).toContain("https://api.duskly.site/v1/instagram/webhook");
+    expect(deploy).toContain("INSTAGRAM_WEBHOOK_VERIFY_TOKEN");
   });
 
   it("docs, privacy, and accounts explain Slack chat:write.public", () => {
