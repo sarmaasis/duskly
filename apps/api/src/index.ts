@@ -28,6 +28,7 @@ import { sha256Hex } from "./lib/workspace";
 import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "./lib/secrets";
 import { commentQueueDelay, mergeRssChannelIds, shouldDeferFirstComment } from "./lib/schedule";
+import { fetchFacebookPageInstagramAccount, instagramAccountLabel } from "./lib/oauth-providers";
 
 export { SchedulerLock };
 
@@ -202,6 +203,48 @@ async function pollRss(env: Env) {
   }
 }
 
+async function pageBackedInstagramCreds(
+  env: Env,
+  db: ReturnType<typeof drizzle>,
+  workspaceId: string,
+  igUserId: string,
+) {
+  if (!igUserId) return null;
+  const facebookRows = await db
+    .select({
+      handle: socialAccount.handle,
+      externalId: socialAccount.externalId,
+      credentialsJson: socialAccount.credentialsJson,
+    })
+    .from(socialAccount)
+    .where(and(eq(socialAccount.workspaceId, workspaceId), eq(socialAccount.network, "facebook")));
+  for (const row of facebookRows) {
+    try {
+      const creds = await decryptCredentials(env, row.credentialsJson);
+      const pageToken = creds?.accessToken;
+      const pageId = creds?.pageId || row.externalId;
+      if (!pageToken || !pageId) continue;
+      const linked = await fetchFacebookPageInstagramAccount(pageToken, pageId);
+      if (linked.igUserId !== igUserId) continue;
+      const nextCreds = {
+        accessToken: pageToken,
+        pageId,
+        pageName: linked.pageName || row.handle,
+        igUserId,
+        ...(linked.igUsername ? { igUsername: linked.igUsername } : {}),
+      };
+      return {
+        token: pageToken,
+        creds: nextCreds,
+        handle: instagramAccountLabel(nextCreds) || igUserId,
+      };
+    } catch {
+      /* keep scanning */
+    }
+  }
+  return null;
+}
+
 async function publishPost(env: Env, postId: string) {
   const db = drizzle(env.DB);
   const [post] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
@@ -268,6 +311,7 @@ async function publishPost(env: Env, postId: string) {
     }
     let creds = (await decryptCredentials(env, d.credentialsJson)) || {};
     let token = await decryptSecret(env, d.tokenCipher);
+    let handle = d.handle;
     const refreshed = await refreshAccessToken(env, d.network as Network, creds);
     if (refreshed.ok && !("skipped" in refreshed && refreshed.skipped)) {
       creds = refreshed.creds;
@@ -280,6 +324,23 @@ async function publishPost(env: Env, postId: string) {
         })
         .where(eq(socialAccount.id, d.socialAccountId));
     }
+    if (d.network === "instagram" && creds.authKind === "instagram_login") {
+      const upgraded = await pageBackedInstagramCreds(env, db, post.workspaceId, creds.igUserId || d.handle);
+      if (upgraded) {
+        creds = upgraded.creds;
+        token = upgraded.token;
+        handle = upgraded.handle;
+        await db
+          .update(socialAccount)
+          .set({
+            handle,
+            externalId: upgraded.creds.igUserId,
+            tokenCipher: await encryptSecret(env, token),
+            credentialsJson: await encryptCredentials(env, creds),
+          })
+          .where(eq(socialAccount.id, d.socialAccountId));
+      }
+    }
     if (mediaMissing) {
       anyQueued = true;
       await db
@@ -291,7 +352,7 @@ async function publishPost(env: Env, postId: string) {
     if (imageUrl && !creds.imageUrl) creds = { ...creds, imageUrl };
     const result = await adapter.publish({
       body: post.body,
-      handle: d.handle,
+      handle,
       token,
       credentials: creds,
       commentBody: post.commentBody,

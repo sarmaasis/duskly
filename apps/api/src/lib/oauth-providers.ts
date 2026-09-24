@@ -622,6 +622,36 @@ export async function listFacebookPages(userToken: string, requireIg: boolean): 
   }
 }
 
+export async function fetchFacebookPageInstagramAccount(
+  pageToken: string,
+  pageId: string,
+): Promise<{ pageName?: string; igUserId?: string; igUsername?: string }> {
+  if (!pageToken || !pageId) return {};
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${pageId}?${new URLSearchParams({
+        fields: "name,instagram_business_account{id,username}",
+        access_token: pageToken,
+      })}`,
+    );
+    const data = parseFacebookTokenPayload(await res.text()) as {
+      error?: unknown;
+      name?: string;
+      instagram_business_account?: { id?: string; username?: string };
+    };
+    if (!res.ok || data.error) return {};
+    const igUserId = data.instagram_business_account?.id;
+    const igUsername = data.instagram_business_account?.username?.replace(/^@/, "").trim();
+    return {
+      ...(data.name ? { pageName: data.name } : {}),
+      ...(igUserId ? { igUserId } : {}),
+      ...(igUsername ? { igUsername } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 export async function exchangeThreadsUserToken(
   env: Env,
   code: string,

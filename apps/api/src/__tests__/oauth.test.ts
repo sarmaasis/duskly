@@ -8,6 +8,7 @@ import {
   INSTAGRAM_LOGIN_AUTH,
   buildAuthorizeUrl,
   facebookConnectHandle,
+  fetchFacebookPageInstagramAccount,
   graphOauthReason,
   instagramAccountLabel,
   instagramLoginConfigured,
@@ -859,6 +860,22 @@ describe("Instagram account labels", () => {
     const listed = await listFacebookPages("user-token", true);
     expect(listed.pages[0]?.igUsername).toBe("dusklycafe");
     expect(instagramAccountLabel(listed.pages[0]!)).toBe("@dusklycafe");
+  });
+
+  it("reads the linked Instagram username from a connected Facebook Page", async () => {
+    const fetch = vi.fn(async (url: string) => {
+      expect(String(url)).toContain("graph.facebook.com/v21.0/page-1");
+      return graphRes(true, {
+        name: "Test duskly",
+        instagram_business_account: { id: "28317672417889630", username: "dusklycafe" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+    await expect(fetchFacebookPageInstagramAccount("page-token", "page-1")).resolves.toEqual({
+      pageName: "Test duskly",
+      igUserId: "28317672417889630",
+      igUsername: "dusklycafe",
+    });
   });
 });
 
