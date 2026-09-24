@@ -210,6 +210,11 @@ async function pageBackedInstagramCreds(
   igUserId: string,
 ) {
   if (!igUserId) return null;
+  const candidates: Array<{
+    token: string;
+    creds: Record<string, string>;
+    handle: string;
+  }> = [];
   const facebookRows = await db
     .select({
       handle: socialAccount.handle,
@@ -225,23 +230,26 @@ async function pageBackedInstagramCreds(
       const pageId = creds?.pageId || row.externalId;
       if (!pageToken || !pageId) continue;
       const linked = await fetchFacebookPageInstagramAccount(pageToken, pageId);
-      if (linked.igUserId !== igUserId) continue;
       const nextCreds = {
         accessToken: pageToken,
         pageId,
         pageName: linked.pageName || row.handle,
-        igUserId,
+        igUserId: linked.igUserId || igUserId,
         ...(linked.igUsername ? { igUsername: linked.igUsername } : {}),
       };
-      return {
+      if (!linked.igUserId) continue;
+      const candidate = {
         token: pageToken,
         creds: nextCreds,
         handle: instagramAccountLabel(nextCreds) || igUserId,
       };
+      if (linked.igUserId === igUserId) return candidate;
+      candidates.push(candidate);
     } catch {
       /* keep scanning */
     }
   }
+  if (candidates.length === 1) return candidates[0];
   return null;
 }
 

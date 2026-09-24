@@ -224,7 +224,12 @@ describe("publish adapters — missing credentials stay queued", () => {
 
   it("Instagram Login publish failures stay queued (no fake success)", async () => {
     const fetch = spyFetch();
-    fetch.mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({}), text: async () => "not professional" });
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({}),
+      text: async () => JSON.stringify({ error: { message: "Unsupported request - method type: post", code: 100 } }),
+    });
     const result = await adapters.instagram.publish({
       ...pending,
       token: "IG_USER_TOKEN",
@@ -236,7 +241,7 @@ describe("publish adapters — missing credentials stay queued", () => {
       },
     });
     expect(result).toMatchObject({ queued: true });
-    expect(String("reason" in result ? result.reason : "")).toMatch(/media create failed/i);
+    expect(String("reason" in result ? result.reason : "")).toMatch(/Business Login token cannot publish yet/i);
   });
 
   it("Facebook publish posts to the Page id with the Page token", async () => {

@@ -539,6 +539,10 @@ async function mastodonComment(input: CommentInput): Promise<{ commentRemoteId?:
 
 type IgGraphData = { id?: string; status_code?: string; error?: { message?: string; code?: number } };
 
+function instagramPostAccessDenied(detail: string): boolean {
+  return /unsupported request\s*-\s*method type:\s*post/i.test(detail);
+}
+
 async function instagramGraph(
   host: string,
   version: string,
@@ -691,6 +695,11 @@ async function metaGraphPublish(
         instagramGraph(graphHost, graphVersion, path, token, instagramLogin, "POST", fields);
       const created = await igPost(`${igUserId}/media`, { image_url: imageUrl, caption: input.body });
       if (!created.ok || !created.data.id) {
+        if (instagramLogin && instagramPostAccessDenied(created.detail)) {
+          return missingCreds(
+            "Instagram Business Login token cannot publish yet — reconnect after granting instagram_business_content_publish, and make sure the app has app review/tester access for that Instagram account.",
+          );
+        }
         return missingCreds(`Instagram media create failed (${created.status}): ${created.detail}`);
       }
       const ready = await waitInstagramContainer(graphHost, graphVersion, created.data.id, token, instagramLogin);
