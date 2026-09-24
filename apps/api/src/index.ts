@@ -334,7 +334,7 @@ async function publishPost(env: Env, postId: string) {
         })
         .where(eq(socialAccount.id, d.socialAccountId));
     }
-    if (d.network === "instagram" && creds.authKind === "instagram_login") {
+    if (d.network === "instagram") {
       const upgraded = await pageBackedInstagramCreds(env, db, post.workspaceId, creds.igUserId || d.handle);
       if (upgraded) {
         creds = upgraded.creds;

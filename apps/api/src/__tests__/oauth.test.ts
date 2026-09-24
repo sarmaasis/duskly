@@ -18,6 +18,7 @@ import {
   parseFacebookTokenPayload,
   safeOauthDetail,
   safeOauthReason,
+  useInstagramBusinessLogin,
 } from "../lib/oauth-providers";
 import { applyTokenResponse, refreshAccessToken, tokenExpiryMs } from "../lib/oauth-tokens";
 import { parseMetaSignedRequest } from "../routes/meta-deletion";
@@ -90,10 +91,24 @@ describe("OAuth authorize URLs", () => {
     expect(new URL(url).searchParams.get("scope")).toContain("instagram_content_publish");
   });
 
-  it("Instagram Login uses instagram.com authorize when INSTAGRAM_APP_ID and secret are set", () => {
+  it("Instagram prefers Facebook Login + Pages when META_APP_* is configured", () => {
     const url = buildAuthorizeUrl({
       ...base,
       env: { ...env, INSTAGRAM_APP_ID: "ig-app-id", INSTAGRAM_APP_SECRET: "ig-app-secret" },
+      network: "instagram",
+      redirectUri: "https://api.duskly.site/v1/accounts/oauth/instagram/callback",
+    });
+    expect(url.startsWith("https://www.facebook.com/v21.0/dialog/oauth?")).toBe(true);
+    const q = new URL(url).searchParams;
+    expect(q.get("client_id")).toBe("meta-id");
+    expect(q.get("scope")).toContain("instagram_content_publish");
+    expect(q.get("scope")).toContain("pages_show_list");
+  });
+
+  it("Instagram Business Login is used only when Facebook Login credentials are absent", () => {
+    const url = buildAuthorizeUrl({
+      ...base,
+      env: { INSTAGRAM_APP_ID: "ig-app-id", INSTAGRAM_APP_SECRET: "ig-app-secret" } as Env,
       network: "instagram",
       redirectUri: "https://api.duskly.site/v1/accounts/oauth/instagram/callback",
     });
@@ -112,11 +127,21 @@ describe("OAuth authorize URLs", () => {
 
   it("Instagram is configured from Instagram Login secrets even without META_APP_*", () => {
     expect(instagramLoginConfigured({} as Env)).toBe(false);
+    expect(useInstagramBusinessLogin({} as Env)).toBe(false);
     expect(oauthConfigured({} as Env, "instagram")).toBe(false);
     expect(oauthConfigured({ META_APP_ID: "m", META_APP_SECRET: "s" } as Env, "instagram")).toBe(true);
     expect(
       oauthConfigured({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "ig-s" } as Env, "instagram"),
     ).toBe(true);
+    expect(useInstagramBusinessLogin({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "ig-s" } as Env)).toBe(true);
+    expect(
+      useInstagramBusinessLogin({
+        META_APP_ID: "m",
+        META_APP_SECRET: "s",
+        INSTAGRAM_APP_ID: "ig",
+        INSTAGRAM_APP_SECRET: "ig-s",
+      } as Env),
+    ).toBe(false);
     expect(oauthConfigured({ INSTAGRAM_APP_ID: "ig", INSTAGRAM_APP_SECRET: "  " } as Env, "instagram")).toBe(false);
   });
 
@@ -973,6 +998,8 @@ describe("Instagram OAuth callback", () => {
 
 function instagramLoginEnv(overrides: Record<string, unknown> = {}) {
   return instagramCallbackEnv({
+    META_APP_ID: "",
+    META_APP_SECRET: "",
     INSTAGRAM_APP_ID: "ig-app-id",
     INSTAGRAM_APP_SECRET: "ig-app-secret",
     ...overrides,
@@ -1222,7 +1249,7 @@ describe("Instagram Login OAuth callback", () => {
       return graphRes(false, {});
     });
     vi.stubGlobal("fetch", fetch);
-    const res = await instagramCallback(instagramLoginEnv({ INSTAGRAM_APP_SECRET: "", DB: mockD1() }));
+    const res = await instagramCallback(instagramCallbackEnv({ INSTAGRAM_APP_ID: "ig-app-id", INSTAGRAM_APP_SECRET: "", DB: mockD1() }));
     expectAppRedirect(res, "ok");
     expect(res.headers.get("location") || "").toContain("network=instagram");
     const tokenCall = fetch.mock.calls.find(([u]) => isFacebookOauthAccessToken(String(u)));
@@ -1237,8 +1264,8 @@ describe("Instagram Login OAuth callback", () => {
     const src = readFileSync(join(here, "../routes/oauth.ts"), "utf8");
     expect(src).toContain("authKind: INSTAGRAM_LOGIN_AUTH");
     expect(src).toContain("exchangeInstagramUserToken");
-    expect(src).toContain("instagramLoginConfigured");
-    expect(src).toContain("instagramLogin: network === \"instagram\" && instagramLoginConfigured(c.env)");
+    expect(src).toContain("useInstagramBusinessLogin");
+    expect(src).toContain("instagramLogin: network === \"instagram\" && useInstagramBusinessLogin(c.env)");
     const providers = readFileSync(join(here, "../lib/oauth-providers.ts"), "utf8");
     expect(providers).toContain('fetch("https://api.instagram.com/oauth/access_token"');
     expect(providers).toContain('INSTAGRAM_GRAPH_VERSION = "v26.0"');

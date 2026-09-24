@@ -56,6 +56,14 @@ export function instagramLoginConfigured(env: Env): boolean {
   return !!(env.INSTAGRAM_APP_ID?.trim() && env.INSTAGRAM_APP_SECRET?.trim());
 }
 
+function facebookLoginConfigured(env: Env): boolean {
+  return !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
+}
+
+export function useInstagramBusinessLogin(env: Env): boolean {
+  return instagramLoginConfigured(env) && !facebookLoginConfigured(env);
+}
+
 export function instagramAppCreds(env: Env): { appId: string; appSecret: string } {
   return { appId: (env.INSTAGRAM_APP_ID || "").trim(), appSecret: (env.INSTAGRAM_APP_SECRET || "").trim() };
 }
@@ -65,10 +73,10 @@ export function oauthConfigured(env: Env, network: Network): boolean {
   if (network === "linkedin") return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET);
   if (network === "mastodon") return true;
   if (network === "instagram") {
-    return instagramLoginConfigured(env) || !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
+    return instagramLoginConfigured(env) || facebookLoginConfigured(env);
   }
   if (network === "threads" || network === "facebook") {
-    return !!(env.META_APP_ID?.trim() && env.META_APP_SECRET?.trim());
+    return facebookLoginConfigured(env);
   }
   if (network === "youtube") return !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
   if (network === "reddit") return !!(env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET);
@@ -120,7 +128,7 @@ export function buildAuthorizeUrl(input: AuthorizeInput): string {
     });
     return `https://threads.com/oauth/authorize?${params}`;
   }
-  if (network === "instagram" && instagramLoginConfigured(env)) {
+  if (network === "instagram" && useInstagramBusinessLogin(env)) {
     const { appId } = instagramAppCreds(env);
     const params = new URLSearchParams({
       force_reauth: "true",

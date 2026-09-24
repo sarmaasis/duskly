@@ -70,6 +70,7 @@ describe("repeat series", () => {
     const publisher = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../index.ts"), "utf8");
     expect(publisher).toContain("signPublicMediaUrl");
     expect(publisher).toContain("firstImage");
+    expect(publisher).toContain('d.network === "instagram"');
     expect(publisher).toContain("candidates.length === 1");
     expect(publisher).toContain("imageBytes");
     expect(publisher).toContain("JSON.parse(post.mediaIds)");

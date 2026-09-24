@@ -19,7 +19,6 @@ import {
   fetchInstagramLoginProfile,
   fetchInstagramLoginUsername,
   instagramAccountLabel,
-  instagramLoginConfigured,
   listFacebookPages,
   oauthConfigured,
   facebookUserId,
@@ -28,6 +27,7 @@ import {
   REDDIT_UA,
   safeOauthDetail,
   safeOauthReason,
+  useInstagramBusinessLogin,
 } from "../lib/oauth-providers";
 import { applyTokenResponse } from "../lib/oauth-tokens";
 import { apiPublicOrigin } from "../lib/media-signed-url";
@@ -154,7 +154,7 @@ oauthRoutes.get("/:network/start", async (c) => {
       mastodonClientSecret,
       subreddit: normalizeSubreddit(c.req.query("subreddit")),
       redirectUri,
-      instagramLogin: network === "instagram" && instagramLoginConfigured(c.env),
+      instagramLogin: network === "instagram" && useInstagramBusinessLogin(c.env),
     }),
     { expirationTtl: 600 },
   );
@@ -331,7 +331,7 @@ async function completeOAuthCallback(
         { access_token: th.accessToken, expires_in: th.expiresIn },
       );
       if (th.userId) await c.env.KV.put(`meta-user:${th.userId}`, stored.workspaceId);
-    } else if (network === "instagram" && (stored.instagramLogin ?? instagramLoginConfigured(c.env))) {
+    } else if (network === "instagram" && (stored.instagramLogin ?? useInstagramBusinessLogin(c.env))) {
       const exchanged = await exchangeInstagramUserToken(c.env, code, redirectUri);
       if (!exchanged.ok) {
         return fail(oauthFailQs(network, "token_failed", exchanged.reason, exchanged.detail));
