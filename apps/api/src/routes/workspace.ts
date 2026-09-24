@@ -269,6 +269,13 @@ accountRoutes.delete("/:id", async (c) => {
   const ws = await assertWorkspaceAccess(c.env, workspaceId, c.get("userId"));
   if (!ws) return c.json({ error: "forbidden" }, 403);
   const db = drizzle(c.env.DB);
+  const owned = await db
+    .select({ id: socialAccount.id })
+    .from(socialAccount)
+    .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, workspaceId)))
+    .limit(1);
+  if (!owned.length) return c.json({ error: "not_found" }, 404);
+  await db.delete(postDestination).where(eq(postDestination.socialAccountId, id));
   await db
     .delete(socialAccount)
     .where(and(eq(socialAccount.id, id), eq(socialAccount.workspaceId, workspaceId)));
