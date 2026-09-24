@@ -4,8 +4,8 @@ export type Env = {
   MEDIA: R2Bucket;
   EMAIL: {
     send(msg: {
-      to: string;
-      from: string;
+      to: string | { email: string; name?: string };
+      from: string | { email: string; name?: string };
       subject: string;
       html?: string;
       text?: string;

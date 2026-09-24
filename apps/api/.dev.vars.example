@@ -4,7 +4,8 @@ BETTER_AUTH_SECRET=replace-with-32-plus-bytes
 BETTER_AUTH_URL=http://localhost:8787
 # Angular app origin for CORS, redirects, and invite links
 WEB_ORIGIN=http://localhost:4200
-# From-address for Cloudflare Email (auth + team invites)
+# From-address for Cloudflare Email Sending (auth + team invites).
+# Domain of the address must be onboarded (duskly.site). Bare addr or Name <addr>.
 EMAIL_FROM=Duskly <noreply@duskly.site>
 # Encrypts stored network tokens. Generate with: openssl rand -hex 32
 TOKEN_ENCRYPTION_KEY=replace-with-32-byte-hex

@@ -19,6 +19,7 @@ import {
   user,
 } from "../db/schema";
 import type { Env } from "../env";
+import { parseEmailSender } from "../lib/email-sender";
 import { assertWorkspaceAccess, ensureDefaultWorkspace, sha256Hex } from "../lib/workspace";
 import {
   assertChannelLimit,
@@ -442,7 +443,7 @@ teamRoutes.post("/invite", async (c) => {
     const acceptUrl = `${c.env.WEB_ORIGIN}/invite/${id}`;
     await c.env.EMAIL.send({
       to: body.email.toLowerCase(),
-      from: c.env.EMAIL_FROM,
+      from: parseEmailSender(c.env.EMAIL_FROM),
       subject: `Join ${ws.name} on Duskly`,
       text: `You've been invited to ${ws.name}. Open ${acceptUrl} while signed in as ${body.email.toLowerCase()} to join.`,
       html: `<p>You've been invited to <strong>${ws.name}</strong> on Duskly.</p><p><a href="${acceptUrl}" style="color:#ff5c33">Accept invite</a></p><p>Sign in with <strong>${body.email.toLowerCase()}</strong> (same email OTP path as usual), then open the link.</p>`,
