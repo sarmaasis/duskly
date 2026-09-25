@@ -17,6 +17,7 @@ type AccountRow = {
   slackChannelName?: string | null;
   needsSlackChannel?: boolean;
   needsPage?: boolean;
+  needsPublishPermission?: boolean;
   pendingPages?: { id: string; name: string }[];
   tokenExpiresAt?: number | null;
   tokenExpired?: boolean;
@@ -312,7 +313,7 @@ const FALLBACK_META: Record<string, NetMeta> = {
               @if (a.tokenExpired || a.status !== 'active') {
                 <button type="button" (click)="reconnect(a)" class="self-start text-xs font-semibold text-cta">Reconnect</button>
               }
-              @if (a.network === 'linkedin' && a.status === 'active') {
+              @if (a.needsPublishPermission) {
                 <button type="button" (click)="enableLinkedInPublishing(a)" class="self-start text-xs font-semibold text-cta">Enable publishing</button>
               }
               <button type="button" (click)="remove(a.id)" class="inline-flex h-8 items-center self-start rounded-full border border-red-200 px-3 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950">Remove</button>
@@ -623,6 +624,7 @@ export class AccountsPage implements OnInit {
         slackChannelName: a.slackChannelName ?? null,
         needsSlackChannel: !!a.needsSlackChannel,
         needsPage: !!a.needsPage,
+        needsPublishPermission: !!a.needsPublishPermission,
         pendingPages: a.pendingPages || [],
         tokenExpiresAt: a.tokenExpiresAt ?? null,
         tokenExpired: !!a.tokenExpired,

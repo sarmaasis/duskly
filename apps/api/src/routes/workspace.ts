@@ -182,12 +182,18 @@ accountRoutes.get("/", async (c) => {
     let channelName: string | null = null;
     let pendingPages: Array<{ id: string; name: string }> = [];
     let tokenExpiresAt: number | null = null;
+    let needsPublishPermission = false;
     if (row.credentialsJson) {
       try {
         const creds = await decryptCredentials(c.env, row.credentialsJson);
         const exp = Number(creds?.expiresAt);
         if (Number.isFinite(exp) && exp > 0) tokenExpiresAt = exp;
         if (!creds) throw new Error("missing credentials");
+        needsPublishPermission =
+          row.network === "linkedin" &&
+          row.status === "active" &&
+          !!creds.grantedScopes &&
+          !creds.grantedScopes.split(/\s+/).includes("w_member_social");
         channelId = creds.channelId || null;
         channelName = creds.channelName || null;
         if (creds.pendingPagesJson) {
@@ -249,6 +255,7 @@ accountRoutes.get("/", async (c) => {
       needsSlackChannel: row.network === "slack" && !channelId,
       needsPage: (row.network === "instagram" || row.network === "facebook" || row.network === "linkedin-page") && row.status === "needs_page",
       pendingPages: (row.network === "instagram" || row.network === "facebook" || row.network === "linkedin-page") && row.status === "needs_page" ? pendingPages : undefined,
+      needsPublishPermission,
     };
   }));
   return c.json({
