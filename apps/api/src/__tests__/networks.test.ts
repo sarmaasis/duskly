@@ -98,7 +98,7 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("LinkedIn publishes through the current Posts API with a version header", async () => {
+  it("LinkedIn member text posts use the self-serve UGC Posts API", async () => {
     const fetch = spyFetch();
     fetch.mockResolvedValueOnce({
       ok: true,
@@ -112,11 +112,51 @@ describe("publish adapters — missing credentials stay queued", () => {
       credentials: { accessToken: "li-token", authorUrn: "urn:li:person:abc" },
     });
     expect(result).toMatchObject({ remoteId: "urn:li:share:123" });
+    expect(String(fetch.mock.calls[0][0])).toBe("https://api.linkedin.com/v2/ugcPosts");
+    expect(fetch.mock.calls[0][1].headers["x-restli-protocol-version"]).toBe("2.0.0");
+    expect(fetch.mock.calls[0][1].headers["linkedin-version"]).toBeUndefined();
+    const body = JSON.parse(String(fetch.mock.calls[0][1].body));
+    expect(body.author).toBe("urn:li:person:abc");
+    expect(body.specificContent["com.linkedin.ugc.ShareContent"].shareCommentary.text).toBe("hello");
+    expect(body.specificContent["com.linkedin.ugc.ShareContent"].shareMediaCategory).toBe("NONE");
+    expect(body.visibility["com.linkedin.ugc.MemberNetworkVisibility"]).toBe("PUBLIC");
+  });
+
+  it("LinkedIn Page posts use the versioned Posts API with a version header", async () => {
+    const fetch = spyFetch();
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      headers: { get: (h: string) => (h.toLowerCase() === "x-restli-id" ? "urn:li:share:page" : null) },
+      json: async () => ({}),
+      text: async () => "",
+    });
+    const result = await adapters["linkedin-page"].publish({
+      ...pending,
+      token: "li-token",
+      credentials: { accessToken: "li-token", authorUrn: "urn:li:organization:123" },
+    });
+    expect(result).toMatchObject({ remoteId: "urn:li:share:page" });
     expect(String(fetch.mock.calls[0][0])).toBe("https://api.linkedin.com/rest/posts");
     expect(fetch.mock.calls[0][1].headers["linkedin-version"]).toBe("202601");
     const body = JSON.parse(String(fetch.mock.calls[0][1].body));
     expect(body.commentary).toBe("hello");
     expect(body.distribution.feedDistribution).toBe("MAIN_FEED");
+  });
+
+  it("LinkedIn member polls queue instead of hitting the rejected Posts API", async () => {
+    const fetch = spyFetch();
+    const result = await adapters.linkedin.publish({
+      ...pending,
+      token: "li-token",
+      credentials: {
+        accessToken: "li-token",
+        authorUrn: "urn:li:person:abc",
+        pollJson: JSON.stringify({ question: "Pick one", options: ["A", "B"] }),
+      },
+    });
+    expect(result).toMatchObject({ queued: true });
+    expect(String("reason" in result ? result.reason : "")).toMatch(/Posts API access/i);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("LinkedIn publish permission errors ask for reconnect with w_member_social", async () => {
@@ -519,12 +559,21 @@ describe("caption+image scheduled publish must attach the photo", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("LinkedIn initializes an image upload and attaches the urn, not commentary-only", async () => {
+  it("LinkedIn member image posts use UGC assets and attach the asset", async () => {
     const fetch = spyFetch();
     fetch
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ value: { uploadUrl: "https://www.linkedin.com/dms-uploads/1", image: "urn:li:image:abc" } }),
+        json: async () => ({
+          value: {
+            uploadMechanism: {
+              "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest": {
+                uploadUrl: "https://www.linkedin.com/dms-uploads/1",
+              },
+            },
+            asset: "urn:li:digitalmediaAsset:abc",
+          },
+        }),
         text: async () => "",
       })
       .mockResolvedValueOnce({ ok: true, json: async () => ({}), text: async () => "" })
@@ -542,11 +591,13 @@ describe("caption+image scheduled publish must attach the photo", () => {
       imageContentType: "image/jpeg",
     });
     expect(result).toMatchObject({ remoteId: "urn:li:share:img" });
-    expect(String(fetch.mock.calls[0][0])).toContain("/rest/images?action=initializeUpload");
+    expect(String(fetch.mock.calls[0][0])).toBe("https://api.linkedin.com/v2/assets?action=registerUpload");
     expect(String(fetch.mock.calls[1][0])).toBe("https://www.linkedin.com/dms-uploads/1");
     const post = JSON.parse(String(fetch.mock.calls[2][1].body));
-    expect(post.commentary).toBe("hello");
-    expect(post.content.media.id).toBe("urn:li:image:abc");
+    const share = post.specificContent["com.linkedin.ugc.ShareContent"];
+    expect(share.shareCommentary.text).toBe("hello");
+    expect(share.shareMediaCategory).toBe("IMAGE");
+    expect(share.media[0].media).toBe("urn:li:digitalmediaAsset:abc");
   });
 
   it("LinkedIn queues instead of posting commentary-only when image init fails", async () => {

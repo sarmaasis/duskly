@@ -477,6 +477,7 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
     return missingCreds("LinkedIn OAuth credentials are not configured — scheduled and queued honestly, not marked published");
   }
   try {
+    const isMemberPost = author.startsWith("urn:li:person:");
     const wantsImage = !!(publishImageUrl(input) || input.imageBytes);
     const image = wantsImage ? await resolvePublishImage(input) : undefined;
     if (wantsImage && !image) {
@@ -484,23 +485,48 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
     }
     let imageUrn: string | undefined;
     if (image) {
-      const init = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${token}`,
-          "content-type": "application/json",
-          "linkedin-version": LINKEDIN_VERSION,
-          "x-restli-protocol-version": "2.0.0",
-        },
-        body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
-      });
+      const init = isMemberPost
+        ? await fetch("https://api.linkedin.com/v2/assets?action=registerUpload", {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+              "x-restli-protocol-version": "2.0.0",
+            },
+            body: JSON.stringify({
+              registerUploadRequest: {
+                recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
+                owner: author,
+                serviceRelationships: [{ relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" }],
+              },
+            }),
+          })
+        : await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+              "linkedin-version": LINKEDIN_VERSION,
+              "x-restli-protocol-version": "2.0.0",
+            },
+            body: JSON.stringify({ initializeUploadRequest: { owner: author } }),
+          });
       if (!init.ok) {
         const err = await init.text();
         return missingCreds(`LinkedIn image init failed (${init.status}): ${err.slice(0, 200)}`);
       }
-      const started = (await init.json()) as { value?: { uploadUrl?: string; image?: string } };
-      const uploadUrl = started.value?.uploadUrl;
-      imageUrn = started.value?.image;
+      const started = (await init.json()) as {
+        value?: {
+          uploadUrl?: string;
+          image?: string;
+          asset?: string;
+          uploadMechanism?: { "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"?: { uploadUrl?: string } };
+        };
+      };
+      const uploadUrl = isMemberPost
+        ? started.value?.uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]?.uploadUrl
+        : started.value?.uploadUrl;
+      imageUrn = isMemberPost ? started.value?.asset : started.value?.image;
       if (!uploadUrl || !imageUrn) {
         return missingCreds("LinkedIn image init returned no upload URL — queued");
       }
@@ -513,6 +539,65 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
         const err = await put.text();
         return missingCreds(`LinkedIn image upload failed (${put.status}): ${err.slice(0, 200)}`);
       }
+    }
+    if (isMemberPost && input.credentials?.pollJson) {
+      return missingCreds(
+        "LinkedIn member polls require LinkedIn Posts API access beyond self-serve Share on LinkedIn — queued instead of hitting the rejected endpoint.",
+      );
+    }
+    if (isMemberPost) {
+      const shareContent: Record<string, unknown> = {
+        shareCommentary: { text: linkedinCommentary(input.body) },
+        shareMediaCategory: imageUrn ? "IMAGE" : "NONE",
+      };
+      if (imageUrn) {
+        const alt = publishAlt(input);
+        shareContent.media = [
+          {
+            status: "READY",
+            media: imageUrn,
+            ...(alt ? { description: { text: alt }, title: { text: alt.slice(0, 200) } } : {}),
+          },
+        ];
+      }
+      const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "x-restli-protocol-version": "2.0.0",
+        },
+        body: JSON.stringify({
+          author,
+          lifecycleState: "PUBLISHED",
+          specificContent: { "com.linkedin.ugc.ShareContent": shareContent },
+          visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        if (/w_member_social|not enough permissions|access_denied/i.test(err)) {
+          return missingCreds(
+            "LinkedIn token cannot publish yet — reconnect LinkedIn after granting Share on LinkedIn / w_member_social.",
+          );
+        }
+        return missingCreds(`LinkedIn publish failed (${res.status}): ${err.slice(0, 200)}`);
+      }
+      const id = res.headers.get("x-restli-id") || crypto.randomUUID();
+      let commentRemoteId: string | undefined;
+      let commentSkipped: string | undefined;
+      if (!input.skipComment && input.commentBody?.trim()) {
+        const c = await linkedinComment({
+          remoteId: id,
+          commentBody: input.commentBody,
+          handle: input.handle,
+          token,
+          credentials: { ...input.credentials, authorUrn: author },
+        });
+        commentRemoteId = c.commentRemoteId;
+        commentSkipped = c.commentSkipped;
+      }
+      return { remoteId: id, commentRemoteId, commentSkipped };
     }
     const postBody: Record<string, unknown> = {
       author,
