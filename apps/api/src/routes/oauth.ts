@@ -6,7 +6,7 @@ import type { Env } from "../env";
 import { assertWorkspaceAccess } from "../lib/workspace";
 import { assertChannelLimit, planErrorResponse } from "../lib/entitlements";
 import { NETWORKS, NETWORK_META, type Network } from "../lib/networks";
-import { encryptCredentials, encryptFailureDetail, encryptSecret, isTokenEncryptError } from "../lib/secrets";
+import { decryptCredentials, encryptCredentials, encryptFailureDetail, encryptSecret, isTokenEncryptError } from "../lib/secrets";
 import {
   INSTAGRAM_LOGIN_AUTH,
   buildAuthorizeUrl,
@@ -162,19 +162,31 @@ oauthRoutes.get("/:network/start", async (c) => {
       replaceId: c.req.query("replaceId") || null,
       redirectUri,
       instagramLogin: network === "instagram" && useInstagramBusinessLogin(c.env),
+      linkedinShare: network === "linkedin" && c.req.query("share") === "1" && !!c.req.query("replaceId"),
     }),
     { expirationTtl: 600 },
   );
 
-  const url = buildAuthorizeUrl({
-    env: c.env,
-    network,
-    redirectUri,
-    state,
-    challenge,
-    instance,
-    mastodonClientId,
-  });
+  const linkedinShare = network === "linkedin" && c.req.query("share") === "1" && !!c.req.query("replaceId");
+  const url = linkedinShare
+    ? `https://www.linkedin.com/oauth/v2/authorization?${new URLSearchParams({
+        response_type: "code",
+        client_id: linkedinAppCreds(c.env, "linkedin").clientId,
+        redirect_uri: redirectUri,
+        scope: "w_member_social",
+        state,
+      })
+        .toString()
+        .replace(/\+/g, "%20")}`
+    : buildAuthorizeUrl({
+        env: c.env,
+        network,
+        redirectUri,
+        state,
+        challenge,
+        instance,
+        mastodonClientId,
+      });
   return c.redirect(url);
 });
 
@@ -222,6 +234,7 @@ async function completeOAuthCallback(
     subreddit?: string;
     redirectUri?: string;
     instagramLogin?: boolean;
+    linkedinShare?: boolean;
     replaceId?: string | null;
   };
   try {
@@ -252,6 +265,8 @@ async function completeOAuthCallback(
   let handle = "";
   let credentials: Record<string, string> = {};
   let status: string = "active";
+  let externalIdOverride: string | undefined;
+  let groupIdOverride: string | null | undefined;
 
   try {
     if (network === "x") {
@@ -309,40 +324,76 @@ async function completeOAuthCallback(
       if (!tokenRes.ok || !tok.access_token) {
         return fail(oauthFailQs(network, "token_failed", tok.error || "exchange", tok.error_description));
       }
-      const required =
-        network === "linkedin-page"
-          ? ["openid", "profile", "w_organization_social", "rw_organization_admin"]
-          : linkedinScopes("linkedin");
-      const missing = linkedinMissingScopes(tok.scope, required);
-      if (missing.length) {
-        return fail(oauthFailQs(network, "token_failed", "scopes", missing.join(" ")));
-      }
-      accessToken = tok.access_token;
-      const me = await fetch("https://api.linkedin.com/v2/userinfo", {
-        headers: { authorization: `Bearer ${accessToken}` },
-      });
-      const meJson = (await me.json()) as { sub?: string; name?: string; email?: string };
-      const authorUrn = meJson.sub ? `urn:li:person:${meJson.sub}` : "";
-      if (network === "linkedin-page") {
-        const listed = await listLinkedInPages(accessToken);
-        if (!listed.pages.length) {
-          return fail(
-            listed.error
-              ? oauthFailQs(network, "token_failed", "pages", "LinkedIn did not return Pages for this login")
-              : oauthFailQs(network, "no_page", "no_page"),
-          );
+      if (stored.linkedinShare) {
+        if (!stored.replaceId) return fail(oauthFailQs(network, "error", "bad_state"));
+        const granted = tok.scope || "w_member_social";
+        const missing = linkedinMissingScopes(granted, ["w_member_social"]);
+        if (missing.length) {
+          return fail(oauthFailQs(network, "token_failed", "scopes", missing.join(" ")));
         }
-        if (listed.pages.length === 1) {
-          handle = listed.pages[0].name;
-          credentials = applyTokenResponse({ authorUrn: listed.pages[0].id, pageName: listed.pages[0].name }, tok);
-        } else {
-          status = "needs_page";
-          handle = "LinkedIn Page";
-          credentials = applyTokenResponse({ authorUrn, pendingPagesJson: JSON.stringify(listed.pages) }, tok);
-        }
+        const db = drizzle(c.env.DB);
+        const [existing] = await db
+          .select({
+            handle: socialAccount.handle,
+            externalId: socialAccount.externalId,
+            credentialsJson: socialAccount.credentialsJson,
+            groupId: socialAccount.groupId,
+            status: socialAccount.status,
+          })
+          .from(socialAccount)
+          .where(
+            and(
+              eq(socialAccount.id, stored.replaceId),
+              eq(socialAccount.workspaceId, stored.workspaceId),
+              eq(socialAccount.network, "linkedin"),
+            ),
+          )
+          .limit(1);
+        if (!existing) return fail(oauthFailQs(network, "error", "bad_state"));
+        const existingCreds = (await decryptCredentials(c.env, existing.credentialsJson)) || {};
+        if (!existingCreds.authorUrn) return fail(oauthFailQs(network, "error", "bad_state", "missing_author"));
+        accessToken = tok.access_token;
+        handle = existing.handle;
+        externalIdOverride = existing.externalId;
+        groupIdOverride = existing.groupId;
+        status = existing.status || "active";
+        credentials = applyTokenResponse({ ...existingCreds, grantedScopes: granted }, { ...tok, scope: granted });
       } else {
-        handle = meJson.name || meJson.email || "linkedin-user";
-        credentials = applyTokenResponse({ authorUrn }, tok);
+        const required =
+          network === "linkedin-page"
+            ? ["openid", "profile", "w_organization_social", "rw_organization_admin"]
+            : linkedinScopes("linkedin");
+        const missing = linkedinMissingScopes(tok.scope, required);
+        if (missing.length) {
+          return fail(oauthFailQs(network, "token_failed", "scopes", missing.join(" ")));
+        }
+        accessToken = tok.access_token;
+        const me = await fetch("https://api.linkedin.com/v2/userinfo", {
+          headers: { authorization: `Bearer ${accessToken}` },
+        });
+        const meJson = (await me.json()) as { sub?: string; name?: string; email?: string };
+        const authorUrn = meJson.sub ? `urn:li:person:${meJson.sub}` : "";
+        if (network === "linkedin-page") {
+          const listed = await listLinkedInPages(accessToken);
+          if (!listed.pages.length) {
+            return fail(
+              listed.error
+                ? oauthFailQs(network, "token_failed", "pages", "LinkedIn did not return Pages for this login")
+                : oauthFailQs(network, "no_page", "no_page"),
+            );
+          }
+          if (listed.pages.length === 1) {
+            handle = listed.pages[0].name;
+            credentials = applyTokenResponse({ authorUrn: listed.pages[0].id, pageName: listed.pages[0].name }, tok);
+          } else {
+            status = "needs_page";
+            handle = "LinkedIn Page";
+            credentials = applyTokenResponse({ authorUrn, pendingPagesJson: JSON.stringify(listed.pages) }, tok);
+          }
+        } else {
+          handle = meJson.name || meJson.email || "linkedin-user";
+          credentials = applyTokenResponse({ authorUrn }, tok);
+        }
       }
     } else if (network === "mastodon") {
       const instance = stored.instance;
@@ -597,7 +648,8 @@ async function completeOAuthCallback(
   }
 
   const db = drizzle(c.env.DB);
-  const externalId = network === "instagram" && credentials.igUserId ? credentials.igUserId : handle;
+  const externalId = externalIdOverride || (network === "instagram" && credentials.igUserId ? credentials.igUserId : handle);
+  const groupId = groupIdOverride !== undefined ? groupIdOverride : stored.groupId || null;
   let id = stored.replaceId || "";
   try {
     const tokenCipher = await encryptSecret(c.env, accessToken);
@@ -612,7 +664,7 @@ async function completeOAuthCallback(
     if (existing) {
       await db
         .update(socialAccount)
-        .set({ handle, externalId, tokenCipher, credentialsJson, status, groupId: stored.groupId || null })
+        .set({ handle, externalId, tokenCipher, credentialsJson, status, groupId })
         .where(eq(socialAccount.id, existing.id));
       id = existing.id;
     } else {
@@ -625,7 +677,7 @@ async function completeOAuthCallback(
         externalId,
         tokenCipher,
         credentialsJson,
-        groupId: stored.groupId || null,
+        groupId,
         status,
         createdAt: new Date(),
       });

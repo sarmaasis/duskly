@@ -312,6 +312,9 @@ const FALLBACK_META: Record<string, NetMeta> = {
               @if (a.tokenExpired || a.status !== 'active') {
                 <button type="button" (click)="reconnect(a)" class="self-start text-xs font-semibold text-cta">Reconnect</button>
               }
+              @if (a.network === 'linkedin' && a.status === 'active') {
+                <button type="button" (click)="enableLinkedInPublishing(a)" class="self-start text-xs font-semibold text-cta">Enable publishing</button>
+              }
               <button type="button" (click)="remove(a.id)" class="inline-flex h-8 items-center self-start rounded-full border border-red-200 px-3 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950">Remove</button>
             </article>
           } @empty {
@@ -679,6 +682,15 @@ export class AccountsPage implements OnInit {
     if (this.network === "reddit" && this.subreddit.trim()) q.set("subreddit", this.subreddit.trim());
     if (this.connectCompanyId) q.set("groupId", this.connectCompanyId);
     window.location.href = `${apiBase()}/v1/accounts/oauth/${this.network}/start?${q}`;
+  }
+
+  enableLinkedInPublishing(account: AccountRow) {
+    if (!this.oauthReady().linkedin) {
+      this.msg.set("OAuth for LinkedIn is not configured on the API.");
+      return;
+    }
+    const q = new URLSearchParams({ workspaceId: this.workspaceId, replaceId: account.id, share: "1" });
+    window.location.href = `${apiBase()}/v1/accounts/oauth/linkedin/start?${q}`;
   }
 
   async loadSlackChannels(accountId: string) {
