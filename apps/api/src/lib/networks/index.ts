@@ -478,6 +478,12 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
   }
   try {
     const isMemberPost = author.startsWith("urn:li:person:");
+    const grantedScopes = input.credentials?.grantedScopes;
+    if (isMemberPost && grantedScopes && !grantedScopes.split(/\s+/).includes("w_member_social")) {
+      return missingCreds(
+        "LinkedIn token is connected for sign-in only. LinkedIn is currently rejecting the Share on LinkedIn consent screen for this app, so reconnect once LinkedIn can grant w_member_social.",
+      );
+    }
     const wantsImage = !!(publishImageUrl(input) || input.imageBytes);
     const image = wantsImage ? await resolvePublishImage(input) : undefined;
     if (wantsImage && !image) {

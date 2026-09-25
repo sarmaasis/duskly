@@ -78,7 +78,7 @@ export function instagramAppCreds(env: Env): { appId: string; appSecret: string 
 }
 
 /** Sign In with LinkedIn using OpenID Connect plus Share on LinkedIn publishing. */
-export const LINKEDIN_MEMBER_SCOPES = ["openid", "profile", "email", "w_member_social"];
+export const LINKEDIN_MEMBER_SCOPES = ["openid", "profile", "email"];
 
 /**
  * Page app: Community Management products, separate from the member app.

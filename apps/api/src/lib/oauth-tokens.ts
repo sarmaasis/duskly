@@ -18,12 +18,13 @@ export function accessTokenExpired(creds: Record<string, string> | undefined): b
 
 export function applyTokenResponse(
   creds: Record<string, string>,
-  tok: { access_token?: string; refresh_token?: string; expires_in?: number },
+  tok: { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string },
 ): Record<string, string> {
   const next = { ...creds };
   if (tok.access_token) next.accessToken = tok.access_token;
   if (tok.refresh_token) next.refreshToken = tok.refresh_token;
   if (tok.expires_in != null || tok.access_token) next.expiresAt = tokenExpiryMs(tok.expires_in);
+  if (tok.scope) next.grantedScopes = tok.scope;
   return next;
 }
 

@@ -159,6 +159,22 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("LinkedIn member publish queues when the token lacks w_member_social", async () => {
+    const fetch = spyFetch();
+    const result = await adapters.linkedin.publish({
+      ...pending,
+      token: "li-token",
+      credentials: {
+        accessToken: "li-token",
+        authorUrn: "urn:li:person:abc",
+        grantedScopes: "openid profile email",
+      },
+    });
+    expect(result).toMatchObject({ queued: true });
+    expect(String("reason" in result ? result.reason : "")).toMatch(/w_member_social/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("LinkedIn publish permission errors ask for reconnect with w_member_social", async () => {
     const fetch = spyFetch();
     fetch.mockResolvedValueOnce({

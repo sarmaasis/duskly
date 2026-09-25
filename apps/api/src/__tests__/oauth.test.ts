@@ -97,8 +97,8 @@ describe("OAuth authorize URLs", () => {
     expect(q.get("client_id")).toBe("li-id");
     expect(q.get("prompt")).toBeNull();
     expect(q.get("redirect_uri")).toBe("https://api.duskly.site/v1/accounts/oauth/linkedin/callback");
-    expect(q.get("scope")).toBe("openid profile email w_member_social");
-    expect(url).toContain("scope=openid%20profile%20email%20w_member_social");
+    expect(q.get("scope")).toBe("openid profile email");
+    expect(url).toContain("scope=openid%20profile%20email");
     expect(q.get("scope")).not.toContain("w_organization_social");
   });
 
@@ -161,10 +161,7 @@ describe("OAuth authorize URLs", () => {
     expect(listed.error).toBeUndefined();
     expect(listed.pages.map((p) => p.id).sort()).toEqual(["urn:li:organization:7", "urn:li:organization:9"]);
     expect(listed.pages.find((p) => p.id.endsWith(":7"))?.name).toBe("Acme");
-    expect(linkedinMissingScopes("openid profile", ["openid", "email", "w_member_social"])).toEqual([
-      "email",
-      "w_member_social",
-    ]);
+    expect(linkedinMissingScopes("openid profile", ["openid", "email"])).toEqual(["email"]);
     expect(linkedinMissingScopes(undefined, ["openid"])).toEqual([]);
   });
 
