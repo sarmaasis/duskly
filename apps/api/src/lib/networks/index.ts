@@ -598,6 +598,11 @@ async function linkedinPublish(input: PublishInput): Promise<PublishOk | Publish
     });
     if (!res.ok) {
       const err = await res.text();
+      if (/partnerApiPostsExternal\.CREATE|w_member_social|not enough permissions/i.test(err)) {
+        return missingCreds(
+          "LinkedIn token cannot publish yet — reconnect LinkedIn after granting Share on LinkedIn / w_member_social.",
+        );
+      }
       return missingCreds(`LinkedIn publish failed (${res.status}): ${err.slice(0, 200)}`);
     }
     const id = res.headers.get("x-restli-id") || crypto.randomUUID();

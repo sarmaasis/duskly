@@ -119,6 +119,28 @@ describe("publish adapters — missing credentials stay queued", () => {
     expect(body.distribution.feedDistribution).toBe("MAIN_FEED");
   });
 
+  it("LinkedIn publish permission errors ask for reconnect with w_member_social", async () => {
+    const fetch = spyFetch();
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () =>
+        JSON.stringify({
+          status: 403,
+          serviceErrorCode: 100,
+          code: "ACCESS_DENIED",
+          message: "Not enough permissions to access: partnerApiPostsExternal.CREATE.20260101",
+        }),
+    });
+    const result = await adapters.linkedin.publish({
+      ...pending,
+      token: "li-token",
+      credentials: { accessToken: "li-token", authorUrn: "urn:li:person:abc" },
+    });
+    expect(result).toMatchObject({ queued: true });
+    expect(String("reason" in result ? result.reason : "")).toMatch(/w_member_social/i);
+  });
+
   it("YouTube with only a videoId (comment-on-existing) stays queued — upload-only", async () => {
     const fetch = spyFetch();
     const result = await adapters.youtube.publish({
