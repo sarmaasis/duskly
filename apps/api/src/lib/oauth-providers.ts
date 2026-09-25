@@ -77,8 +77,8 @@ export function instagramAppCreds(env: Env): { appId: string; appSecret: string 
   return { appId: (env.INSTAGRAM_APP_ID || "").trim(), appSecret: (env.INSTAGRAM_APP_SECRET || "").trim() };
 }
 
-/** Member app Auth tab: openid, profile, email, and Share on LinkedIn. */
-export const LINKEDIN_MEMBER_SCOPES = ["openid", "profile", "email", "w_member_social"];
+/** Sign In with LinkedIn using OpenID Connect: openid, profile, and email. */
+export const LINKEDIN_MEMBER_SCOPES = ["openid", "profile", "email"];
 
 /**
  * Page app: Community Management products, separate from the member app.
