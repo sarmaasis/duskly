@@ -5,7 +5,7 @@ import { SessionService } from "../lib/session";
 import { cloudSignInClosed } from "../lib/site-mode";
 
 const CF_DEPLOY =
-  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly-public";
+  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
 
 @Component({
   standalone: true,
@@ -50,7 +50,7 @@ const CF_DEPLOY =
             <p class="mt-2 font-mono text-[11px] uppercase tracking-wider text-[#71717a]">Forever · Apache-2.0</p>
             <div class="mt-4 flex flex-wrap gap-2">
               <a routerLink="/docs/self-host" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-xs font-bold text-white hover:bg-cta-hover">Self-host guide</a>
-              <a href="https://github.com/sarmaasis/duskly-public" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
+              <a href="https://github.com/sarmaasis/duskly" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
               <a [href]="cfDeploy" class="inline-flex">
                 <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" width="160" height="40" />
               </a>

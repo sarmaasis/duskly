@@ -4,7 +4,7 @@ import { SessionService } from "../lib/session";
 import { cloudSignInClosed } from "../lib/site-mode";
 
 export const CF_DEPLOY =
-  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly-public";
+  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
 
 @Component({
   standalone: true,

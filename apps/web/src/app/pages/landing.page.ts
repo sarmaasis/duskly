@@ -5,7 +5,7 @@ import { SessionService } from "../lib/session";
 import { cloudSignInClosed } from "../lib/site-mode";
 
 const CF_DEPLOY =
-  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly-public";
+  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
 
 const PLANS = [
   {
@@ -380,7 +380,7 @@ const FAQS = [
               </ul>
             </div>
             <div class="mt-6 flex flex-wrap items-center gap-3">
-              <a href="https://github.com/sarmaasis/duskly-public" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] bg-white px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
+              <a href="https://github.com/sarmaasis/duskly" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] bg-white px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
               <a [href]="cfDeploy" class="inline-flex">
                 <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" width="160" height="40" />
               </a>
@@ -560,7 +560,7 @@ export class LandingPage {
     { label: "Pricing", href: "/#pricing" },
     { label: "Docs", href: "/docs" },
     { label: "Tools", href: "/tools" },
-    { label: "GitHub", href: "https://github.com/sarmaasis/duskly-public" },
+    { label: "GitHub", href: "https://github.com/sarmaasis/duskly" },
   ];
 
   readonly logos = [
