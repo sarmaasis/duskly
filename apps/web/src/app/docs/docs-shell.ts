@@ -9,6 +9,10 @@ const NAV = [
     items: [{ label: "Overview", path: "/docs" }, { label: "Your first post", path: "/docs/getting-started" }, { label: "Self-hosting", path: "/docs/self-host" }],
   },
   {
+    label: "Run your instance",
+    items: [{ label: "Connect accounts", path: "/docs/accounts" }, { label: "Updates & backups", path: "/docs/operations" }],
+  },
+  {
     label: "API",
     items: [{ label: "Authentication & endpoints", path: "/docs/api" }],
   },

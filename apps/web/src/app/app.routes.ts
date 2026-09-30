@@ -23,6 +23,7 @@ import { DocsOverviewPage } from "./docs/docs-overview.page";
 import { DocsApiPage } from "./docs/docs-api.page";
 import { DocsAgentsPage } from "./docs/docs-agents.page";
 import { DocsMcpPage } from "./docs/docs-mcp.page";
+import { DocsAccountsPage, DocsOperationsPage } from "./docs/docs-operators.page";
 import { PrivacyPage, TermsPage, DataDeletionPage } from "./pages/legal.page";
 import { BlogArticlePage, BlogIndexPage } from "./pages/growth.page";
 import { ToolsShell } from "./pages/tools/tools-shell";
@@ -64,6 +65,8 @@ export const routes: Routes = [
       { path: "", component: DocsOverviewPage },
       { path: "getting-started", component: DocsGettingStartedPage },
       { path: "self-host", component: DocsSelfHostPage },
+      { path: "accounts", component: DocsAccountsPage },
+      { path: "operations", component: DocsOperationsPage },
       { path: "api", component: DocsApiPage },
       { path: "agents", component: DocsAgentsPage },
       { path: "mcp", component: DocsMcpPage },

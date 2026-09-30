@@ -13,6 +13,10 @@ test('deployment config wires both workers without mutating templates or copying
   assert.equal(config.web.vars.DUSKLY_MODE, 'selfhost');
   assert.equal(config.api.vars.CLOUD_TESTER_EMAILS, undefined);
   assert.equal(config.api.d1_databases[0].database_id, env.D1_DATABASE_ID);
+  assert.equal(config.api.name, 'duskly-api');
+  assert.equal(config.web.name, 'duskly-web');
+  assert.deepEqual(config.api.routes, [{ pattern: 'api.example.com', custom_domain: true }]);
+  assert.deepEqual(config.web.routes, [{ pattern: 'social.example.com', custom_domain: true }]);
   assert.equal(api.d1_databases[0].database_id, '${D1_DATABASE_ID}');
   assert.ok(!JSON.stringify(config).includes('never-copy'));
   const cloud = deploymentConfig({ ...env, DUSKLY_MODE: 'cloud', CLOUD_TESTER_EMAILS: 'a@b.co, c@d.co' }, api, web);
@@ -28,5 +32,7 @@ test('deployment fails before writing or uploading with missing or invalid setti
   assert.throws(() => deploymentConfig({ ...env, D1_DATABASE_ID: 'placeholder' }, api, web), /UUID/);
   assert.throws(() => deploymentConfig({ ...env, KV_NAMESPACE_ID: 'placeholder' }, api, web), /namespace ID/);
   assert.throws(() => deploymentConfig({ ...env, DUSKLY_MODE: 'typo' }, api, web), /DUSKLY_MODE/);
+  assert.throws(() => deploymentConfig({ ...env, DUSKLY_INSTANCE: 'Invalid name' }, api, web), /DUSKLY_INSTANCE/);
+  assert.throws(() => deploymentConfig({ ...env, R2_BUCKET_NAME: 'Invalid bucket' }, api, web), /R2_BUCKET_NAME/);
   assert.throws(() => deploymentConfig({ ...env, API_ORIGIN: env.WEB_ORIGIN }, api, web), /separate Workers/);
 });

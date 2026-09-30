@@ -2,9 +2,21 @@
 
 [Documentation index](../README.md#documentation) · [Troubleshooting](TROUBLESHOOTING.md)
 
-Duskly deploys **two Workers**: `duskly-web` for Angular and `duskly-api` for data, authentication, and publishing. These instructions deploy one instance per Cloudflare account using the resource names below. They do not overwrite secrets or provision resources automatically.
+Duskly deploys **two Workers**: one for Angular and one for data, authentication, and publishing. For a new instance, use the setup command below; manual deployment is available when you need to choose or reuse every resource yourself.
 
-## 1. Before you start
+## Quick setup
+
+Before running setup, have two HTTPS subdomains in a zone managed by the Cloudflare account you will use (for example `social.example.com` and `api.example.com`) and a verified Cloudflare Email Service sender. Then run:
+
+```sh
+pnpm setup
+```
+
+It asks for those URLs and sender, creates uniquely named D1, KV, R2, and Queue resources, generates the two required secrets, creates the custom-domain bindings, runs checks, migrates the database, and deploys both Workers. It writes the ignored `.env.deploy` file; keep it for later updates. `pnpm setup` intentionally refuses to run when that file already exists, so it cannot accidentally replace an existing instance.
+
+## Manual setup
+
+### 1. Before you start
 
 - Node **24.15+ in the 24.x line**, pnpm **9.15.0**, and the Wrangler version installed by the lockfile.
 - A Cloudflare account with Workers, D1, KV, R2, Queues, Analytics Engine, Workers AI, and Email Service access. Some services require activation or billing; self-host mode disables Duskly billing, not Cloudflare charges.
@@ -19,7 +31,7 @@ pnpm --filter @duskly/api exec wrangler whoami
 
 Confirm that Wrangler selected the intended account. For unattended operation, provide `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your environment. Scope the token to the intended account and the services you deploy.
 
-## 2. Create the resources
+### 2. Create the resources
 
 Run once; reuse existing resources when upgrading. If a command says the resource exists, inspect it and reuse its ID rather than deleting it.
 
@@ -33,7 +45,7 @@ pnpm --filter @duskly/api exec wrangler queues create duskly-publish-dlq
 
 Save the database UUID and namespace ID from the first two commands. Deployment configures the Queue consumer, one-minute Cron, SQLite-backed `SchedulerLock` Durable Object, `duskly_metrics` Analytics Engine dataset, and AI binding. Activate the relevant account services first. Vectorize and Images bindings are not required by the current implementation.
 
-## 3. Configure your instance
+### 3. Configure your instance
 
 ```sh
 cp .env.deploy.example .env.deploy
@@ -58,7 +70,7 @@ pnpm deploy:configure
 
 This validates settings and writes ignored `apps/api/wrangler.deploy.json` and `apps/web/wrangler.deploy.json`. It does not contact Cloudflare. It derives `BETTER_AUTH_URL` from `API_ORIGIN` and sets the same `WEB_ORIGIN` on both Workers. Environment variables take precedence over `.env.deploy`. The committed `wrangler.jsonc` files remain local-development templates; every supported deployment command regenerates production configuration from them.
 
-## 4. Set stable secrets
+### 4. Set stable secrets
 
 Generate **two separate** values with `openssl rand -hex 32`. Keep them in a password manager, then enter each at its prompt:
 
@@ -71,7 +83,7 @@ Wrangler may offer to create the Worker on first use. The deployment script neve
 
 `WEB_ORIGIN`, `BETTER_AUTH_URL`, `EMAIL_FROM`, and `DUSKLY_MODE` are configuration variables, not secrets in this flow. When migrating an older installation that stored these names as Worker secrets, remove those conflicting secret entries before deploying the generated configuration. Do not remove the two encryption/auth secrets above.
 
-## 5. Check and deploy
+### 5. Check and deploy
 
 ```sh
 pnpm deploy:dry-run
@@ -80,16 +92,16 @@ pnpm deploy:release
 
 The dry run builds Angular and asks Wrangler to package both Workers without uploading. It does **not** verify remote resources, account permissions, or email delivery. Release runs type checks and unit tests, builds before changing remote state, applies D1 migrations, deploys API, and deploys web. Browser tests can be run separately with `pnpm e2e`; automatic GitHub deploys also require browser CI to pass.
 
-In the Cloudflare dashboard, add custom domains on each Worker:
+Deployment creates custom-domain bindings from the two origins:
 
 | Worker | Custom domain |
 | --- | --- |
 | `duskly-api` | `api.example.com` |
 | `duskly-web` | `social.example.com` |
 
-The script does not create DNS routes. Wait for the custom domains and certificates to become active.
+Both hostnames must already be in a zone on the selected Cloudflare account. Wait for the custom domains and certificates to become active.
 
-## 6. Verify the running instance
+### 6. Verify the running instance
 
 ```sh
 curl --fail https://api.example.com/healthz

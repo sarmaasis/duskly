@@ -17,6 +17,8 @@ import { RouterLink } from "@angular/router";
         <div class="mt-8 grid gap-4 sm:grid-cols-2">
           <a routerLink="/docs/getting-started" class="rounded-xl border border-[#e4e4e7] bg-white p-5 hover:border-cta"><p class="font-semibold">Your first post</p><p class="mt-2 text-sm text-[#52525b]">Connect an account, write, schedule, and follow delivery.</p></a>
           <a routerLink="/docs/self-host" class="rounded-xl border border-[#e4e4e7] bg-white p-5 hover:border-cta"><p class="font-semibold">Run your own instance</p><p class="mt-2 text-sm text-[#52525b]">Requirements, configuration, deployment, and upgrades.</p></a>
+          <a routerLink="/docs/accounts" class="rounded-xl border border-[#e4e4e7] bg-white p-5 hover:border-cta"><p class="font-semibold">Connect accounts</p><p class="mt-2 text-sm text-[#52525b]">OAuth callbacks, provider secrets, and a safe first-post check.</p></a>
+          <a routerLink="/docs/operations" class="rounded-xl border border-[#e4e4e7] bg-white p-5 hover:border-cta"><p class="font-semibold">Keep it running</p><p class="mt-2 text-sm text-[#52525b]">Updates, backups, rollbacks, and practical recovery steps.</p></a>
         </div>
         <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">What you can do</h2>
         <ul class="mt-4 space-y-3 text-[14px] leading-relaxed text-[#52525b]">

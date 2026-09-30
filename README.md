@@ -4,7 +4,7 @@ An open-source social publishing workspace. Connect accounts, write and schedule
 
 **[Self-host](docs/DEPLOY.md) · [User guide](docs/USAGE.md) · [Development](docs/DEVELOPMENT.md) · [Contributing](CONTRIBUTING.md)**
 
-[![CI](https://github.com/sarmaasis/duskly-public/actions/workflows/ci.yml/badge.svg)](https://github.com/sarmaasis/duskly-public/actions/workflows/ci.yml)
+[![CI](https://github.com/sarmaasis/duskly/actions/workflows/ci.yml/badge.svg)](https://github.com/sarmaasis/duskly/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 Duskly runs in your Cloudflare account. Self-hosting has no Duskly subscription or hosted plan limits; Cloudflare and social provider charges can still apply. [Duskly Cloud](https://duskly.site) is the managed option.
@@ -27,7 +27,7 @@ Early software, before 1.0. Expect breaking changes, check [CHANGELOG.md](CHANGE
 Use **Node 24.15+ in the 24.x line** (see `.node-version`) and **pnpm 9.15.0**. The exact supported Node ranges are in `package.json`.
 
 ```sh
-git clone https://github.com/sarmaasis/duskly-public.git
+git clone https://github.com/sarmaasis/duskly.git
 cd duskly
 pnpm install --frozen-lockfile
 cp apps/api/.dev.vars.example apps/api/.dev.vars
@@ -50,18 +50,13 @@ Open **http://localhost:4200**. For local OTP sign-in, read the code in the API 
 
 ## Deploy to your account
 
-Follow [the deployment guide](docs/DEPLOY.md) to create Cloudflare resources and configure email. Then:
+With two Cloudflare-managed subdomains and a verified Cloudflare Email Service sender ready, deploy a new instance in one command:
 
 ```sh
-cp .env.deploy.example .env.deploy
-# Fill in your resource IDs, origins, and verified email sender.
-pnpm deploy:configure
-# Set the two required Worker secrets as described in the guide.
-pnpm deploy:dry-run
-pnpm deploy:release
+git clone https://github.com/sarmaasis/duskly.git && cd duskly && pnpm install --frozen-lockfile && pnpm setup
 ```
 
-The release command checks types and tests, builds the frontend, applies remote migrations, and deploys API then web. Settings live in ignored files; the committed templates stay portable. GitHub deployment is opt-in and uses the same commands. A one-click deploy button would skip required email, secrets, and two-Worker setup, so use the guide.
+Setup signs in to Cloudflare when needed, creates isolated D1, KV, R2, and Queue resources, generates and stores the two encryption secrets, configures custom domains, runs checks, applies migrations, and deploys both Workers. It never prints the generated secrets. Existing instances use `pnpm deploy:release`; see the [deployment guide](docs/DEPLOY.md) for updates, OAuth providers, backups, and manual setup.
 
 ## Documentation
 

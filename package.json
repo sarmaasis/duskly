@@ -17,6 +17,7 @@
     "test": "pnpm test:deploy && pnpm -r test",
     "e2e": "pnpm --filter @duskly/web e2e",
     "duskly": "node scripts/duskly.mjs",
+    "setup": "node scripts/setup.mjs",
     "deploy:configure": "node scripts/deploy.mjs configure",
     "deploy:release": "node scripts/deploy.mjs release",
     "deploy:dry-run": "node scripts/deploy.mjs dry-run",

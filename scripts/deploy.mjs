@@ -21,12 +21,26 @@ export function deploymentConfig(env, api, web) {
   if (env.API_ORIGIN.replace(/\/$/, '') === env.WEB_ORIGIN.replace(/\/$/, '')) throw new Error('API_ORIGIN and WEB_ORIGIN must point to separate Workers.');
   const mode = env.DUSKLY_MODE || 'selfhost';
   if (!['selfhost', 'cloud'].includes(mode)) throw new Error('DUSKLY_MODE must be selfhost or cloud.');
+  const instance = (env.DUSKLY_INSTANCE || 'duskly').trim();
+  if (!/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/.test(instance)) throw new Error('DUSKLY_INSTANCE must be a lowercase Cloudflare-safe name.');
+  const r2Bucket = (env.R2_BUCKET_NAME || `${instance}-media`).trim();
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(r2Bucket)) throw new Error('R2_BUCKET_NAME must be a valid bucket name.');
   const result = { api: structuredClone(api), web: structuredClone(web) };
+  result.api.name = `${instance}-api`;
+  result.web.name = `${instance}-web`;
   result.api.d1_databases[0].database_id = env.D1_DATABASE_ID;
+  result.api.d1_databases[0].database_name = instance;
   result.api.kv_namespaces[0].id = env.KV_NAMESPACE_ID;
+  result.api.r2_buckets[0].bucket_name = r2Bucket;
+  result.api.queues.producers[0].queue = `${instance}-publish`;
+  result.api.queues.consumers[0].queue = `${instance}-publish`;
+  result.api.queues.consumers[0].dead_letter_queue = `${instance}-publish-dlq`;
+  result.api.analytics_engine_datasets[0].dataset = `${instance}_metrics`;
   result.api.vars = { ...api.vars, WEB_ORIGIN: env.WEB_ORIGIN.replace(/\/$/, ''), BETTER_AUTH_URL: env.API_ORIGIN.replace(/\/$/, ''), EMAIL_FROM: env.EMAIL_FROM, DUSKLY_MODE: mode };
   if (mode === 'cloud') result.api.vars.CLOUD_TESTER_EMAILS = (env.CLOUD_TESTER_EMAILS || '').trim();
   result.web.vars = { ...web.vars, WEB_ORIGIN: result.api.vars.WEB_ORIGIN, API_ORIGIN: result.api.vars.BETTER_AUTH_URL, DUSKLY_MODE: mode };
+  result.api.routes = [{ pattern: new URL(result.api.vars.BETTER_AUTH_URL).hostname, custom_domain: true }];
+  result.web.routes = [{ pattern: new URL(result.web.vars.WEB_ORIGIN).hostname, custom_domain: true }];
   return result;
 }
 

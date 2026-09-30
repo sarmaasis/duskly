@@ -16,6 +16,8 @@ test("public marketing, docs, legal, pricing, and blog routes render", async ({ 
     ["/docs/api", /API/i],
     ["/docs/getting-started", /Your first post/i],
     ["/docs/self-host", /Self-host on Cloudflare/i],
+    ["/docs/accounts", /Connect social accounts/i],
+    ["/docs/operations", /Updates, backups, and recovery/i],
     ["/docs/agents", /agent/i],
     ["/docs/mcp", /MCP/i],
     ["/tools", /Free tools|tools/i],
