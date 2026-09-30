@@ -1,0 +1,96 @@
+# Duskly
+
+> Open-source social scheduler. Self-host the Apache-2.0 app on your Cloudflare account for $0 from Duskly. Duskly Cloud, the hosted option at duskly.site, is coming soon and is not open for public signup.
+
+This file is the longer fact sheet. The short index is https://duskly.site/llms.txt.
+
+## What it is
+
+Duskly is a social publishing workspace. You connect accounts, write a post, attach media, pick channels, and schedule it. The same post can go to more than one network. List, calendar, and week views show what is due.
+
+A scheduled entry is not proof the network accepted the post. Duskly marks a destination published only when that network returns a real acceptance. If credentials or a required field are missing, the destination stays queued.
+
+Software is early and before 1.0. Self-host updates can include breaking changes. Back up the database and media before upgrading.
+
+## Who it is for
+
+Creators, brands, and agencies that schedule social, blog, and chat posts. Agencies can split clients into companies, each with its own channels. Team seats exist on the planned Team plan and above, and on self-host, where Duskly plan caps are off.
+
+## Self-host
+
+Self-host is available now. It is Apache-2.0, $0 from Duskly, and has no Duskly subscription or plan caps. Cloudflare, email, and each social provider can still charge you.
+
+You need a Cloudflare account, Workers and the related bindings (D1, KV, R2, Queues, Analytics Engine, Workers AI, Email Service), two subdomains of a domain you control, and a verified email sender for OTP sign-in. The web app and the API are two Workers. Sign-in on a self-hosted instance is open to the people you allow on that instance. The Cloud tester list does not apply.
+
+Guides:
+
+- https://duskly.site/docs/self-host
+- https://github.com/sarmaasis/duskly/blob/main/docs/DEPLOY.md
+- https://github.com/sarmaasis/duskly
+
+Local development uses Node 24.15+ in the 24.x line and pnpm 9.15.0. See the repository README and docs/DEVELOPMENT.md.
+
+## Duskly Cloud
+
+Hosted Duskly at https://duskly.site is coming soon. Public Sign in and Start scheduling are not open. Checkout is not open. Visiting /signin or /signup does not grant a paid plan.
+
+When Cloud opens, Dodo Payments is the planned merchant of record. A new Cloud workspace has no paid plan until a successful payment is recorded. Planned prices, yearly equal to 10 times monthly:
+
+- Standard, $19/month or $190/year: 5 channels, no team seats, unlimited posts, AI copilot and picture editor, 3 short AI videos a month.
+- Team, $29/month or $290/year: 10 channels, unlimited teammates, unlimited posts, 100 AI images and 10 short AI videos a month.
+- Pro, $49/month or $490/year: 30 channels, unlimited teammates, unlimited posts, 300 AI images and 30 short AI videos a month.
+- Ultimate, $99/month or $990/year: 100 channels, unlimited teammates, unlimited posts, 500 AI images and 60 short AI videos a month.
+
+Those quotas are the planned Cloud limits. They are not included on self-host, because self-host does not enforce Duskly plan caps. The comparison table is on https://duskly.site/pricing.
+
+## Networks
+
+Connect only the networks you use. Connecting an account does not mean every media type or feature is supported. OAuth networks need a developer app and the right publish permissions.
+
+Supported connections: LinkedIn, X, Instagram, Threads, Facebook, YouTube, Reddit, Bluesky, Mastodon, Hashnode, dev.to, Telegram, Discord, and Slack.
+
+Cloud OAuth callbacks use https://api.duskly.site/v1/accounts/oauth/{network}/callback. Replace {network} with the slug, such as x, linkedin, or instagram. A self-hosted instance uses its own API origin with the same path.
+
+## Product surfaces
+
+- Compose: caption, per-network captions, media, schedule.
+- Posts: list, calendar, and week. Delivery updates show queued or failed sends.
+- Accounts: connect and organize channels, including by company.
+- Media library and a separate design page.
+- Replies, analytics, team, settings, and an in-app AI assistant.
+- REST API and personal API tokens that start with dk_.
+- MCP tools for agents such as Cursor or Claude. MCP uses the token's workspace, so those tools do not take a separate workspace id.
+- Webhooks and plugs.
+
+Docs: https://duskly.site/docs
+First post: https://duskly.site/docs/getting-started
+Accounts: https://duskly.site/docs/accounts
+Operations: https://duskly.site/docs/operations
+API: https://duskly.site/docs/api
+Agents: https://duskly.site/docs/agents
+MCP: https://duskly.site/docs/mcp
+
+## Free tools and writing
+
+- https://duskly.site/tools
+- https://duskly.site/tools/caption-counter
+- https://duskly.site/tools/image-size
+- https://duskly.site/tools/post-preview
+- https://duskly.site/blog
+- https://duskly.site/blog/seo-aeo-geo-ai-seo
+- https://duskly.site/blog/answer-engine-optimization-checklist
+- https://duskly.site/blog/generative-engine-optimization-for-founders
+- https://duskly.site/blog/free-organic-traffic-tools
+
+## Legal and contact paths
+
+- Privacy: https://duskly.site/privacy
+- Terms: https://duskly.site/terms
+- Data deletion page: https://duskly.site/data-deletion
+- Meta signed data-deletion callback: https://api.duskly.site/v1/meta/data-deletion
+- Share image: https://duskly.site/assets/brand/og.png
+- Sitemap: https://duskly.site/sitemap.xml
+
+License: Apache-2.0. https://github.com/sarmaasis/duskly/blob/main/LICENSE
+
+Do not invent likes, comments, or reach. Do not describe a queued post as published. Do not tell someone that Duskly Cloud checkout is open.

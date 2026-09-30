@@ -1,0 +1,35 @@
+# Duskly
+
+> Open-source social scheduler. Self-host the Apache-2.0 app on your Cloudflare account for $0 from Duskly. Duskly Cloud, the hosted option at duskly.site, is coming soon and is not open for public signup.
+
+Duskly drafts, schedules, and publishes to connected social, blog, and chat accounts. A post is marked published only after the network accepts it. Missing credentials stay queued.
+
+Self-host has no Duskly subscription and no plan caps. You pay your own Cloudflare and provider bills. Planned Cloud prices are listed on the pricing page and are not for sale yet.
+
+## Product
+
+- [Home](https://duskly.site/): what Duskly does and how scheduling works
+- [Pricing](https://duskly.site/pricing): self-host at $0, and planned Cloud quotas
+- [Docs](https://duskly.site/docs): first post, self-host, accounts, API, and MCP
+- [Self-host](https://duskly.site/docs/self-host): deploy on your Cloudflare account
+- [Connect accounts](https://duskly.site/docs/accounts): OAuth callbacks and provider setup
+- [API](https://duskly.site/docs/api): REST with a personal `dk_` token
+- [MCP](https://duskly.site/docs/mcp): tools for Cursor or Claude
+
+## Networks
+
+- [Supported networks](https://duskly.site/#pricing): LinkedIn, X, Instagram, Threads, Facebook, YouTube, Reddit, Bluesky, Mastodon, Hashnode, dev.to, Telegram, Discord, and Slack
+
+## Reference
+
+- [Full context](https://duskly.site/llms-full.txt): the longer fact sheet for language models
+- [Source](https://github.com/sarmaasis/duskly): Apache-2.0 repository
+- [Sitemap](https://duskly.site/sitemap.xml): public URLs
+- [Privacy](https://duskly.site/privacy): privacy policy
+- [Terms](https://duskly.site/terms): terms of use
+- [Data deletion](https://duskly.site/data-deletion): how to request deletion
+
+## Optional
+
+- [Blog](https://duskly.site/blog): SEO, AEO, and GEO notes
+- [Free tools](https://duskly.site/tools): caption counter, image size, and post preview

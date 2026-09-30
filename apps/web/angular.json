@@ -17,7 +17,7 @@
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "css",
-            "assets": ["src/assets", "src/robots.txt", "src/sitemap.xml"],
+            "assets": ["src/assets", "src/robots.txt", "src/sitemap.xml", "src/llms.txt", "src/llms-full.txt"],
             "styles": ["src/styles.css"],
             "allowedCommonJsDependencies": [
               "core-js/modules/es.array.index-of.js",
