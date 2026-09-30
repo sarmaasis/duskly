@@ -1,4 +1,5 @@
 export type PlanId = "standard" | "team" | "pro" | "ultimate";
+export type ResolvedPlan = PlanId | "none" | "selfhost";
 
 export type PlanLimits = {
   channels: number;
@@ -20,16 +21,26 @@ export function isPlanId(v: string): v is PlanId {
   return v in PLAN_LIMITS;
 }
 
-export function resolvePlan(plan: string | null | undefined, mode: "selfhost" | "cloud"): PlanId | "selfhost" {
+const UNPAID_LIMITS: PlanLimits = {
+  channels: 0,
+  team: false,
+  aiImages: 0,
+  aiVideos: 0,
+  aiClipMinutes: 0,
+  aiCopilot: 0,
+};
+
+export function resolvePlan(plan: string | null | undefined, mode: "selfhost" | "cloud"): ResolvedPlan {
   if (mode === "selfhost") return "selfhost";
   if (plan && isPlanId(plan)) return plan;
-  return "standard";
+  return "none";
 }
 
-export function limitsFor(plan: PlanId | "selfhost"): PlanLimits {
+export function limitsFor(plan: ResolvedPlan): PlanLimits {
   if (plan === "selfhost") {
     return { channels: 10_000, team: true, aiImages: 10_000, aiVideos: 10_000, aiClipMinutes: 10_000, aiCopilot: 10_000 };
   }
+  if (plan === "none") return UNPAID_LIMITS;
   return PLAN_LIMITS[plan];
 }
 

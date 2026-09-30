@@ -59,12 +59,12 @@ export class DocsGettingStartedPage {}
       <pre class="mt-6 overflow-x-auto rounded-lg bg-zinc-900 p-4 text-xs leading-7 text-zinc-100">pnpm deploy:dry-run
 pnpm deploy:release</pre>
       <p class="mt-4">A dry run verifies packaging without uploading. Release checks types and tests, builds the frontend, migrates D1, and deploys both Workers. It does not create DNS routes or configure provider apps.</p>
-      <a href="https://github.com/sarmaasis/duskly/blob/main/docs/DEPLOY.md" class="mt-6 inline-block font-semibold text-ink underline decoration-cta underline-offset-4">Read the complete deployment guide</a>
+      <a href="https://github.com/sarmaasis/duskly-public/blob/main/docs/DEPLOY.md" class="mt-6 inline-block font-semibold text-ink underline decoration-cta underline-offset-4">Read the complete deployment guide</a>
       <h2 class="mt-10 font-display text-xl font-bold text-ink">Verify and maintain</h2>
       <p class="mt-4">Check <code>/healthz</code> on your API and <code>/__api-config.js</code> on your web app. Sign in, connect an account, and confirm an actual test post publishes. Back up D1, R2, and your secrets before upgrades. Worker rollback restores code, not database migrations.</p>
       <p class="mt-4">GitHub deployment is opt-in through the repository variable <code>DEPLOY_ENABLED=true</code>, after credentials and resources are ready. It uses the same release command and waits for successful push CI.</p>
       <div class="mt-8 flex flex-wrap gap-5 font-semibold text-ink">
-        <a href="https://github.com/sarmaasis/duskly/blob/main/docs/TROUBLESHOOTING.md" class="underline decoration-cta underline-offset-4">Troubleshooting</a>
+        <a href="https://github.com/sarmaasis/duskly-public/blob/main/docs/TROUBLESHOOTING.md" class="underline decoration-cta underline-offset-4">Troubleshooting</a>
         <a routerLink="/docs/getting-started" class="underline decoration-cta underline-offset-4">Write your first post</a>
       </div>
     </article>

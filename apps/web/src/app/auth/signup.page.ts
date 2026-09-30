@@ -3,6 +3,7 @@ import { FormsModule } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
 import { apiBase, nextAfterAuth } from "../lib/api";
+import { cloudSignInClosed } from "../lib/site-mode";
 import { SessionService } from "../lib/session";
 import { Spinner } from "../ui/spinner";
 
@@ -18,6 +19,9 @@ import { Spinner } from "../ui/spinner";
           <div class="mx-auto w-full max-w-[400px]">
             <h1 class="font-display text-[40px] font-extrabold leading-none tracking-[-0.03em]">Create your account</h1>
             <p class="mt-3 text-[15px] leading-6 text-[#52525b]">Enter your name and email to receive a sign-up code.</p>
+            @if (cloudClosed()) {
+              <p class="mt-3 text-[13px] leading-5 text-[#52525b]">Cloud sign-in is limited to invited testers. Public signup is coming soon.</p>
+            }
             <div class="mt-8 space-y-5">
               @if (step() === 'email') {
                 <label class="block text-[13px] font-medium" for="name">Name
@@ -75,6 +79,7 @@ import { Spinner } from "../ui/spinner";
   `,
 })
 export class SignupPage {
+  readonly cloudClosed = cloudSignInClosed;
   name = "";
   email = "";
   otp = "";

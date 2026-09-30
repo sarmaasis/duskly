@@ -32,6 +32,7 @@ jobs:
       API_ORIGIN: ${{ secrets.API_ORIGIN || vars.API_ORIGIN }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM || vars.EMAIL_FROM }}
       DUSKLY_MODE: ${{ vars.DUSKLY_MODE || 'selfhost' }}
+      CLOUD_TESTER_EMAILS: ${{ vars.CLOUD_TESTER_EMAILS }}
     steps:
       - uses: actions/checkout@v4
         with:

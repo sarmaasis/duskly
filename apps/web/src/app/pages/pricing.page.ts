@@ -2,9 +2,10 @@ import { Component, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
 import { SessionService } from "../lib/session";
+import { cloudSignInClosed } from "../lib/site-mode";
 
 const CF_DEPLOY =
-  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
+  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly-public";
 
 @Component({
   standalone: true,
@@ -17,6 +18,8 @@ const CF_DEPLOY =
           <div class="flex items-center gap-2">
             @if (session.loggedIn()) {
               <a routerLink="/app" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Open dashboard</a>
+            } @else if (cloudClosed()) {
+              <span class="inline-flex h-8 items-center rounded-full border border-[#e4e4e7] px-3.5 text-[12px] font-semibold text-[#71717a]" role="status">Coming soon</span>
             } @else {
               <a routerLink="/signin" class="hidden px-2 text-[13px] font-medium text-[#52525b] hover:text-[#09090b] sm:inline">Sign in</a>
               <a routerLink="/docs/self-host" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Self-host guide</a>
@@ -47,7 +50,7 @@ const CF_DEPLOY =
             <p class="mt-2 font-mono text-[11px] uppercase tracking-wider text-[#71717a]">Forever · Apache-2.0</p>
             <div class="mt-4 flex flex-wrap gap-2">
               <a routerLink="/docs/self-host" class="inline-flex h-10 items-center rounded-full bg-cta px-4 text-xs font-bold text-white hover:bg-cta-hover">Self-host guide</a>
-              <a href="https://github.com/sarmaasis/duskly" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
+              <a href="https://github.com/sarmaasis/duskly-public" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
               <a [href]="cfDeploy" class="inline-flex">
                 <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" width="160" height="40" />
               </a>
@@ -119,6 +122,7 @@ const CF_DEPLOY =
 })
 export class PricingPage {
   readonly session = inject(SessionService);
+  readonly cloudClosed = cloudSignInClosed;
   readonly cfDeploy = CF_DEPLOY;
   readonly annual = signal(false);
 

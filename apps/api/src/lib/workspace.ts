@@ -107,11 +107,12 @@ async function loadHomeWorkspace(env: Env, userId: string, name = "", email = ""
   }
   const id = crypto.randomUUID();
   const now = new Date();
+  const plan = env.DUSKLY_MODE === "cloud" ? "none" : "standard";
   await db.insert(workspace).values({
     id,
     name,
     ownerId: userId,
-    plan: "standard",
+    plan,
     theme: "light",
     accountKind: null,
     onboardingCompleted: false,
@@ -123,7 +124,7 @@ async function loadHomeWorkspace(env: Env, userId: string, name = "", email = ""
     id,
     name,
     ownerId: userId,
-    plan: "standard",
+    plan,
     signature: null,
     theme: "light",
     accountKind: null,

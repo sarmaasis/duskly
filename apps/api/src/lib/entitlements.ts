@@ -27,6 +27,9 @@ export async function getWorkspacePlan(env: Env, workspaceId: string) {
 export async function assertChannelLimit(env: Env, workspaceId: string, adding = 1) {
   const { limits, plan } = await getWorkspacePlan(env, workspaceId);
   if (plan === "selfhost") return;
+  if (plan === "none") {
+    throw new PlanError("channel_limit", "Choose a paid Cloud plan before connecting a channel.");
+  }
   const db = drizzle(env.DB);
   const [row] = await db
     .select({ c: count() })

@@ -2,9 +2,10 @@ import { Component, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
 import { SessionService } from "../lib/session";
+import { cloudSignInClosed } from "../lib/site-mode";
 
 const CF_DEPLOY =
-  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
+  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly-public";
 
 const PLANS = [
   {
@@ -120,6 +121,8 @@ const FAQS = [
           <div class="flex items-center gap-2">
             @if (session.loggedIn()) {
               <a routerLink="/app" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Open dashboard</a>
+            } @else if (cloudClosed()) {
+              <span class="inline-flex h-8 items-center rounded-full border border-[#e4e4e7] px-3.5 text-[12px] font-semibold text-[#71717a]" role="status">Coming soon</span>
             } @else {
               <a routerLink="/signin" class="hidden px-2 text-[13px] font-medium text-[#52525b] hover:text-[#09090b] sm:inline">Sign in</a>
               <a routerLink="/signup" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Start scheduling</a>
@@ -144,6 +147,8 @@ const FAQS = [
               }
               @if (session.loggedIn()) {
                 <a routerLink="/app" (click)="menuOpen.set(false)" class="py-2 text-[13px] font-medium text-[#52525b]">Open dashboard</a>
+              } @else if (cloudClosed()) {
+                <span class="py-2 text-[13px] font-medium text-[#71717a]" role="status">Coming soon</span>
               } @else {
                 <a routerLink="/signin" (click)="menuOpen.set(false)" class="py-2 text-[13px] font-medium text-[#52525b]">Sign in</a>
               }
@@ -177,6 +182,8 @@ const FAQS = [
                 <a routerLink="/app" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-cta px-6 py-3 text-sm font-bold text-white hover:bg-cta-hover sm:w-auto">
                   Open dashboard <span class="font-mono text-xs text-white/80">→</span>
                 </a>
+              } @else if (cloudClosed()) {
+                <span class="inline-flex w-full items-center justify-center rounded-full border border-[#e4e4e7] px-6 py-3 text-sm font-bold text-[#71717a] sm:w-auto" role="status">Coming soon</span>
               } @else {
                 <a routerLink="/signup" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-cta px-6 py-3 text-sm font-bold text-white hover:bg-cta-hover sm:w-auto">
                   Start scheduling <span class="font-mono text-xs text-white/80">→</span>
@@ -373,7 +380,7 @@ const FAQS = [
               </ul>
             </div>
             <div class="mt-6 flex flex-wrap items-center gap-3">
-              <a href="https://github.com/sarmaasis/duskly" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] bg-white px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
+              <a href="https://github.com/sarmaasis/duskly-public" class="inline-flex h-10 items-center rounded-full border border-[#e4e4e7] bg-white px-4 text-xs font-bold hover:bg-[#f4f4f1]">Clone the repo</a>
               <a [href]="cfDeploy" class="inline-flex">
                 <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" width="160" height="40" />
               </a>
@@ -520,6 +527,8 @@ const FAQS = [
               <a routerLink="/app" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-cta px-6 py-3 text-sm font-bold text-white hover:bg-cta-hover sm:w-auto">
                 Open dashboard <span class="font-mono text-xs">→</span>
               </a>
+            } @else if (cloudClosed()) {
+              <span class="inline-flex w-full items-center justify-center rounded-full border border-[#e4e4e7] px-6 py-3 text-sm font-bold text-[#71717a] sm:w-auto" role="status">Coming soon</span>
             } @else {
               <a routerLink="/signup" class="inline-flex w-full items-center justify-center gap-2 rounded-full bg-cta px-6 py-3 text-sm font-bold text-white hover:bg-cta-hover sm:w-auto">
                 Start scheduling <span class="font-mono text-xs">→</span>
@@ -538,6 +547,7 @@ const FAQS = [
 })
 export class LandingPage {
   readonly session = inject(SessionService);
+  readonly cloudClosed = cloudSignInClosed;
   readonly cfDeploy = CF_DEPLOY;
   readonly plans = PLANS;
   readonly faqs = FAQS;
@@ -550,7 +560,7 @@ export class LandingPage {
     { label: "Pricing", href: "/#pricing" },
     { label: "Docs", href: "/docs" },
     { label: "Tools", href: "/tools" },
-    { label: "GitHub", href: "https://github.com/sarmaasis/duskly" },
+    { label: "GitHub", href: "https://github.com/sarmaasis/duskly-public" },
   ];
 
   readonly logos = [

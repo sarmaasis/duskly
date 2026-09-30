@@ -10,10 +10,15 @@ test('deployment config wires both workers without mutating templates or copying
   assert.equal(config.api.vars.BETTER_AUTH_URL, config.web.vars.API_ORIGIN);
   assert.equal(config.api.vars.WEB_ORIGIN, config.web.vars.WEB_ORIGIN);
   assert.equal(config.api.vars.DUSKLY_MODE, 'selfhost');
+  assert.equal(config.web.vars.DUSKLY_MODE, 'selfhost');
+  assert.equal(config.api.vars.CLOUD_TESTER_EMAILS, undefined);
   assert.equal(config.api.d1_databases[0].database_id, env.D1_DATABASE_ID);
   assert.equal(api.d1_databases[0].database_id, '${D1_DATABASE_ID}');
   assert.ok(!JSON.stringify(config).includes('never-copy'));
-  assert.equal(deploymentConfig({ ...env, DUSKLY_MODE: 'cloud' }, api, web).api.vars.DUSKLY_MODE, 'cloud');
+  const cloud = deploymentConfig({ ...env, DUSKLY_MODE: 'cloud', CLOUD_TESTER_EMAILS: 'a@b.co, c@d.co' }, api, web);
+  assert.equal(cloud.api.vars.DUSKLY_MODE, 'cloud');
+  assert.equal(cloud.web.vars.DUSKLY_MODE, 'cloud');
+  assert.equal(cloud.api.vars.CLOUD_TESTER_EMAILS, 'a@b.co, c@d.co');
 });
 test('deployment fails before writing or uploading with missing or invalid settings', () => {
   for (const key of Object.keys(env)) assert.throws(() => deploymentConfig({ ...env, [key]: '' }, api, web), /Missing deployment/);

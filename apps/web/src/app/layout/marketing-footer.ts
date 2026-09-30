@@ -1,9 +1,10 @@
 import { Component, inject } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { SessionService } from "../lib/session";
+import { cloudSignInClosed } from "../lib/site-mode";
 
 export const CF_DEPLOY =
-  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly";
+  "https://deploy.workers.cloudflare.com/?url=https://github.com/sarmaasis/duskly-public";
 
 @Component({
   standalone: true,
@@ -25,7 +26,11 @@ export const CF_DEPLOY =
             <a routerLink="/" class="block text-[#52525b] hover:text-[#09090b]">Home</a>
             <a routerLink="/pricing" class="block text-[#52525b] hover:text-[#09090b]">Pricing</a>
             <a routerLink="/docs" class="block text-[#52525b] hover:text-[#09090b]">Docs</a>
-            <a routerLink="/signin" class="block text-[#52525b] hover:text-[#09090b]">Sign in</a>
+            @if (cloudClosed()) {
+              <span class="block text-[#71717a]" role="status">Coming soon</span>
+            } @else {
+              <a routerLink="/signin" class="block text-[#52525b] hover:text-[#09090b]">Sign in</a>
+            }
           </div>
           <div class="space-y-2.5 font-mono text-[12px]">
             <p class="text-[11px] font-semibold uppercase tracking-wider text-[#09090b]">Resources</p>
@@ -36,6 +41,8 @@ export const CF_DEPLOY =
             <p class="text-[11px] font-semibold uppercase tracking-wider text-[#09090b]">Account</p>
             @if (session.loggedIn()) {
               <a routerLink="/app" class="block text-[#52525b] hover:text-[#09090b]">Open dashboard</a>
+            } @else if (cloudClosed()) {
+              <span class="block text-[#71717a]" role="status">Coming soon</span>
             } @else {
               <a routerLink="/signup" class="block text-[#52525b] hover:text-[#09090b]">Start scheduling</a>
             }
@@ -57,5 +64,6 @@ export const CF_DEPLOY =
 })
 export class MarketingFooter {
   readonly session = inject(SessionService);
+  readonly cloudClosed = cloudSignInClosed;
   readonly cfDeploy = CF_DEPLOY;
 }

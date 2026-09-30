@@ -4,6 +4,7 @@ import { allowedHostsFromWebOrigin } from "./allowed-hosts";
 type Env = {
   API_ORIGIN?: string;
   WEB_ORIGIN?: string;
+  DUSKLY_MODE?: string;
 };
 
 let angularApp: AngularAppEngine | undefined;
@@ -26,9 +27,13 @@ function withSecurityHeaders(res: Response) {
   return next;
 }
 
+function siteMode(env: Env) {
+  return env.DUSKLY_MODE === "cloud" ? "cloud" : "selfhost";
+}
+
 function apiOriginScript(env: Env) {
   const origin = (env.API_ORIGIN || "").replace(/\/$/, "");
-  return `window.__API__=${JSON.stringify(origin)};`;
+  return `window.__API__=${JSON.stringify(origin)};window.__DUSKLY_MODE__=${JSON.stringify(siteMode(env))};`;
 }
 
 export default {
@@ -42,6 +47,7 @@ export default {
         },
       });
     }
+    (globalThis as { __DUSKLY_MODE__?: string }).__DUSKLY_MODE__ = siteMode(env);
     const handleAngular = createRequestHandler((r) => appEngine(env.WEB_ORIGIN).handle(r));
     const res = await handleAngular(req);
     if (!res) return withSecurityHeaders(new Response("Not Found", { status: 404 }));

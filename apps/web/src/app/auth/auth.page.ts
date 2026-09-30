@@ -3,6 +3,7 @@ import { FormsModule } from "@angular/forms";
 import { Router, RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
 import { apiBase, nextAfterAuth } from "../lib/api";
+import { cloudSignInClosed } from "../lib/site-mode";
 import { SessionService } from "../lib/session";
 import { Spinner } from "../ui/spinner";
 
@@ -18,6 +19,9 @@ import { Spinner } from "../ui/spinner";
           <div class="mx-auto w-full max-w-[400px]">
             <h1 class="font-display text-[40px] font-extrabold leading-none tracking-[-0.03em]">Welcome back</h1>
             <p class="mt-3 text-[15px] leading-6 text-[#52525b]">Enter your email to receive a sign-in code.</p>
+            @if (cloudClosed()) {
+              <p class="mt-3 text-[13px] leading-5 text-[#52525b]">Cloud sign-in is limited to invited testers. Public signup is coming soon.</p>
+            }
             <div class="mt-8 space-y-5">
               @if (step() === 'email') {
                 <label class="block text-[13px] font-medium" for="email">Email address
@@ -72,6 +76,7 @@ import { Spinner } from "../ui/spinner";
   `,
 })
 export class AuthPage {
+  readonly cloudClosed = cloudSignInClosed;
   email = "";
   otp = "";
   step = signal<"email" | "otp">("email");
@@ -91,7 +96,7 @@ export class AuthPage {
         body: JSON.stringify({ email: this.email, type: "sign-in" }),
       });
       if (!res.ok) {
-        this.error.set("Could not send the code. Try again.");
+        this.error.set(await readAuthError(res));
         return;
       }
       this.step.set("otp");
@@ -113,7 +118,7 @@ export class AuthPage {
         body: JSON.stringify({ email: this.email, otp: this.otp }),
       });
       if (!res.ok) {
-        this.error.set("That code did not work. Try again.");
+        this.error.set(res.status === 403 ? await readAuthError(res) : "That code did not work. Try again.");
         return;
       }
       await this.session.refresh();
@@ -123,5 +128,14 @@ export class AuthPage {
     } finally {
       this.busy.set(false);
     }
+  }
+}
+
+async function readAuthError(res: Response) {
+  try {
+    const data = (await res.json()) as { message?: string };
+    return data.message || "Duskly Cloud sign-in is coming soon.";
+  } catch {
+    return "Duskly Cloud sign-in is coming soon.";
   }
 }

@@ -1,4 +1,5 @@
 import { Component } from "@angular/core";
+import { cloudSignInClosed } from "../lib/site-mode";
 import { RouterLink } from "@angular/router";
 
 @Component({
@@ -57,10 +58,17 @@ import { RouterLink } from "@angular/router";
             <p class="text-sm font-bold">MCP</p>
             <p class="mt-1 text-xs text-[#52525b]">Connect Cursor or Claude</p>
           </a>
-          <a routerLink="/signin" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">
-            <p class="text-sm font-bold">Open the app</p>
-            <p class="mt-1 text-xs text-[#52525b]">Sign in to schedule posts</p>
-          </a>
+          @if (cloudClosed()) {
+            <div class="rounded-lg border border-[#e4e4e7] bg-white p-4">
+              <p class="text-sm font-bold">Open the app</p>
+              <p class="mt-1 text-xs text-[#52525b]" role="status">Coming soon</p>
+            </div>
+          } @else {
+            <a routerLink="/signin" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">
+              <p class="text-sm font-bold">Open the app</p>
+              <p class="mt-1 text-xs text-[#52525b]">Sign in to schedule posts</p>
+            </a>
+          }
         </div>
       </article>
 
@@ -74,6 +82,7 @@ import { RouterLink } from "@angular/router";
   `,
 })
 export class DocsOverviewPage {
+  readonly cloudClosed = cloudSignInClosed;
   readonly quickStart = `# Mint a token in Settings → API tokens
 # Copy Workspace ID from Settings (REST still needs it)
 

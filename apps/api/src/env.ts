@@ -22,6 +22,8 @@ export type Env = {
   TOKEN_ENCRYPTION_KEY: string;
   APP_NAME: string;
   DUSKLY_MODE: "selfhost" | "cloud";
+  /** Comma-separated emails allowed to sign in when DUSKLY_MODE=cloud. Empty means nobody. */
+  CLOUD_TESTER_EMAILS?: string;
   DODO_PAYMENTS_API_KEY: string;
   DODO_PAYMENTS_WEBHOOK_KEY: string;
   DODO_PAYMENTS_ENVIRONMENT: "test_mode" | "live_mode";

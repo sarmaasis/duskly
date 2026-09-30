@@ -2,6 +2,7 @@ import { Component, inject } from "@angular/core";
 import { Meta, Title } from "@angular/platform-browser";
 import { ActivatedRoute, RouterLink } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
+import { cloudSignInClosed } from "../lib/site-mode";
 
 type BlogPost = {
   slug: string;
@@ -156,13 +157,19 @@ function setPageMeta(title: Title, meta: Meta, pageTitle: string, description: s
         <nav class="flex items-center gap-4 text-[13px] font-medium text-[#52525b] sm:gap-5">
           <a routerLink="/blog" class="hover:text-[#09090b]">Blog</a>
           <a routerLink="/tools" class="hover:text-[#09090b]">Free tools</a>
-          <a routerLink="/signup" class="hidden rounded-full bg-cta px-3.5 py-2 text-[12px] font-semibold text-white hover:bg-cta-hover sm:inline-flex">Start scheduling</a>
+          @if (cloudClosed()) {
+            <span class="hidden rounded-full border border-[#e4e4e7] px-3.5 py-2 text-[12px] font-semibold text-[#71717a] sm:inline-flex" role="status">Coming soon</span>
+          } @else {
+            <a routerLink="/signup" class="hidden rounded-full bg-cta px-3.5 py-2 text-[12px] font-semibold text-white hover:bg-cta-hover sm:inline-flex">Start scheduling</a>
+          }
         </nav>
       </div>
     </header>
   `,
 })
-export class GrowthNavComponent {}
+export class GrowthNavComponent {
+  readonly cloudClosed = cloudSignInClosed;
+}
 
 @Component({
   standalone: true,
@@ -222,7 +229,11 @@ export class BlogIndexPage {
         <div class="mt-14 rounded-lg border border-[#e4e4e7] bg-white p-6">
           <h2 class="font-display text-2xl font-bold tracking-normal">Put the plan on a calendar</h2>
           <p class="mt-2 text-sm leading-6 text-[#52525b]">Duskly helps turn articles, FAQs, and launches into scheduled posts across social, blogs, and chat channels.</p>
-          <a routerLink="/signup" class="mt-5 inline-flex h-10 items-center rounded-full bg-cta px-5 text-sm font-bold text-white hover:bg-cta-hover">Start scheduling</a>
+          @if (cloudClosed()) {
+            <p class="mt-5 inline-flex h-10 items-center rounded-full border border-[#e4e4e7] px-5 text-sm font-bold text-[#71717a]" role="status">Coming soon</p>
+          } @else {
+            <a routerLink="/signup" class="mt-5 inline-flex h-10 items-center rounded-full bg-cta px-5 text-sm font-bold text-white hover:bg-cta-hover">Start scheduling</a>
+          }
         </div>
       </main>
       <dk-marketing-footer />
@@ -230,6 +241,7 @@ export class BlogIndexPage {
   `,
 })
 export class BlogArticlePage {
+  readonly cloudClosed = cloudSignInClosed;
   private readonly route = inject(ActivatedRoute);
   readonly post = POSTS.find((p) => p.slug === this.route.snapshot.paramMap.get("slug")) ?? POSTS[0];
 

@@ -1,6 +1,7 @@
 import { Component, signal } from "@angular/core";
 import { RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
 import { MarketingFooter } from "../layout/marketing-footer";
+import { cloudSignInClosed } from "../lib/site-mode";
 
 const NAV = [
   {
@@ -36,7 +37,11 @@ const NAV = [
           </div>
           <div class="flex items-center gap-3">
             <a routerLink="/" class="hidden text-[13px] font-medium text-[#52525b] hover:text-[#09090b] sm:inline">Home</a>
-            <a routerLink="/signin" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Sign in</a>
+            @if (cloudClosed()) {
+              <span class="inline-flex h-8 items-center rounded-full border border-[#e4e4e7] px-3.5 text-[12px] font-semibold text-[#71717a]" role="status">Coming soon</span>
+            } @else {
+              <a routerLink="/signin" class="inline-flex h-8 items-center rounded-full bg-cta px-3.5 text-[12px] font-semibold text-white hover:bg-cta-hover">Sign in</a>
+            }
             <button
               type="button"
               class="flex size-9 items-center justify-center text-[#52525b] lg:hidden"
@@ -98,6 +103,7 @@ const NAV = [
   `,
 })
 export class DocsShell {
+  readonly cloudClosed = cloudSignInClosed;
   readonly nav = NAV;
   readonly navOpen = signal(false);
 }

@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { api, type PlanSnapshot, type Workspace } from "../lib/api";
 import { SessionService } from "../lib/session";
+import { cloudSignInClosed } from "../lib/site-mode";
 import { DkSeg } from "../ui/forms";
 import { Spinner } from "../ui/spinner";
 
@@ -64,7 +65,7 @@ const PLANS: {
 function displayPlanName(plan: string | null | undefined, cloud: boolean): string {
   if (!cloud || plan === "selfhost") return "Self-host";
   if (plan && plan in PLAN_NAMES) return PLAN_NAMES[plan as CloudPlanId];
-  return "Standard";
+  return "No plan";
 }
 
 @Component({
@@ -105,7 +106,11 @@ function displayPlanName(plan: string | null | undefined, cloud: boolean): strin
               <p class="text-xs text-zinc-500 dark:text-zinc-400">Your current plan and Cloud prices show after you sign in.</p>
             </div>
           </div>
-          <a routerLink="/signin" class="mt-6 inline-flex h-10 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white hover:bg-cta-hover">Sign in</a>
+          @if (cloudClosed()) {
+            <p class="mt-6 inline-flex h-10 items-center rounded-full border border-[#e4e4e7] px-4 text-xs font-semibold text-[#71717a]" role="status">Coming soon</p>
+          } @else {
+            <a routerLink="/signin" class="mt-6 inline-flex h-10 items-center rounded-full bg-cta px-4 text-xs font-semibold text-white hover:bg-cta-hover">Sign in</a>
+          }
         </section>
       } @else {
         <section class="rounded-2xl border border-[#e8e8e3] bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
@@ -200,6 +205,7 @@ export class BillingPage implements OnInit {
   ];
   readonly plans = PLANS;
   readonly session = inject(SessionService);
+  readonly cloudClosed = cloudSignInClosed;
   msg = signal("");
   err = signal(false);
   sessionReady = signal(false);
@@ -236,13 +242,13 @@ export class BillingPage implements OnInit {
   isCurrent(id: CloudPlanId) {
     if (this.selfHost()) return false;
     const plan = this.usage()?.plan;
-    return plan === id || (!plan && id === "standard");
+    return plan === id;
   }
 
   currentPrice() {
-    const id = (this.usage()?.plan && this.usage()!.plan in PLAN_NAMES ? this.usage()!.plan : "standard") as CloudPlanId;
+    const id = (this.usage()?.plan && this.usage()!.plan in PLAN_NAMES ? this.usage()!.plan : "") as CloudPlanId | "";
     const p = PLANS.find((x) => x.id === id);
-    if (!p) return "$19/mo";
+    if (!p) return "Choose a plan";
     return this.interval === "year" ? `$${p.yearly}/yr` : `$${p.monthly}/mo`;
   }
 

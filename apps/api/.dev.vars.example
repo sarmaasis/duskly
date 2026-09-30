@@ -13,6 +13,8 @@ TOKEN_ENCRYPTION_KEY=replace-with-32-byte-hex
 APP_NAME=Duskly
 # selfhost = limits off / no Cloud billing; cloud = enforce plans via Dodo
 DUSKLY_MODE=selfhost
+# Comma-separated emails that may sign in when DUSKLY_MODE=cloud. Ignored for self-host.
+# CLOUD_TESTER_EMAILS=you@example.com,teammate@example.com
 
 # Dodo Payments — Cloud billing (leave empty for local self-host)
 DODO_PAYMENTS_API_KEY=

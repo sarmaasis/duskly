@@ -25,7 +25,8 @@ export function deploymentConfig(env, api, web) {
   result.api.d1_databases[0].database_id = env.D1_DATABASE_ID;
   result.api.kv_namespaces[0].id = env.KV_NAMESPACE_ID;
   result.api.vars = { ...api.vars, WEB_ORIGIN: env.WEB_ORIGIN.replace(/\/$/, ''), BETTER_AUTH_URL: env.API_ORIGIN.replace(/\/$/, ''), EMAIL_FROM: env.EMAIL_FROM, DUSKLY_MODE: mode };
-  result.web.vars = { ...web.vars, WEB_ORIGIN: result.api.vars.WEB_ORIGIN, API_ORIGIN: result.api.vars.BETTER_AUTH_URL };
+  if (mode === 'cloud') result.api.vars.CLOUD_TESTER_EMAILS = (env.CLOUD_TESTER_EMAILS || '').trim();
+  result.web.vars = { ...web.vars, WEB_ORIGIN: result.api.vars.WEB_ORIGIN, API_ORIGIN: result.api.vars.BETTER_AUTH_URL, DUSKLY_MODE: mode };
   return result;
 }
 

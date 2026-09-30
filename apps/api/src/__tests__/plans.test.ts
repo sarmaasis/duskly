@@ -52,11 +52,14 @@ describe("plan limits", () => {
     expect(limits.aiCopilot).toBe(10_000);
   });
 
-  it("resolves cloud unknown/empty plan to standard, never to pro", () => {
-    expect(resolvePlan(null, "cloud")).toBe("standard");
-    expect(resolvePlan(undefined, "cloud")).toBe("standard");
-    expect(resolvePlan("hobby", "cloud")).toBe("standard");
+  it("does not grant a paid cloud plan until one is stored", () => {
+    expect(resolvePlan(null, "cloud")).toBe("none");
+    expect(resolvePlan(undefined, "cloud")).toBe("none");
+    expect(resolvePlan("none", "cloud")).toBe("none");
+    expect(resolvePlan("hobby", "cloud")).toBe("none");
+    expect(resolvePlan("standard", "cloud")).toBe("standard");
     expect(resolvePlan("pro", "cloud")).toBe("pro");
+    expect(limitsFor("none").channels).toBe(0);
     expect(resolvePlan("standard", "selfhost")).toBe("selfhost");
     expect(resolvePlan("ultimate", "selfhost")).toBe("selfhost");
   });

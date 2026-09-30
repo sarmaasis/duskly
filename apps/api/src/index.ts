@@ -33,6 +33,7 @@ import { runOnPublishPlugs, runSchedulePlugs } from "./lib/plugs";
 import { decryptCredentials, decryptSecret, encryptCredentials, encryptSecret } from "./lib/secrets";
 import { parseEmailSender, sendViaEmailBinding } from "./lib/email-sender";
 import { commentQueueDelay, mergeRssChannelIds, shouldDeferFirstComment } from "./lib/schedule";
+import { cloudSignInAllowed } from "./lib/testers";
 
 export { SchedulerLock };
 
@@ -71,8 +72,25 @@ app.use("*", async (c, next) => {
   if (MUTATING.has(c.req.method) && c.res.status < 400) clearReadCache();
 });
 
-app.on(["POST", "GET"], "/api/auth/*", (c) => {
+app.on(["POST", "GET"], "/api/auth/*", async (c) => {
   const auth = getAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
+  if (c.env.DUSKLY_MODE === "cloud") {
+    if (c.req.method === "POST" && /send-verification-otp|sign-in\/email-otp/.test(c.req.path)) {
+      let email = "";
+      try {
+        email = String(((await c.req.raw.clone().json()) as { email?: string }).email || "");
+      } catch {
+        email = "";
+      }
+      if (!cloudSignInAllowed(c.env, email)) {
+        return c.json({ error: "cloud_closed", message: "Duskly Cloud sign-in is coming soon." }, 403);
+      }
+    }
+    if (c.req.method === "GET" && c.req.path.endsWith("/get-session")) {
+      const session = (await auth.api.getSession({ headers: c.req.raw.headers })) as { user?: { email?: string } } | null;
+      if (session?.user && !cloudSignInAllowed(c.env, session.user.email)) return c.json(null);
+    }
+  }
   return auth.handler(c.req.raw);
 });
 
@@ -116,7 +134,7 @@ app.use("/v1/*", async (c, next) => {
     try {
       const auth = getAuth(c.env, c.req.raw.cf as IncomingRequestCfProperties | undefined);
       const session = (await auth.api.getSession({ headers: c.req.raw.headers })) as { user: { id: string; email: string } } | null;
-      if (session?.user) {
+      if (session?.user && cloudSignInAllowed(c.env, session.user.email)) {
         c.set("userId", session.user.id);
         c.set("email", session.user.email);
       }
@@ -160,6 +178,9 @@ app.use("/v1/*", async (c, next) => {
     }
   }
   if (!session?.user) return c.json({ error: "unauthorized" }, 401);
+  if (!cloudSignInAllowed(c.env, session.user.email)) {
+    return c.json({ error: "cloud_closed", message: "Duskly Cloud sign-in is coming soon." }, 403);
+  }
   c.set("userId", session.user.id);
   c.set("email", session.user.email);
   await next();
