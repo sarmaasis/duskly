@@ -1,0 +1,10 @@
+name: Feature
+description: Request a change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true

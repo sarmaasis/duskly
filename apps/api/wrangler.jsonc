@@ -1,0 +1,88 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "duskly-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-22",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_NAME": "Duskly",
+    "WEB_ORIGIN": "http://localhost:4200",
+    "BETTER_AUTH_URL": "http://localhost:8787",
+    "DUSKLY_MODE": "selfhost"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "duskly",
+      "database_id": "${D1_DATABASE_ID}",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "${KV_NAMESPACE_ID}"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "duskly-media"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PUBLISH",
+        "queue": "duskly-publish"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "duskly-publish",
+        "max_retries": 8,
+        "dead_letter_queue": "duskly-publish-dlq"
+      }
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SCHEDULER_LOCK",
+        "class_name": "SchedulerLock"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SchedulerLock"
+      ]
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "analytics_engine_datasets": [
+    {
+      "binding": "METRICS",
+      "dataset": "duskly_metrics"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  }
+}

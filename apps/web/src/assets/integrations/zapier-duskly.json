@@ -1,0 +1,17 @@
+{
+  "app": "Webhooks by Zapier",
+  "action": "Custom Request",
+  "method": "POST",
+  "url": "https://api.duskly.site/v1/posts",
+  "headers": {
+    "Authorization": "Bearer dk_YOUR_TOKEN",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "workspaceId": "YOUR_WORKSPACE_ID",
+    "body": "Hello from Zapier",
+    "status": "scheduled",
+    "scheduledAt": 1735689600000,
+    "destinations": ["ACCT_ID"]
+  }
+}

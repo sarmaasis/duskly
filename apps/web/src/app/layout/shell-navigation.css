@@ -1,0 +1,134 @@
+:host { display: flex; flex-direction: column; flex-shrink: 0; width: 232px; }
+.shell-side {
+  width: 232px;
+  max-height: 100dvh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 20px 14px 16px;
+  background: #fff;
+  border-right: 1px solid #e8e8e3;
+}
+.brand { font-family: var(--font-display); font-size: 22px; font-weight: 800; letter-spacing: -0.04em; padding: 0 8px; }
+.brand span { color: #ff5c33; }
+.new-post {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin: 8px 0 4px;
+  border-radius: 10px;
+  background: #ff5c33;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.new-post:hover { background: #e64d28; }
+.company-field { display: grid; gap: 6px; margin: 4px 8px 8px; color: #71717a; font-size: 11px; font-weight: 600; }
+.company-field select {
+  min-height: 36px;
+  width: 100%;
+  padding: 0 8px;
+  border: 1px solid #e8e8e3;
+  border-radius: 8px;
+  background: #fbfbfa;
+  color: #121417;
+  font-size: 13px;
+  font-weight: 500;
+}
+.primary-nav { display: grid; gap: 2px; }
+.primary-nav a {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f3f46;
+  text-align: left;
+}
+.primary-nav .is-active { background: #fff1ec; color: #ff5c33; box-shadow: inset 2px 0 0 #ff5c33; }
+.primary-nav a:hover { background: #fff1ec; color: #ff5c33; }
+.shell-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid #e8e8e3; }
+.account { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 2px; }
+.mark {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #fff1ec;
+  color: #ff5c33;
+  font-size: 13px;
+  font-weight: 700;
+}
+.workspace { overflow: hidden; font-size: 13px; font-weight: 700; color: #121417; text-overflow: ellipsis; white-space: nowrap; }
+.foot-tools { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px; padding: 0 2px; }
+.foot-tools button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #71717a;
+}
+.foot-tools button:hover { color: #ff5c33; }
+.foot-tools button span { margin-left: 4px; border-radius: 20px; padding: 0 6px; color: #ff5c33; background: #fff1ec; font-size: 11px; font-weight: 700; }
+a:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid #ff5c33; outline-offset: 3px; }
+:host-context(.dark) .shell-side { background: #18181b; color: #f4f4f5; border-color: #3f3f46; }
+:host-context(.dark) .primary-nav a, :host-context(.dark) select { color: #d4d4d8; }
+:host-context(.dark) .company-field select { background: #27272a; }
+:host-context(.dark) .primary-nav .is-active, :host-context(.dark) .primary-nav a:hover { background: #3a221c; color: #ff5c33; }
+:host-context(.dark) select { border-color: #3f3f46; }
+:host-context(.dark) .company-field { color: #a1a1aa; }
+:host-context(.dark) .shell-foot { border-color: #3f3f46; }
+:host-context(.dark) .mark { background: #3a221c; }
+:host-context(.dark) .workspace { color: #f4f4f5; }
+:host-context(.dark) .foot-tools button { color: #a1a1aa; }
+:host-context(.dark) .foot-tools button:hover { color: #ff5c33; }
+:host-context(.dark) option { background: #18181b; }
+@media (max-width: 767px) {
+  :host, .shell-side {
+    width: 100%;
+    min-height: 0;
+    max-height: none;
+    border-right: 0;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+  }
+  .shell-side {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 14px 10px;
+  }
+  .brand { padding: 0; }
+  .new-post { margin: 0; min-height: 36px; padding: 0 12px; }
+  .company-field { grid-column: 1 / -1; margin: 0; }
+  .primary-nav {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .primary-nav a { flex: 0 0 auto; white-space: nowrap; }
+  .primary-nav .is-active { box-shadow: none; }
+  .shell-foot {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 0;
+    padding-top: 8px;
+  }
+  .account { flex: 1; min-width: 0; }
+  .foot-tools { flex-wrap: nowrap; margin-top: 0; flex-shrink: 0; }
+}

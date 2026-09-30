@@ -1,0 +1,83 @@
+import { Component } from "@angular/core";
+import { RouterLink } from "@angular/router";
+
+@Component({
+  standalone: true,
+  imports: [RouterLink],
+  template: `
+    <div class="mx-auto grid max-w-5xl gap-10 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <article class="min-w-0">
+        <p class="font-mono text-[11px] font-semibold uppercase tracking-widest text-cta">Overview</p>
+        <h1 class="mt-2 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">Duskly docs</h1>
+        <p class="mt-4 text-[15px] leading-relaxed text-[#52525b]">
+          Duskly is a social publishing workspace for creators, agencies, and teams. Start with your first post, run your own instance, or connect an automation. Self-hosting has no Duskly subscription; infrastructure and provider charges can still apply.
+        </p>
+
+        <div class="mt-8 grid gap-4 sm:grid-cols-2">
+          <a routerLink="/docs/getting-started" class="rounded-xl border border-[#e4e4e7] bg-white p-5 hover:border-cta"><p class="font-semibold">Your first post</p><p class="mt-2 text-sm text-[#52525b]">Connect an account, write, schedule, and follow delivery.</p></a>
+          <a routerLink="/docs/self-host" class="rounded-xl border border-[#e4e4e7] bg-white p-5 hover:border-cta"><p class="font-semibold">Run your own instance</p><p class="mt-2 text-sm text-[#52525b]">Requirements, configuration, deployment, and upgrades.</p></a>
+        </div>
+        <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">What you can do</h2>
+        <ul class="mt-4 space-y-3 text-[14px] leading-relaxed text-[#52525b]">
+          <li><span class="font-semibold text-[#09090b]">Compose &amp; calendar</span> — draft posts, attach media, schedule LinkedIn, X, Instagram, and more.</li>
+          <li><span class="font-semibold text-[#09090b]">Connect channels</span> — connect each network; posts stay queued until a channel is ready.</li>
+          <li><span class="font-semibold text-[#09090b]">API &amp; agents</span> — mint <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">dk_</code> tokens in Settings. REST routes that take <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">workspaceId</code> use the Workspace ID row on that same page. MCP tools skip the id — the token already names the workspace.</li>
+        </ul>
+
+        <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">OAuth callbacks and legal</h2>
+        <p class="mt-4 text-[14px] leading-relaxed text-[#52525b]">
+          Cloud OAuth redirects are <code class="rounded bg-[#f4f4f1] px-1.5 py-0.5 font-mono text-[13px]">https://api.duskly.site/v1/accounts/oauth/&#123;network&#125;/callback</code>
+          (replace <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">network</code> with <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">x</code>, <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">linkedin</code>, <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">instagram</code>, and so on).
+          Register that exact URL in each vendor portal. Privacy, terms, and data-deletion live at
+          <a routerLink="/privacy" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/privacy</a>,
+          <a routerLink="/terms" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/terms</a>, and
+          <a routerLink="/data-deletion" class="font-semibold text-[#09090b] underline decoration-cta decoration-2 underline-offset-4">/data-deletion</a>.
+          Meta’s signed callback is <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://api.duskly.site/v1/meta/data-deletion</code>.
+          The human status page is <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://duskly.site/data-deletion</code>.
+          Instagram fetches images from <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">GET https://api.duskly.site/v1/media/:id/public?exp&amp;sig</code>.
+        </p>
+        <p class="mt-4 text-[14px] leading-relaxed text-[#52525b]">
+          YouTube OAuth must list only <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">https://www.googleapis.com/auth/youtube.upload</code> on the Google consent screen — upload only, no <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">youtube.force-ssl</code>.
+        </p>
+        <p class="mt-4 text-[14px] leading-relaxed text-[#52525b]">
+          The Slack bot posts to the public channel you picked before the bot is invited, which is why <code class="rounded bg-[#f4f4f1] px-1 font-mono text-[12px]">chat:write.public</code> is requested.
+        </p>
+
+        <h2 class="mt-10 scroll-mt-24 font-display text-xl font-bold">Where to go next</h2>
+        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+          <a routerLink="/docs/api" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">
+            <p class="text-sm font-bold">API authentication</p>
+            <p class="mt-1 text-xs text-[#52525b]">Bearer tokens and core endpoints</p>
+          </a>
+          <a routerLink="/docs/agents" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">
+            <p class="text-sm font-bold">Agents</p>
+            <p class="mt-1 text-xs text-[#52525b]">In-app smart agent and external agents</p>
+          </a>
+          <a routerLink="/docs/mcp" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">
+            <p class="text-sm font-bold">MCP</p>
+            <p class="mt-1 text-xs text-[#52525b]">Connect Cursor or Claude</p>
+          </a>
+          <a routerLink="/signin" class="rounded-lg border border-[#e4e4e7] bg-white p-4 hover:border-zinc-300">
+            <p class="text-sm font-bold">Open the app</p>
+            <p class="mt-1 text-xs text-[#52525b]">Sign in to schedule posts</p>
+          </a>
+        </div>
+      </article>
+
+      <aside class="min-w-0">
+        <div class="space-y-3 xl:sticky xl:top-20">
+          <p class="font-mono text-[10px] font-semibold uppercase tracking-widest text-[#71717a]">Quick start</p>
+          <pre class="overflow-x-auto rounded-lg border border-[#e4e4e7] bg-[#18181b] p-4 font-mono text-[11px] leading-relaxed text-zinc-300">{{ quickStart }}</pre>
+        </div>
+      </aside>
+    </div>
+  `,
+})
+export class DocsOverviewPage {
+  readonly quickStart = `# Mint a token in Settings → API tokens
+# Copy Workspace ID from Settings (REST still needs it)
+
+curl -s \\
+  -H "Authorization: Bearer dk_…" \\
+  "https://api.duskly.site/v1/posts?workspaceId=YOUR_WORKSPACE_ID"`;
+}

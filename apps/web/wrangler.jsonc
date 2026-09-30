@@ -1,0 +1,34 @@
+{
+  "name": "duskly-web",
+  "main": "dist/duskly/server/server.mjs",
+  "compatibility_date": "2026-09-22",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "alias": {
+    "xhr2": "./xhr2-shim.mjs"
+  },
+  "rules": [
+    {
+      "type": "ESModule",
+      "globs": [
+        "**/*.mjs"
+      ]
+    }
+  ],
+  "assets": {
+    "directory": "dist/duskly/browser",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/__api-config.js"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "API_ORIGIN": "http://localhost:8787",
+    "WEB_ORIGIN": "http://localhost:4200"
+  }
+}

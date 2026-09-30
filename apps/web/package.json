@@ -1,0 +1,41 @@
+{
+  "name": "@duskly/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "ng serve",
+    "build": "ng build",
+    "deploy": "node ../../scripts/deploy.mjs web",
+    "deploy:prod": "node ../../scripts/deploy.mjs web",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test": "node --experimental-strip-types scripts/check-allowed-hosts.mts",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "lint": "echo ok"
+  },
+  "dependencies": {
+    "@angular/common": "22.1.7",
+    "@angular/compiler": "22.1.7",
+    "@angular/core": "22.1.7",
+    "@angular/forms": "22.1.7",
+    "@angular/platform-browser": "22.1.7",
+    "@angular/platform-server": "22.1.7",
+    "@angular/router": "22.1.7",
+    "@angular/ssr": "22.1.8",
+    "@ascentsparksoftware/angular-image-editor": "^22.1.0",
+    "fabric": "^7.4.0",
+    "rxjs": "^7.8.0",
+    "tslib": "^2.8.0"
+  },
+  "devDependencies": {
+    "@angular/build": "22.1.8",
+    "@angular/cli": "22.1.8",
+    "@angular/compiler-cli": "22.1.7",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
+    "typescript": "6.0.3",
+    "wrangler": "4.136.3"
+  }
+}

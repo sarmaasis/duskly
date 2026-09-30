@@ -1,0 +1,131 @@
+const DEV_API = "http://localhost:8787";
+
+export function apiBase() {
+  const injected =
+    typeof window !== "undefined"
+      ? (window as unknown as { __API__?: string }).__API__
+      : undefined;
+  return (injected || DEV_API).replace(/\/$/, "");
+}
+
+export async function apiAll<T>(path: string, key: string): Promise<T[]> {
+  const rows: T[] = [];
+  let offset = 0;
+  for (let i = 0; i < 40; i++) {
+    const data = await api<Record<string, T[] | number | null>>(`${path}${path.includes("?") ? "&" : "?"}limit=100&offset=${offset}`);
+    const page = data[key];
+    if (Array.isArray(page)) rows.push(...page);
+    if (typeof data.next !== "number") break;
+    offset = data.next;
+  }
+  return rows;
+}
+
+const inflight = new Map<string, Promise<unknown>>();
+const fresh = new Map<string, { exp: number; body: unknown }>();
+
+export function clearApiCache() {
+  fresh.clear();
+}
+
+function workspaceMeKey(path: string) {
+  return path === "/v1/workspaces/me" || path.startsWith("/v1/workspaces/me?") ? "/v1/workspaces/me" : "";
+}
+
+export async function api<T = unknown>(
+  path: string,
+  init: RequestInit & { json?: unknown } = {},
+): Promise<T> {
+  const method = (init.method || "GET").toUpperCase();
+  const me = method === "GET" ? workspaceMeKey(path) : "";
+  if (me) {
+    const hit = fresh.get(me);
+    if (hit && hit.exp > Date.now()) return hit.body as T;
+  }
+  if (method === "GET") {
+    const pending = inflight.get(path);
+    if (pending) return pending as Promise<T>;
+  }
+  const run = request<T>(path, init, method);
+  if (method === "GET") {
+    inflight.set(path, run);
+    void run.finally(() => inflight.delete(path)).catch(() => undefined);
+  } else {
+    clearApiCache();
+  }
+  if (me) {
+    void run.then((body) => fresh.set(me, { exp: Date.now() + 10_000, body })).catch(() => undefined);
+  }
+  return run;
+}
+
+async function request<T>(path: string, init: RequestInit & { json?: unknown }, method: string): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.json !== undefined) headers.set("content-type", "application/json");
+  const res = await fetch(`${apiBase()}${path}`, {
+    ...init,
+    method,
+    credentials: "include",
+    headers,
+    body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
+  });
+  if (!res.ok) {
+    if (res.status === 401) clearApiCache();
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    throw Object.assign(new Error((err as { message?: string }).message || "request failed"), {
+      status: res.status,
+      body: err,
+    });
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export type PlanSnapshot = {
+  plan: string;
+  period: string;
+  limits: {
+    channels: number;
+    team: boolean;
+    aiImages: number;
+    aiVideos: number;
+    aiClipMinutes: number;
+    aiCopilot: number;
+  };
+  used: Record<string, number>;
+};
+
+export type Workspace = {
+  id: string;
+  name: string;
+  plan: string;
+  theme: string;
+  signature: string | null;
+  accountKind?: "solo" | "agency" | null;
+  onboardingCompleted?: boolean;
+  role?: "owner" | "admin" | "member";
+};
+
+const PLACEHOLDER_NAME = "My workspace";
+
+export function spaceName(ws: { name?: string | null } | null | undefined, fallback = "Account") {
+  const n = (ws?.name || "").trim();
+  if (!n || n === PLACEHOLDER_NAME) return fallback;
+  return n;
+}
+
+export function isOnboarded(ws: Pick<Workspace, "name" | "onboardingCompleted">) {
+  if (ws.onboardingCompleted === true) return true;
+  if (ws.onboardingCompleted === false) return false;
+  const n = (ws.name || "").trim();
+  return !!n && n !== PLACEHOLDER_NAME;
+}
+
+export async function nextAfterAuth() {
+  try {
+    const me = await api<{ workspace: Workspace }>("/v1/workspaces/me");
+    return isOnboarded(me.workspace) ? "/app" : "/onboarding";
+  } catch {
+    return "/onboarding";
+  }
+}
